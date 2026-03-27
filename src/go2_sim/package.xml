@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>go2_sim</name>
+  <version>0.1.0</version>
+  <description>
+    Go2 Gazebo Classic simulation URDF.
+
+    Provides a standalone go2_sim.urdf.xacro with:
+      - Same frame tree as go2_description (base_footprint, base_link, lidar_link, imu_link)
+      - libgazebo_ros_planar_move plugin: /cmd_vel → TF(odom→base_footprint) + /odom
+        (replaces go2_hw_bridge in simulation; identical Nav2 interface)
+      - Unitree L1 LiDAR GPU ray sensor → /unilidar/cloud (PointCloud2)
+      - IMU sensor → /unilidar/imu (Imu)
+
+    Portability (TODO(agibot)):
+      Create agibot_d1_sim/ mirroring this package with d1_sim.urdf.xacro.
+      The sensor macro lives in sensor_models/ and is reused unchanged.
+      Zero changes required in robot_nav/ or robot_sim/.
+  </description>
+  <maintainer email="todo@example.com">Maintainer</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>gazebo_ros</exec_depend>
+  <exec_depend>gazebo_plugins</exec_depend>
+  <exec_depend>sensor_models</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

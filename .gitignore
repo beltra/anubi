@@ -1,0 +1,31 @@
+# ROS 2 Colcon workspace directories
+build/
+install/
+log/
+
+
+# Python generated files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python virtual environments
+venv/
+.venv/
+env/
+
+# C++ build artifacts
+*.o
+*.so
+*.a
+*.dylib
+*.dll
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Text editor / IDE configurations
+.vscode/
+.idea/
+*.swp

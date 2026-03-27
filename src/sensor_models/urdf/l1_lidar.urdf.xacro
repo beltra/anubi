@@ -1,0 +1,115 @@
+<?xml version="1.0"?>
+<!--
+  l1_lidar.urdf.xacro
+  Reusable Gazebo Classic (Gazebo 11) macro for the Unitree L1 LiDAR sensor.
+
+  Unitree L1 device specifications (from Unitree datasheet):
+    - Scan lines (vertical channels): 18
+    - Vertical FOV: ±45° (−45° to +45°)
+    - Horizontal FOV: 360°
+    - Rotation frequency (typical): 10 Hz
+    - Range: 0.05 m – 30 m
+    - Simulation default horizontal samples: 360 (1 sample per degree)
+
+  Usage:
+    <xacro:include filename="$(find sensor_models)/urdf/l1_lidar.urdf.xacro"/>
+    <xacro:l1_lidar_gazebo parent_link="lidar_link"/>
+
+  Optional overrides (all have defaults matching L1 specs):
+    topic           — PointCloud2 output topic (default: /unilidar/cloud)
+    update_rate     — scan frequency in Hz          (default: 10)
+    h_samples       — horizontal rays per line       (default: 360)
+    v_samples       — vertical channels              (default: 18)
+    v_min_angle_deg — lower vertical angle in deg    (default: -45.0)
+    v_max_angle_deg — upper vertical angle in deg    (default:  45.0)
+    range_min       — minimum valid range in m       (default: 0.05)
+    range_max       — maximum valid range in m       (default: 30.0)
+    noise_stddev    — range noise std deviation in m (default: 0.02)
+    visualize       — show ray visualisation in Rviz (default: false)
+
+  Porting note (TODO(agibot)):
+    AgiBot D1 Ultra uses a different LiDAR.  Add a separate macro (e.g. d1_lidar_gazebo)
+    or override the parameters to match D1 specs when porting.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="l1_lidar_gazebo" params="
+      parent_link
+      topic:='/unilidar/cloud'
+      update_rate:=10
+      h_samples:=360
+      v_samples:=18
+      v_min_angle_deg:=-45.0
+      v_max_angle_deg:=45.0
+      range_min:=0.05
+      range_max:=30.0
+      noise_stddev:=0.02
+      visualize:=false
+  ">
+
+    <!-- Convert vertical angles from degrees to radians using xacro arithmetic -->
+    <xacro:property name="deg_to_rad" value="${pi / 180.0}"/>
+    <xacro:property name="v_min_rad"  value="${v_min_angle_deg * deg_to_rad}"/>
+    <xacro:property name="v_max_rad"  value="${v_max_angle_deg * deg_to_rad}"/>
+
+    <!--
+      Use gpu_ray for hardware-accelerated multi-beam LiDAR simulation.
+      Falls back to 'ray' on CPU-only systems — change the sensor type attribute
+      and the plugin filename from libgazebo_ros_ray_sensor.so to the same name
+      (the plugin supports both sensor types).
+    -->
+    <gazebo reference="${parent_link}">
+      <sensor type="gpu_ray" name="l1_lidar">
+        <pose>0 0 0 0 0 0</pose>
+        <visualize>${visualize}</visualize>
+        <update_rate>${update_rate}</update_rate>
+
+        <ray>
+          <scan>
+            <horizontal>
+              <!-- 360° sweep. min_angle = -π, max_angle = +π -->
+              <samples>${h_samples}</samples>
+              <resolution>1</resolution>
+              <min_angle>-3.14159265358979</min_angle>
+              <max_angle> 3.14159265358979</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>${v_samples}</samples>
+              <resolution>1</resolution>
+              <min_angle>${v_min_rad}</min_angle>
+              <max_angle>${v_max_rad}</max_angle>
+            </vertical>
+          </scan>
+
+          <range>
+            <min>${range_min}</min>
+            <max>${range_max}</max>
+            <!-- sub-cm depth resolution -->
+            <resolution>0.001</resolution>
+          </range>
+
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>${noise_stddev}</stddev>
+          </noise>
+        </ray>
+
+        <!--
+          gazebo_ros_ray_sensor (gazebo_plugins, Apache-2.0)
+          Publishes sensor_msgs/PointCloud2 on ${topic}.
+          frame_name must match the URDF link referenced by this <gazebo> block.
+        -->
+        <plugin name="gazebo_ros_l1_lidar" filename="libgazebo_ros_ray_sensor.so">
+          <ros>
+            <remapping>~/out:=${topic}</remapping>
+          </ros>
+          <output_type>sensor_msgs/PointCloud2</output_type>
+          <frame_name>${parent_link}</frame_name>
+        </plugin>
+      </sensor>
+    </gazebo>
+
+  </xacro:macro>
+
+</robot>

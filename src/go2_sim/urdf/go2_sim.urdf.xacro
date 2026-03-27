@@ -1,0 +1,237 @@
+<?xml version="1.0"?>
+<!--
+  go2_sim.urdf.xacro
+  Unitree Go2 — Gazebo Classic (Gazebo 11) simulation model.
+
+  Standalone file: does NOT xacro:include go2_description.  Both can be used side-by-side.
+
+  Frame tree (identical to go2_description/urdf/go2.urdf.xacro):
+    base_footprint  (ground projection; Nav2 2D footprint frame)
+      └─ base_link        (robot trunk centre, z = 0.335 m above ground)
+           ├─ imu_link     (co-located with trunk; Gazebo IMU sensor)
+           └─ lidar_link   (Unitree L1 LiDAR forward-top mount)
+
+  Gazebo plugins:
+    libgazebo_ros_planar_move — subscribes /cmd_vel, publishes /odom + TF(odom→base_footprint)
+                                 replaces go2_hw_bridge; Nav2 sees exactly the same interface.
+    L1 LiDAR GPU ray sensor  — publishes /unilidar/cloud (PointCloud2, 10 Hz, 18 lines)
+                                 via sensor_models/l1_lidar_gazebo xacro macro.
+    IMU sensor               — publishes /unilidar/imu (sensor_msgs/Imu, 250 Hz)
+
+  Physical parameters match go2_description (same trunk dimensions, inertia, sensor positions).
+
+  TODO(agibot): For AgiBot D1 Ultra, create agibot_d1_sim/urdf/d1_sim.urdf.xacro with:
+    - Same frame names
+    - D1 Ultra chassis dimensions and inertia
+    - Replace L1 LiDAR macro call with D1's sensor macro (add to sensor_models/)
+    - Keep the planar_move plugin block unchanged
+-->
+<robot name="go2_sim" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       sensor_models: reusable L1 LiDAR macro
+  ════════════════════════════════════════════════════════════════════════ -->
+  <xacro:include filename="$(find sensor_models)/urdf/l1_lidar.urdf.xacro"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       Physical constants (source: root official go2.urdf in this repository)
+  ════════════════════════════════════════════════════════════════════════ -->
+  <xacro:property name="body_length"     value="0.3762"/>
+  <xacro:property name="body_width"      value="0.04675"/>   <!-- trunk half-width -->
+  <xacro:property name="body_height"     value="0.114"/>
+  <xacro:property name="body_mass"       value="6.921"/>
+  <xacro:property name="base_link_height_from_ground" value="0.335"/>
+
+  <!-- Front-top sensor mount from root official go2.urdf Head_upper_joint -->
+  <xacro:property name="lidar_x" value="0.285"/>
+  <xacro:property name="lidar_y" value="0.0"/>
+  <xacro:property name="lidar_z" value="0.01"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       base_footprint  —  ground-plane reference (Nav2 root)
+  ════════════════════════════════════════════════════════════════════════ -->
+  <link name="base_footprint">
+    <!-- Zero-size visual; Gazebo needs at least a tiny geometry for physics -->
+    <visual>
+      <geometry><box size="0.001 0.001 0.001"/></geometry>
+    </visual>
+    <!-- No inertial on base_footprint; mass is in base_link -->
+  </link>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       base_link  —  robot trunk centre
+  ════════════════════════════════════════════════════════════════════════ -->
+  <joint name="base_footprint_to_base_link" type="fixed">
+    <parent link="base_footprint"/>
+    <child  link="base_link"/>
+    <origin xyz="0 0 ${base_link_height_from_ground}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${body_length} ${body_width*2} ${body_height}"/>
+      </geometry>
+      <material name="dark_grey">
+        <color rgba="0.2 0.2 0.2 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="${body_length} ${body_width*2} ${body_height}"/>
+      </geometry>
+    </collision>
+    <collision>
+      <!-- Contact proxy from official URDF zero-pose collision envelope; bottom at z=0 -->
+      <origin xyz="0 0 -0.325" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.5794 0.328 0.020"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0.021112 0.0 -0.005366" rpy="0 0 0"/>
+      <mass value="${body_mass}"/>
+      <inertia ixx="0.02448"  ixy="0.00012166" ixz="0.0014849"
+               iyy="0.098077" iyz="-0.0000312"
+               izz="0.107"/>
+    </inertial>
+  </link>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       imu_link  —  co-located with trunk centre
+  ════════════════════════════════════════════════════════════════════════ -->
+  <joint name="base_link_to_imu" type="fixed">
+    <parent link="base_link"/>
+    <child  link="imu_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="imu_link">
+    <inertial>
+      <mass value="0.001"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia ixx="1e-7" ixy="0" ixz="0" iyy="1e-7" iyz="0" izz="1e-7"/>
+    </inertial>
+  </link>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       lidar_link  —  Unitree L1 LiDAR optical centre
+  ════════════════════════════════════════════════════════════════════════ -->
+  <joint name="base_link_to_lidar" type="fixed">
+    <parent link="base_link"/>
+    <child  link="lidar_link"/>
+    <origin xyz="${lidar_x} ${lidar_y} ${lidar_z}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="lidar_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.04" length="0.06"/>
+      </geometry>
+      <material name="lidar_black">
+        <color rgba="0.05 0.05 0.05 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.04" length="0.06"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.001"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia ixx="1e-7" ixy="0" ixz="0" iyy="1e-7" iyz="0" izz="1e-7"/>
+    </inertial>
+  </link>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       Gazebo materials
+  ════════════════════════════════════════════════════════════════════════ -->
+  <gazebo reference="base_link">
+    <material>Gazebo/DarkGrey</material>
+    <!-- Self-collide false: legs are abstracted away; no internal collision needed -->
+    <self_collide>false</self_collide>
+    <mu1>0.8</mu1>
+    <mu2>0.8</mu2>
+  </gazebo>
+
+  <gazebo reference="lidar_link">
+    <material>Gazebo/Black</material>
+  </gazebo>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       PLUGIN 1: planar_move  (locomotion abstraction for quadruped)
+       ─────────────────────────────────────────────────────────────────
+       Subscribes to /cmd_vel (geometry_msgs/Twist)
+       Publishes  /odom (nav_msgs/Odometry) + TF(odom → base_footprint)
+
+       This replaces go2_hw_bridge for simulation.  Nav2 sees an identical
+       /cmd_vel + /odom + TF interface regardless of real vs simulated robot.
+
+       The plugin models the Go2 as a holonomic planar robot — accurate enough
+       for end-to-end navigation validation without full leg dynamics.
+  ════════════════════════════════════════════════════════════════════════ -->
+  <gazebo>
+    <plugin name="gazebo_ros_planar_move" filename="libgazebo_ros_planar_move.so">
+      <ros>
+        <!-- Absolute topic names prevent namespace conflicts -->
+        <remapping>cmd_vel:=/cmd_vel</remapping>
+        <remapping>odom:=/odom</remapping>
+      </ros>
+      <update_rate>50</update_rate>
+      <publish_odom>true</publish_odom>
+      <publish_odom_tf>true</publish_odom_tf>
+      <odometry_frame>odom</odometry_frame>
+      <robot_base_frame>base_footprint</robot_base_frame>
+      <!-- Diagonal of the odometry covariance (position XY, orientation yaw) -->
+      <covariance_x>0.0001</covariance_x>
+      <covariance_y>0.0001</covariance_y>
+      <covariance_yaw>0.01</covariance_yaw>
+    </plugin>
+  </gazebo>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       PLUGIN 2: Unitree L1 LiDAR (via sensor_models macro)
+       ─────────────────────────────────────────────────────────────────
+       Publishes /unilidar/cloud (sensor_msgs/PointCloud2, 10 Hz)
+       18 vertical channels, ±45° vertical FOV, 360° horizontal
+  ════════════════════════════════════════════════════════════════════════ -->
+  <xacro:l1_lidar_gazebo
+      parent_link="lidar_link"
+      topic="/unilidar/cloud"
+      update_rate="10"
+      h_samples="360"
+      v_samples="18"
+      v_min_angle_deg="-45.0"
+      v_max_angle_deg="45.0"
+      range_min="0.05"
+      range_max="30.0"
+      noise_stddev="0.02"
+      visualize="false"
+  />
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       PLUGIN 3: IMU sensor
+       ─────────────────────────────────────────────────────────────────
+       Publishes /unilidar/imu (sensor_msgs/Imu, 250 Hz)
+       Matches Go2 internal IMU update rate.
+  ════════════════════════════════════════════════════════════════════════ -->
+  <gazebo reference="imu_link">
+    <sensor type="imu" name="go2_imu">
+      <always_on>true</always_on>
+      <update_rate>250</update_rate>
+      <plugin name="gazebo_ros_imu" filename="libgazebo_ros_imu_sensor.so">
+        <ros>
+          <remapping>~/out:=/unilidar/imu</remapping>
+        </ros>
+        <!-- Use world frame as orientation reference (not initial robot pose) -->
+        <initial_orientation_as_reference>false</initial_orientation_as_reference>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+</robot>
