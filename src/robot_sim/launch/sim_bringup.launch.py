@@ -161,6 +161,8 @@ def generate_launch_description():
         [
             os.path.join(sim_worlds_share, 'models'),
             ':',
+            os.path.join(get_package_share_directory('go2_sim'), '..'),
+            ':',
             # Preserve any pre-existing GAZEBO_MODEL_PATH
             os.environ.get('GAZEBO_MODEL_PATH', ''),
         ],

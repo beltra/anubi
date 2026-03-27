@@ -47,10 +47,14 @@
   <!-- Nominal standing torso centre height from ground [m]. -->
   <xacro:property name="standing_height" value="0.28"/>
 
-  <!-- Front-top sensor mount from root official go2.urdf Head_upper_joint. -->
-  <xacro:property name="lidar_x" value="0.285"/>
+  <!-- Front-top sensor mount matching official Unitree Go2 radar_joint -->
+  <xacro:property name="lidar_x" value="0.28945"/>
   <xacro:property name="lidar_y" value="0.0"/>
-  <xacro:property name="lidar_z" value="0.01"/>
+  <xacro:property name="lidar_z" value="-0.046825"/>
+  <xacro:property name="lidar_r" value="0.0"/>
+  <!-- <xacro:property name="lidar_p" value="2.8782"/> -->
+  <xacro:property name="lidar_p" value="0.0"/>
+  <xacro:property name="lidar_yaw" value="0.0"/>
 
   <!-- ═══════════════════════════════════════════════════════════════════════
        base_footprint  —  ground contact reference (Nav2 global frame anchor)
@@ -154,7 +158,7 @@
   <joint name="base_link_to_lidar" type="fixed">
     <parent link="base_link"/>
     <child  link="lidar_link"/>
-    <origin xyz="${lidar_x} ${lidar_y} ${lidar_z}" rpy="0 0 0"/>
+    <origin xyz="${lidar_x} ${lidar_y} ${lidar_z}" rpy="${lidar_r} ${lidar_p} ${lidar_yaw}"/>
   </joint>
 
   <link name="lidar_link">
