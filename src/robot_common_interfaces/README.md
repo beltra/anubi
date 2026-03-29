@@ -20,7 +20,7 @@ map  ──►  odom  ──►  base_footprint  ──►  base_link  ──►
 | Frame | Published by | Notes |
 |-------|-------------|-------|
 | `map → odom` | slam_toolbox | Async 2D SLAM; mapping or localization mode |
-| `odom → base_footprint` | go2_hw_bridge (real) / planar_move plugin (sim) | Dynamic odometry |
+| `odom → base_footprint` | go2_hw_bridge (real) / CHAMP EKF chain (sim) | Dynamic odometry |
 | `base_footprint → base_link` | robot_state_publisher (from URDF) | Fixed, z = standing height |
 | `base_link → lidar_link` | robot_state_publisher (from URDF) | Static |
 | `base_link → imu_link` | robot_state_publisher (from URDF) | Static |
@@ -31,8 +31,8 @@ map  ──►  odom  ──►  base_footprint  ──►  base_link  ──►
 
 | Topic | Type | Direction | Notes |
 |-------|------|-----------|-------|
-| `/unilidar/cloud` | `sensor_msgs/PointCloud2` | Hardware → Nav2 | LiDAR data in `lidar_link` frame |
-| `/unilidar/imu` | `sensor_msgs/Imu` | Hardware → Nav2 | IMU data |
+| `/lidar/points` | `sensor_msgs/PointCloud2` | Hardware → Nav2 | LiDAR data in `lidar_link` frame |
+| `/imu/data` | `sensor_msgs/Imu` | Hardware → Nav2 | IMU data |
 | `/odom` | `nav_msgs/Odometry` | go2_hw_bridge → Nav2 | Odometry with `odom`→`base_footprint` frames |
 | `/cmd_vel` | `geometry_msgs/Twist` | Nav2 → go2_hw_bridge | Velocity command |
 | `/robot_status` | `robot_common_interfaces/RobotStatus` | Hardware → all | Health status at 1 Hz |

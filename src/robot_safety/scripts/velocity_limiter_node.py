@@ -24,6 +24,7 @@ publish_rate   [float, default 20.0 Hz] Output publish rate.
 cmd_vel_in     [str, default /cmd_vel]        Input topic.
 cmd_vel_out    [str, default /cmd_vel_safe]   Output topic.
 status_topic   [str, default /robot_status]   RobotStatus input topic.
+                                            Set to "" to disable status gating.
 
 Integration
 -----------
@@ -56,8 +57,12 @@ class VelocityLimiter(Node):
         status_topic       = self.get_parameter('status_topic').value
 
         self._pub = self.create_publisher(Twist, cmd_vel_out, 10)
-        self.create_subscription(Twist,        cmd_vel_in,    self._on_cmd_vel, 10)
-        self.create_subscription(RobotStatus,  status_topic,  self._on_status,  10)
+        self._cmd_sub = self.create_subscription(Twist, cmd_vel_in, self._on_cmd_vel, 10)
+        self._status_sub = None
+        if status_topic:
+            self._status_sub = self.create_subscription(
+                RobotStatus, status_topic, self._on_status, 10
+            )
         self.create_timer(1.0 / publish_rate, self._on_timer)
 
         self._last_cmd_vel  = Twist()
@@ -66,9 +71,11 @@ class VelocityLimiter(Node):
         self._prev_estop    = False
         self._prev_watchdog = False
 
+        status_mode = status_topic if status_topic else "disabled"
         self.get_logger().info(
             f'velocity_limiter: {cmd_vel_in} → {cmd_vel_out}  '
-            f'watchdog={self._cmd_timeout}s  rate={publish_rate}Hz'
+            f'watchdog={self._cmd_timeout}s  rate={publish_rate}Hz  '
+            f'status_topic={status_mode}'
         )
 
     # ── Callbacks ──────────────────────────────────────────────────────────

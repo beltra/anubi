@@ -11,10 +11,9 @@ Topic bridge (all required by nav stack):
   /clock              ignition → ROS   rosgraph_msgs/Clock
   /imu/data           ignition → ROS   sensor_msgs/Imu
   /joint_states       ignition → ROS   sensor_msgs/JointState
-  /lidar/points             ignition(/unilidar/cloud/points) → ROS   sensor_msgs/PointCloud2
+  /lidar/points       ignition → ROS   sensor_msgs/PointCloud2
   /odom/raw           ignition → ROS   nav_msgs/Odometry
   /tf                 ignition → ROS   tf2_msgs/TFMessage
-  /cmd_vel_safe       ROS → ignition   geometry_msgs/Twist
   /joint_group_effort_controller/joint_trajectory
                       ROS → ignition   trajectory_msgs/JointTrajectory
 
@@ -150,38 +149,6 @@ def generate_launch_description():
         remappings=[("/cmd_vel/smooth", "/cmd_vel_safe")],
     )
 
-    # CHAMP state estimator (orientation from IMU)
-    state_estimator_node = Node(
-        package="champ_base",
-        executable="state_estimation_node",
-        output="screen",
-        parameters=[
-            {"use_sim_time": use_sim_time},
-            {"orientation_from_imu": True},
-            {"urdf": robot_description_content},
-            joints_config,
-            links_config,
-            gait_config,
-        ],
-    )
-
-    # EKF: base_link → base_footprint (local odometry frame)
-    base_to_footprint_ekf = Node(
-        package="robot_localization",
-        executable="ekf_node",
-        name="base_to_footprint_ekf",
-        output="screen",
-        parameters=[
-            {"base_link_frame": "base_link"},
-            {"use_sim_time": use_sim_time},
-            os.path.join(
-                get_package_share_directory("champ_base"),
-                "config", "ekf", "base_to_footprint.yaml",
-            ),
-        ],
-        remappings=[("odometry/filtered", "odom/local")],
-    )
-
     # EKF: base_footprint → odom (global odometry, publishes /odom + TF)
     footprint_to_odom_ekf = Node(
         package="robot_localization",
@@ -196,7 +163,7 @@ def generate_launch_description():
             {"publish_tf": True},
             {"frequency": 50.0},
             {"two_d_mode": True},
-            {"odom0": "odom/raw"},
+            {"odom0": "/odom/raw"},
             {"odom0_config": [False, False, False,
                               False, False, False,
                               True, True, False,
@@ -226,7 +193,7 @@ def generate_launch_description():
         ],
     )
 
-    # Static transform: base_footprint → base_link (identity; CHAMP manages this)
+    # Static transform: base_footprint → base_link (planar Nav2 convention)
     base_footprint_to_base_link_tf = Node(
         package="tf2_ros",
         name="base_footprint_to_base_link_tf",
@@ -289,13 +256,11 @@ def generate_launch_description():
     #
     # Required topics for nav stack:
     #   /joint_states   → robot_state_publisher, CHAMP
-    #   /imu/data       → CHAMP state estimator, EKF
-    #   /lidar/points         ← ignition /unilidar/cloud/points
-    #                         → voxel_layer, pointcloud_to_laserscan
+    #   /imu/data       → EKF
+    #   /lidar/points   → voxel_layer, pointcloud_to_laserscan
     #   /odom/raw       → EKF footprint_to_odom
     #   /clock          → use_sim_time
     #   /tf             → TF tree
-    #   /cmd_vel_safe   → CHAMP locomotion controller (through safety gate)
     #   /joint_group_effort_controller/joint_trajectory → effort controller
     gazebo_bridge = Node(
         package="ros_ign_bridge",
@@ -309,18 +274,15 @@ def generate_launch_description():
             "/imu/data@sensor_msgs/msg/Imu[ignition.msgs.IMU",
             "/tf@tf2_msgs/msg/TFMessage[ignition.msgs.Pose_V",
             "/world/default/model/go2/joint_state@sensor_msgs/msg/JointState[ignition.msgs.Model",
-            "/unilidar/cloud/points@sensor_msgs/msg/PointCloud2[ignition.msgs.PointCloudPacked",
+            "/lidar/points@sensor_msgs/msg/PointCloud2[ignition.msgs.PointCloudPacked",
             "/odom@nav_msgs/msg/Odometry[ignition.msgs.Odometry",
             # ── ROS → Ignition ──────────────────────────────────────────
-            "/cmd_vel@geometry_msgs/msg/Twist]ignition.msgs.Twist",
             "/joint_group_effort_controller/joint_trajectory"
             "@trajectory_msgs/msg/JointTrajectory]ignition.msgs.JointTrajectory",
         ],
         remappings=[
             ("/world/default/model/go2/joint_state", "/joint_states"),
-            ("/unilidar/cloud/points", "/lidar/points"),
             ("/odom", "/odom/raw"),
-            ("/cmd_vel", "/cmd_vel_safe"),
         ],
     )
 
@@ -336,12 +298,16 @@ def generate_launch_description():
             "publish_rate": 20.0,
             "cmd_vel_in": "/cmd_vel",
             "cmd_vel_out": "/cmd_vel_safe",
-            "status_topic": "/robot_status",
+            # Simulation has no RobotStatus publisher; run watchdog-only gating.
+            "status_topic": "",
         }],
     )
 
     # ── Controller spawners (delayed to allow Gazebo + ign_ros2_control init) ──
     # controller_manager is brought up by ign_ros2_control-system plugin in the URDF.
+    # Delays are empirical: Fortress + ign_ros2_control typically takes 15-20 s from spawn
+    # to ready.  The spawner's --controller-manager-timeout 120 provides an additional
+    # safety margin if init is slow on the host machine.
     controller_spawner_js = TimerAction(
         period=20.0,
         actions=[
@@ -402,10 +368,8 @@ def generate_launch_description():
 
         # CHAMP locomotion stack
         quadruped_controller_node,
-        state_estimator_node,
 
         # Odometry / TF
-        base_to_footprint_ekf,
         footprint_to_odom_ekf,
         map_to_odom_tf,
         base_footprint_to_base_link_tf,

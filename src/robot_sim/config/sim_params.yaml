@@ -4,9 +4,8 @@
 # use_sim_time=true is set via the sim_bringup.launch.py launch argument and
 # propagated to all nodes automatically.  No per-node overrides are needed here.
 #
-# The Gazebo plugins in go2_sim/urdf/go2_sim.urdf.xacro publish directly on
-# /lidar/points, /unilidar/imu, /odom, and TF(odom→base_footprint).
-# No topic bridge or remapping is required.
+# The active simulation stack is Fortress + ros_ign_bridge (see go2_sim/launch/sim_champ.launch.py).
+# Topic bridging/remapping is defined in launch, not in this config file.
 #
 # TODO(agibot): Add D1 Ultra specific overrides here if needed when
 #   d1_sim/urdf/d1_sim.urdf.xacro is implemented.

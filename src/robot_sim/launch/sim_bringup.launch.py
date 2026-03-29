@@ -128,15 +128,19 @@ def generate_launch_description():
         condition=IfCondition(start_nav),
         launch_arguments={
             "use_sim_time": use_sim_time,
+            "params_file": LaunchConfiguration("nav_params"),
             "use_stvl": use_stvl,
         }.items(),
     )
 
+    # slam starts after nav_delay_sec (default 8 s) — long enough for Gazebo + CHAMP + EKF to
+    # stabilise and for the LiDAR bridge to deliver the first scans.
+    # nav2 starts 6 s after slam — allows slam_toolbox to initialise and publish map→odom
+    # before Nav2 activates its lifecycle nodes.  Total Nav2 start offset = nav_delay_sec + 6 s.
     start_nav_stack = TimerAction(
         period=LaunchConfiguration("nav_delay_sec"),
         actions=[
             slam,
-            # Give slam_toolbox time to receive scans and publish map->odom before Nav2 activates.
             TimerAction(period=6.0, actions=[nav2]),
         ],
     )

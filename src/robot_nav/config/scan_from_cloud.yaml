@@ -10,8 +10,7 @@
 # ASSUMPTIONS:
 #   A-SCAN-1: lidar_link frame is oriented with +X forward, +Y left, +Z up.
 #   A-SCAN-2: min_height/max_height are relative to the lidar_link frame origin.
-#             A wider slice is used in simulation to ensure enough valid returns
-#             for slam_toolbox map building.
+#             The slice is centred on the horizontal plane of lidar_link.
 #   A-SCAN-3: LiDAR min range is 0.05 m.
 
 pointcloud_to_laserscan:
@@ -23,11 +22,10 @@ pointcloud_to_laserscan:
     transform_tolerance: 0.05      # [s] TF lookup timeout
 
     # Height filter (relative to target_frame origin) — Assumption A-SCAN-2
-    # Use a wider slice to preserve obstacle returns in simulation.
     # A too-thin slice can produce all-inf scans (no valid beams), which
     # prevents slam_toolbox from initializing the map.
-    min_height: -0.06              # [m]
-    max_height:  0.06              # [m]
+    min_height: -0.01              # [m]
+    max_height:  0.01              # [m]
 
     # Angular scan parameters
     angle_min: -3.14159265         # [rad] -180°

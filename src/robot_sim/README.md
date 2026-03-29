@@ -1,28 +1,27 @@
 # robot_sim
 
-Gazebo Classic (Gazebo 11) simulation bringup for the Go2 autonomy stack.
+Gazebo simulation bringup package for the Go2 autonomy stack.
 
 ---
 
 ## Overview
 
-`sim_bringup.launch.py` starts a complete simulation:
+`sim_bringup.launch.py` starts the maintained Fortress + CHAMP simulation:
 
 ```
-Gazebo Classic  +  robot_state_publisher  +  spawn_entity
-    +  slam.launch.py      (pointcloud_to_laserscan + slam_toolbox, use_sim_time=true)
-    +  nav2.launch.py      (Nav2 navigation stack, use_sim_time=true)
-    +  RViz2               (optional, reuses robot_nav/rviz/nav2.rviz)
+go2_sim/sim_champ.launch.py  (Ignition Gazebo + ros_ign_bridge + CHAMP + EKFs)
+    +  slam.launch.py        (pointcloud_to_laserscan + slam_toolbox, use_sim_time=true)
+    +  nav2.launch.py        (Nav2 navigation stack, use_sim_time=true)
+    +  RViz2                 (optional, reuses robot_nav/rviz/nav2.rviz)
 ```
 
-`go2_hw_bridge` is **not** started.  Gazebo's `libgazebo_ros_planar_move` plugin
-(inside `go2_sim/urdf/go2_sim.urdf.xacro`) provides an identical
-`/cmd_vel` + `/odom` + TF(`odom → base_footprint`) interface to Nav2.
+`go2_hw_bridge` is **not** started. Simulation provides the same navigation-facing
+topics (`/lidar/points`, `/scan`, `/odom`, `/cmd_vel`) through CHAMP + SLAM/Nav2.
 
 TF chain in simulation (identical to real robot):
 
 ```
-map ─(slam_toolbox)─► odom ─(planar_move)─► base_footprint
+map ─(slam_toolbox)─► odom ─(CHAMP EKF chain)─► base_footprint
                                                   └─(URDF)─► base_link
                                                                   ├──► lidar_link
                                                                   └──► imu_link
@@ -48,8 +47,7 @@ ros2 launch robot_sim sim_bringup.launch.py \
     map:=/ws/anubi/src/robot_nav/maps/my_map \
     gui:=false
 
-# Restart Nav2 without restarting Gazebo or SLAM
-ros2 launch robot_sim sim_nav.launch.py
+# Nav2-only restart entry point is not provided in the current tree.
 ```
 
 ---
@@ -70,16 +68,6 @@ ros2 launch robot_sim sim_nav.launch.py
 | `spawn_z` | `0.05` m | Robot Z spawn height (slight ground clearance) |
 | `gui` | `true` | Show Gazebo gzclient GUI |
 
-### `sim_nav.launch.py`
-
-| Argument | Default | Description |
-|----------|---------|-------------|
-| `use_sim_time` | `true` | Use simulation clock |
-| `params_file` | robot_nav default | Nav2 params YAML override |
-| `use_rviz` | `true` | Launch RViz2 |
-
----
-
 ## Obstacle Management
 
 ```bash
@@ -99,9 +87,8 @@ ros2 run sim_scenarios scenario_manager \
 
 ## Known Limitations
 
-- Gazebo Classic 11 (EOL Jan 2025) — functional on Ubuntu 22.04 / Humble.
-  Port to Gazebo Fortress (`ros_gz`) when long-term maintenance is required.
-- Robot locomotion uses `libgazebo_ros_planar_move` (holonomic approximation; no leg dynamics).
+- Fortress + CHAMP is the maintained simulation path.
+- `sim_classic_bringup.launch.py` is kept as a legacy Gazebo Classic workflow.
 - AgiBot D1 Ultra model (`d1_sim/`) is a stub — chassis dimensions are placeholders.
   Launch with `robot:=d1` is supported once `d1_sim/urdf/d1_sim.urdf.xacro` is completed.
 - `config/sim_params.yaml` is intentionally empty — `use_sim_time=true` is set via

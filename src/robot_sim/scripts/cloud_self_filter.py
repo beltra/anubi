@@ -10,7 +10,7 @@ from sensor_msgs_py import point_cloud2
 
 
 class CloudSelfFilter(Node):
-    """Mask the simulated robot body out of the voxel-layer cloud feed."""
+    """Mask robot-body returns from a point cloud (debug utility)."""
 
     def __init__(self) -> None:
         super().__init__("cloud_self_filter")
@@ -18,7 +18,7 @@ class CloudSelfFilter(Node):
         self.declare_parameter("input_topic", "/lidar/points")
         self.declare_parameter("output_topic", "/lidar/points_filtered")
         self.declare_parameter("lidar_x", 0.25)
-        self.declare_parameter("lidar_y", -0.038)
+        self.declare_parameter("lidar_y", 0.0)
         self.declare_parameter("lidar_z", -0.03)
         self.declare_parameter("base_z", 0.335)
         self.declare_parameter("min_world_z", 0.06)

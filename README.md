@@ -22,7 +22,8 @@ src/
 ├── sim_worlds/               # World files + SDF obstacle models
 ├── sim_scenarios/            # Runtime obstacle spawn/remove CLI + scenario manager
 ├── d1_sim/                   # AgiBot D1 Ultra simulation stub (TODO(agibot))
-└── robot_sim/                # Simulation bringup launch (sim_bringup.launch.py)
+├── robot_sim/                # Simulation bringup launch (sim_bringup.launch.py)
+└── champ/                    # CHAMP quadruped locomotion library (third-party, vendored)
 ```
 
 ### TF tree (full chain)
@@ -42,7 +43,7 @@ Go2 hardware
   ├── /sportmodestate  [SportModeState, ~50 Hz]
   │       └──►  go2_hw_bridge  ──►  /odom + TF(odom→base_footprint)
   │
-  └── /unilidar/cloud  [PointCloud2]
+  └── /lidar/points  [PointCloud2]
           ├──►  pointcloud_to_laserscan  ──►  /scan
           │         └──►  slam_toolbox  ──►  /map + TF(map→odom)
           └──►  Nav2 costmaps (obstacle layer, direct PointCloud2)
@@ -70,7 +71,7 @@ All packages are in this workspace — no upstream workspace needed at runtime.
 > **Assumption A1:** The Go2 robot's internal ROS2 bridge is running and publishing:
 > - `/sportmodestate` — `unitree_go/SportModeState` (proprioceptive state, ~50 Hz)
 > - `/lowstate` — `unitree_go/LowState` (low-level state; used for battery data)
-> - `/unilidar/cloud` — `sensor_msgs/PointCloud2` (3D LiDAR)
+> - `/lidar/points` — `sensor_msgs/PointCloud2` (3D LiDAR)
 >
 > `/lowstate` is used only for battery reporting in `RobotStatus`.  If the bridge
 > does not publish it, navigation still works but `battery_soc` and `battery_voltage`
@@ -120,7 +121,7 @@ source install/setup.bash
 
 The Unitree Go2 internal software must publish:
 - `/sportmodestate`  (`unitree_go/SportModeState`)
-- `/unilidar/cloud`  (`sensor_msgs/PointCloud2`)
+- `/lidar/points`  (`sensor_msgs/PointCloud2`)
 
 And subscribe to:
 - `/api/sport/request`  (`unitree_api/Request`)
@@ -181,8 +182,8 @@ ros2 launch go2_bringup go2_bringup.launch.py slam_mode:=mapping rviz:=true
 ## How to Run in Gazebo Simulation
 
 The simulation layer is fully implemented. **No hardware required.**
-The Gazebo `libgazebo_ros_planar_move` plugin replaces `go2_hw_bridge`,
-providing the identical `/cmd_vel` + `/odom` + TF interface to Nav2.
+`robot_sim/sim_bringup.launch.py` starts the Fortress CHAMP simulation stack
+(`go2_sim/sim_champ.launch.py`) plus SLAM/Nav2.
 
 ```bash
 source /opt/ros/humble/setup.bash
@@ -213,15 +214,13 @@ ros2 run sim_scenarios spawn_obstacle --delete box_1
 ros2 run sim_scenarios scenario_manager \
     --ros-args -p scenario_file:=crowded_room
 
-# Restart Nav2 without restarting Gazebo
-ros2 launch robot_sim sim_nav.launch.py
+# Nav2-only restart entry point is not provided in the current tree.
 ```
 
 ### Known simulation limits
 
-- Gazebo Classic 11 (EOL Jan 2025) — functional on Ubuntu 22.04 / Humble, no new patches.
-  Port to Gazebo Fortress (`ros_gz`) when long-term maintenance is required.
-- Robot locomotion uses `libgazebo_ros_planar_move` (holonomic approximation, no leg dynamics).
+- Gazebo Fortress + CHAMP is the maintained simulation path.
+- `sim_classic_bringup.launch.py` remains available for legacy Gazebo Classic workflows.
 - AgiBot D1 Ultra sim (`d1_sim/`) is a stub — chassis dimensions are placeholders.
 
 ---

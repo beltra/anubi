@@ -53,7 +53,7 @@ amcl:
     odom_frame_id: "odom"
     pf_err: 0.05
     pf_z: 0.99
-    recovery_alpha_fast: 0.0
+    recovery_alpha_fast: 0.0  # KLD recovery disabled — slam_toolbox owns localisation, AMCL is reference only
     recovery_alpha_slow: 0.0
     resample_interval: 1
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
@@ -197,7 +197,7 @@ controller_server:
       GoalDist.scale: 24.0
       RotateToGoal.scale: 16.0   # was 32.0 — equal to PathDist/PathAlign, caused trajectory deadlock near goal
       RotateToGoal.slowing_factor: 5.0
-      RotateToGoal.lookahead_time: -1.0
+      RotateToGoal.lookahead_time: -1.0  # -1.0 = auto-compute from current speed
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # local_costmap
@@ -232,8 +232,8 @@ local_costmap:
       stvl_layer:
         plugin: "spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer"
         enabled: true
-        voxel_decay: 3.0
-        decay_model: 0
+        voxel_decay: 3.0          # seconds before a marked voxel decays to free space
+        decay_model: 0            # 0 = linear decay
         voxel_size: 0.05
         track_unknown_space: true
         unknown_threshold: 15
@@ -255,14 +255,14 @@ local_costmap:
           raytrace_range: 5.5
           min_obstacle_height: 0.05
           max_obstacle_height: 2.0
-          expected_update_rate: 0.0
-          observation_persistence: 0.0
+          expected_update_rate: 0.0      # 0.0 = accept updates at any rate (LiDAR publishes at 10 Hz)
+          observation_persistence: 0.0   # 0.0 = discard raw observations immediately; voxel_decay handles temporal filtering
           inf_is_valid: false
           filter: "voxel"
           voxel_min_points: 1
           clear_after_reading: true
-          max_z: 2.5
-          min_z: 0.0
+          max_z: 2.5    # STVL voxel volume upper bound (m above lidar_link origin; covers standing humans)
+          min_z: 0.0    # STVL voxel volume lower bound (ground plane, no below-ground voxels)
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"

@@ -16,8 +16,8 @@
     - Leg links are omitted (not needed for Nav2). Add them when joint-state
       visualization or IK is required.
 
-  TODO(sim): Add <gazebo> plugins block (LiDAR ray sensor, IMU sensor, skid-steer
-             or effort controller) behind an xacro:if use_gazebo argument.
+  NOTE: Gazebo simulation plugins are implemented in go2_sim/urdf/go2_sim.urdf.xacro.
+        This hardware-focused URDF intentionally keeps simulation plugins out.
   TODO(agibot): Create agibot_d1_description/urdf/d1.urdf.xacro with the same
                 frame names (base_footprint, base_link, lidar_link, imu_link).
 -->
@@ -52,7 +52,6 @@
   <xacro:property name="lidar_y" value="0.0"/>
   <xacro:property name="lidar_z" value="-0.046825"/>
   <xacro:property name="lidar_r" value="0.0"/>
-  <!-- <xacro:property name="lidar_p" value="2.8782"/> -->
   <xacro:property name="lidar_p" value="0.0"/>
   <xacro:property name="lidar_yaw" value="0.0"/>
 
@@ -186,7 +185,7 @@
 
   <!-- ═══════════════════════════════════════════════════════════════════════
        Gazebo plugins  (only included when use_gazebo:=true)
-       TODO(sim): Replace stubs with working Gazebo Humble plugins.
+       NOTE: these placeholders remain intentionally empty in this hardware URDF.
   ════════════════════════════════════════════════════════════════════════════ -->
   <xacro:if value="$(arg use_gazebo)">
 
@@ -195,9 +194,7 @@
       <material>Gazebo/DarkGrey</material>
     </gazebo>
 
-    <!-- TODO(sim): Add Gazebo LiDAR ray plugin on lidar_link -->
-    <!-- TODO(sim): Add Gazebo IMU plugin on imu_link -->
-    <!-- TODO(sim): Add differential-drive or effort controller plugin -->
+    <!-- Simulation plugins are provided by go2_sim/urdf/go2_sim.urdf.xacro -->
 
   </xacro:if>
 

@@ -33,13 +33,13 @@
  *    Nav2 crashes.
  *  - The node clamps velocities to safe limits before forwarding to the robot.
  *
- * TODO(agibot): For AgiBot D1 Ultra, create agibot_d1_bringup/src/d1_hw_bridge.cpp
- *   following the same pattern:  subscribe to D1 state, publish odom + TF,
- *   subscribe to cmd_vel, forward via D1's API.
- *   Zero changes required in robot_nav.
+ * For non-Go2 robots, keep the same external contract:
+ *   subscribe to robot state, publish odom + TF, subscribe to cmd_vel,
+ *   then forward velocity commands via the robot-specific motion API.
  */
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <string>
 
@@ -69,13 +69,13 @@ public:
     declare_parameter<std::string>("lowstate_topic",   "/lowstate");
     declare_parameter<std::string>("cmd_vel_topic",    "/cmd_vel");
     declare_parameter<std::string>("sport_req_topic",  "/api/sport/request");
-    declare_parameter<std::string>("odom_topic",       "odom");
+    declare_parameter<std::string>("odom_topic",       "/odom");
     declare_parameter<std::string>("odom_frame",       "odom");
     declare_parameter<std::string>("base_frame",       "base_footprint");
     declare_parameter<bool>("publish_tf",              true);
     declare_parameter<double>("cmd_timeout",           0.5);   // [s] watchdog
-    declare_parameter<double>("max_linear_vel",        0.8);   // [m/s]
-    declare_parameter<double>("max_lateral_vel",       0.4);   // [m/s]
+    declare_parameter<double>("max_linear_vel",        1.0);   // [m/s]
+    declare_parameter<double>("max_lateral_vel",       0.3);   // [m/s]
     declare_parameter<double>("max_angular_vel",       1.5);   // [rad/s]
 
     state_topic_    = get_parameter("state_topic").as_string();
@@ -173,12 +173,28 @@ private:
     odom.pose.pose.orientation.x = static_cast<double>(msg->imu_state.quaternion[1]);
     odom.pose.pose.orientation.y = static_cast<double>(msg->imu_state.quaternion[2]);
     odom.pose.pose.orientation.z = static_cast<double>(msg->imu_state.quaternion[3]);
+    // Covariance is conservative and manually tuned for 2D navigation.
+    // X/Y position: 0.25 m² (~0.5 m σ) reflects typical drift under Sport Mode odometry.
+    // Yaw: 0.017 rad² (~7.5° σ) reflects IMU heading accuracy.
+    // Z/roll/pitch: 1e6 (unconstrained) — 2D navigation; these DOFs are not tracked.
+    odom.pose.covariance[0] = 0.25;
+    odom.pose.covariance[7] = 0.25;
+    odom.pose.covariance[14] = 1e6;
+    odom.pose.covariance[21] = 1e6;
+    odom.pose.covariance[28] = 1e6;
+    odom.pose.covariance[35] = 0.017;
 
     // Body-frame velocities from Go2 state
     odom.twist.twist.linear.x  = static_cast<double>(msg->velocity[0]);
     odom.twist.twist.linear.y  = static_cast<double>(msg->velocity[1]);
     odom.twist.twist.linear.z  = 0.0;
     odom.twist.twist.angular.z = static_cast<double>(msg->yaw_speed);
+    odom.twist.covariance[0] = 0.3;
+    odom.twist.covariance[7] = 0.3;
+    odom.twist.covariance[14] = 1e6;
+    odom.twist.covariance[21] = 1e6;
+    odom.twist.covariance[28] = 1e6;
+    odom.twist.covariance[35] = 0.017;
 
     odom_pub_->publish(odom);
 

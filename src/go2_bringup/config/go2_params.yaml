@@ -1,8 +1,6 @@
 # go2_params.yaml
 # Go2-specific parameters — consumed only by go2_bringup.
-#
-# TODO(agibot): Create agibot_d1_bringup/config/d1_params.yaml with equivalent
-#               values for the AgiBot D1 Ultra hardware.
+# Keep robot-specific values here; use a separate params file for non-Go2 robots.
 
 # ── Go2 hardware bridge ───────────────────────────────────────────────────────
 go2_hw_bridge:
@@ -16,8 +14,8 @@ go2_hw_bridge:
     # Sport API request topic consumed by the Go2 onboard controller
     sport_req_topic: "/api/sport/request"
     # Odometry topic published by go2_hw_bridge.
-    # Keep as "odom" for current stack; switch to "/odom_raw" when EKF fusion is enabled.
-    odom_topic: "odom"
+    # Keep as "/odom" for current stack; switch to "/odom_raw" when EKF fusion is enabled.
+    odom_topic: "/odom"
 
     # TF frame names — must match slam_toolbox and nav2_params.yaml
     odom_frame: "odom"
