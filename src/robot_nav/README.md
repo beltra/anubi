@@ -25,7 +25,7 @@ Nav2 /cmd_vel ──► [go2_hw_bridge] ──► Go2 hardware
 | Width (Y) | 0.120 m | **0.310 m** |
 | Height (Z) | 0.100 m | 0.400 m (standing) |
 | Standing height (ground to body centre) | — | **0.280 m** |
-| LiDAR height above ground | — | **0.400 m** |
+| LiDAR height above ground | — | **0.233 m** |
 | Circumscribed radius | — | **0.383 m** |
 
 The URDF `base_link` collision box models the trunk only (440 × 120 × 100 mm).
@@ -85,22 +85,45 @@ ros2 launch go2_bringup go2_bringup.launch.py \
 
 ## Costmap Configuration
 
-- **Local costmap**: PointCloud2 from `/lidar/points`, rolling window 10×10 m
-- **Global costmap**: PointCloud2 from `/lidar/points` + static map layer
-- Obstacle height filter: 0.08 m – 1.8 m (ignores ground, clears ceiling)
+- **Local costmap**: PointCloud2 from `/lidar/points`, rolling window 4×4 m
+- **Global costmap**: PointCloud2 from `/lidar/points` + static map layer, rolling window 30×30 m
+- Obstacle height filter: 0.05 m – 2.0 m
 - Footprint: polygon 0.70×0.31 m (full standing footprint including legs)
 - Inflation radius: 0.58 m (local), 0.68 m (global)
+
+## 3D Obstacle Avoidance (STVL)
+
+### What was changed
+- local_costmap now uses spatio_temporal_voxel_layer instead of obstacle_layer
+- The L1 LiDAR 3D point cloud (/utlidar/cloud) feeds the voxel buffer directly
+- No persistent 3D map is built; voxels decay after voxel_decay seconds (default 3.0 s)
+- The global_costmap is unchanged (2D, static + inflation only)
+- Verified repo wiring uses `/lidar/points` in the `lidar_link` frame, so the active launch/config should keep that topic unless remapped externally
+
+### Launch arguments
+
+| Argument | Default | Effect |
+|---|---|---|
+| `use_stvl` | `true` | Load STVL local costmap config (3D obstacle avoidance) |
+| `use_stvl:=false` | — | Revert to 2D obstacle_layer (nav2_params_2d.yaml) |
+
+### Tuning notes
+- voxel_decay: how many seconds before an unseen obstacle disappears (default 3.0)
+- voxel_size: voxel edge length in metres (default 0.05 m = 5 cm)
+- max_obstacle_height: maximum z of points to mark (default 2.0 m)
+- min_obstacle_height: minimum z of points to mark (default 0.05 m - filters ground returns)
+- publish_voxel_map: set true to visualize the 3D voxel grid in RViz2
 
 ## Key Tuning Points
 
 | Parameter | File | Value | When to change |
 |-----------|------|-------|----------------|
-| `max_laser_range` | `slam_toolbox_params.yaml` | 15.0 m | Large spaces → increase |
+| `max_laser_range` | `slam_toolbox_params.yaml` | 30.0 m | Large spaces → increase |
 | `resolution` | `slam_toolbox_params.yaml` | 0.05 m | Precision vs memory trade-off |
-| `max_vel_x` | `nav2_params.yaml` | 0.5 m/s | Increase when space allows |
-| `inflation_radius` | `nav2_params.yaml` | 0.55 m | Reduce if paths too narrow |
-| `min_height` / `max_height` | `scan_from_cloud.yaml` | −0.40 m / +0.40 m | Adjust for LiDAR tilt or mounting height |
-| `min_obstacle_height` / `max_obstacle_height` | `nav2_params.yaml` | 0.08 m / 1.8 m | Adjust costmap height filter |
+| `max_vel_x` | `nav2_params.yaml` | 1.0 m/s | Increase when space allows |
+| `inflation_radius` | `nav2_params.yaml` | 0.58 m (local), 0.68 m (global) | Reduce if paths too narrow |
+| `min_height` / `max_height` | `scan_from_cloud.yaml` | −0.01 m / +0.01 m | Adjust for LiDAR tilt or mounting height |
+| `min_obstacle_height` / `max_obstacle_height` | `nav2_params.yaml` | 0.05 m / 2.0 m | Adjust costmap height filter |
 
 ## DWB Local Planner — Tuning Notes
 
@@ -111,7 +134,7 @@ were chosen to prevent a failure mode where the robot hangs near its goal:
 |-----------|-------|-----------|
 | `trans_stopped_velocity` | 0.05 m/s | Threshold below which robot is considered "stopped translating". Must be well below `min_vel_x` to avoid premature RotateToGoal activation. |
 | `RotateToGoal.scale` | 16.0 | Half the weight of PathDist/PathAlign (32.0). Prevents heading-alignment from dominating and deadlocking trajectories near the goal. |
-| `BaseObstacle.scale` | 0.1 | Enough weight to keep robot out of occupied cells without overwhelming directional critics. |
+| `BaseObstacle.scale` | 0.2 | Enough weight to keep robot out of occupied cells without overwhelming directional critics. |
 | `failure_tolerance` | 0.5 s | 10 control cycles (at 20 Hz) before recovery is triggered. Provides margin for momentary plan failures without premature recovery cascades. |
 
 **Recovery hang budget** (using the default Nav2 BT): if failure_tolerance fires,

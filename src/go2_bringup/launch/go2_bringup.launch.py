@@ -51,6 +51,12 @@ def generate_launch_description():
 
     # ── Arguments ─────────────────────────────────────────────────────────
     args = [
+        DeclareLaunchArgument(
+            "use_stvl",
+            default_value="true",
+            description="Use SpatioTemporalVoxelLayer for 3D obstacle avoidance"
+                        " in the local costmap. Set false to revert to 2D obstacle layer.",
+        ),
         DeclareLaunchArgument("use_sim_time", default_value="false"),
         DeclareLaunchArgument("map",          default_value="",
                               description="slam_toolbox map file (.posegraph) for"
@@ -67,10 +73,10 @@ def generate_launch_description():
     ]
 
     use_sim_time = LaunchConfiguration("use_sim_time")
+    use_stvl     = LaunchConfiguration("use_stvl")
     map_path     = LaunchConfiguration("map")
     robot_name   = LaunchConfiguration("robot_name")
     rviz         = LaunchConfiguration("rviz")
-    params_file  = LaunchConfiguration("params_file")
     slam_params  = LaunchConfiguration("slam_params")
     slam_mode    = LaunchConfiguration("slam_mode")
     use_safety   = LaunchConfiguration("use_safety")
@@ -141,8 +147,8 @@ def generate_launch_description():
         ),
         launch_arguments={
             "use_sim_time": use_sim_time,
-            "params_file":  params_file,
             "namespace":    robot_name,
+            "use_stvl":     use_stvl,
         }.items(),
     )
 
