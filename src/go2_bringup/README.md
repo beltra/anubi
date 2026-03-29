@@ -31,8 +31,10 @@ The central hardware bridge.  Single node that handles both directions:
 | `lowstate_topic` | `/lowstate` | Go2 low-level state (battery: `bms_state.soc`, `power_v`) |
 | `cmd_vel_topic` | `/cmd_vel` | Nav2 velocity command |
 | `sport_req_topic` | `/api/sport/request` | Go2 sport API endpoint |
+| `odom_topic` | `odom` | Odometry topic published by bridge (`/odom_raw` when fusion is enabled) |
 | `odom_frame` | `odom` | Odometry frame |
 | `base_frame` | `base_footprint` | Robot base frame (2D footprint) |
+| `publish_tf` | `true` | Publish TF `odom → base_footprint` (disable when EKF owns this TF) |
 | `cmd_timeout` | `0.5` s | Stop if no cmd_vel within this time |
 | `max_linear_vel` | `0.8` m/s | Forward/backward limit |
 | `max_lateral_vel` | `0.4` m/s | Lateral limit |

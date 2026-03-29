@@ -32,6 +32,7 @@ Launch arguments
   slam_mode   : 'mapping' | 'localization'  (default: mapping)
   map         : path to .posegraph file (for localization mode)
   use_rviz    : 'true' | 'false'      (default: true)
+  start_nav   : 'true' | 'false'      (default: true)
   slam_params : path to slam_toolbox YAML overrides
   nav_params  : path to Nav2 YAML overrides
   spawn_z     : robot spawn height in m (default: 0.05 — just above ground)
@@ -98,7 +99,7 @@ def generate_launch_description():
         robot_nav_share, 'config', 'slam_toolbox_params.yaml'
     )
     default_nav_params = os.path.join(
-        robot_nav_share, 'config', 'nav2_params.yaml'
+        robot_sim_share, 'config', 'nav2_sim_params.yaml'
     )
     default_rviz_config = os.path.join(
         robot_nav_share, 'rviz', 'nav2.rviz'
@@ -127,6 +128,10 @@ def generate_launch_description():
             description='Launch RViz2',
         ),
         DeclareLaunchArgument(
+            'start_nav', default_value='true',
+            description='Start SLAM + Nav2 after spawning the robot',
+        ),
+        DeclareLaunchArgument(
             'slam_params', default_value=default_slam_params,
             description='Path to slam_toolbox params YAML',
         ),
@@ -150,6 +155,7 @@ def generate_launch_description():
     slam_mode   = LaunchConfiguration('slam_mode')
     map_path    = LaunchConfiguration('map')
     use_rviz    = LaunchConfiguration('use_rviz')
+    start_nav   = LaunchConfiguration('start_nav')
     slam_params = LaunchConfiguration('slam_params')
     nav_params  = LaunchConfiguration('nav_params')
     spawn_z     = LaunchConfiguration('spawn_z')
@@ -265,11 +271,25 @@ def generate_launch_description():
         condition=IfCondition(is_d1),
     )
 
+    cloud_self_filter = Node(
+        package='robot_sim',
+        executable='cloud_self_filter.py',
+        name='cloud_self_filter',
+        output='screen',
+        parameters=[{
+            'use_sim_time': True,
+            'input_topic': '/unilidar/cloud',
+            'output_topic': '/unilidar/cloud_filtered',
+        }],
+        condition=IfCondition(is_go2),
+    )
+
     # ── 4. SLAM (pointcloud_to_laserscan + slam_toolbox) ──────────────
     slam = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(robot_nav_share, 'launch', 'slam.launch.py')
         ),
+        condition=IfCondition(start_nav),
         launch_arguments={
             'use_sim_time': 'true',
             'slam_mode':    slam_mode,
@@ -283,6 +303,7 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(robot_nav_share, 'launch', 'nav2.launch.py')
         ),
+        condition=IfCondition(start_nav),
         launch_arguments={
             'use_sim_time': 'true',
             'params_file':  nav_params,
@@ -326,6 +347,7 @@ def generate_launch_description():
         gazebo_model_path,
         *args,
         gazebo,
+        cloud_self_filter,
         rsp_go2,
         rsp_d1,
         spawn_go2,

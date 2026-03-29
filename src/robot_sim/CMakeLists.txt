@@ -7,4 +7,9 @@ install(DIRECTORY launch config worlds
   DESTINATION share/${PROJECT_NAME}
 )
 
+install(PROGRAMS
+  scripts/cloud_self_filter.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 ament_package()

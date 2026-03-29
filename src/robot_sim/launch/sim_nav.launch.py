@@ -31,7 +31,11 @@ def generate_launch_description():
 
     robot_nav_share = get_package_share_directory('robot_nav')
 
-    default_params = os.path.join(robot_nav_share, 'config', 'nav2_params.yaml')
+    default_params = os.path.join(
+        get_package_share_directory('robot_sim'),
+        'config',
+        'nav2_sim_params.yaml',
+    )
     rviz_config    = os.path.join(robot_nav_share, 'rviz', 'nav2.rviz')
 
     args = [

@@ -3,61 +3,115 @@
   go2_sim.urdf.xacro
   Unitree Go2 - Gazebo Classic (Gazebo 11) simulation model.
 
-  Visual model: official Unitree meshes from
-    https://github.com/unitreerobotics/unitree_ros/tree/master/robots/go2_description
-
-  Leg joints are fixed at the nominal standing pose:
-    hip=0.0 rad, thigh=0.67 rad, calf=-1.30 rad.
-
-  This keeps the robot visually correct while avoiding joint-control instability.
-  The planar_move plugin still drives locomotion via /cmd_vel as before.
-
-  Frame tree:
-    base_footprint (ground reference, Nav2 root)
-      -> base_link (maps to upstream link "base")
-         -> FL_hip -> FL_thigh -> FL_calf -> FL_foot
-         -> FR_hip -> FR_thigh -> FR_calf -> FR_foot
-         -> RL_hip -> RL_thigh -> RL_calf -> RL_foot
-         -> RR_hip -> RR_thigh -> RR_calf -> RR_foot
-         -> imu_link
-         -> lidar_link
-         -> radar
-         -> front_camera_link
-
-  Topics/TF interface (unchanged):
-    /cmd_vel, /odom, /unilidar/cloud, /unilidar/imu
-    TF: odom -> base_footprint -> base_link
+  This model keeps the detailed Go2 visuals while preserving the planar-move
+  physics contract that the old working simulation relied on:
+    - Visual-only legs and sensor pods for appearance
+    - A simplified torso collision plus a flat contact proxy for stable planar motion
+    - Unchanged Nav2-facing topics and frames
 -->
 <robot name="go2_sim" xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-  <!-- L1 LiDAR macro (unchanged) -->
   <xacro:include filename="$(find sensor_models)/urdf/l1_lidar.urdf.xacro"/>
 
-  <!-- Physical constants (upstream go2_description const/urdf values) -->
+  <xacro:property name="mesh_pkg" value="go2_sim"/>
+
   <xacro:property name="trunk_length" value="0.3762"/>
   <xacro:property name="trunk_width" value="0.0935"/>
   <xacro:property name="trunk_height" value="0.114"/>
   <xacro:property name="trunk_mass" value="6.921"/>
+  <!-- Keep the planar-move physics frame at the old stable height.
+       Detailed visuals are offset separately so the rendered model still
+       matches the newer Go2 appearance without raising the COM. -->
+  <xacro:property name="base_z" value="0.335"/>
+  <xacro:property name="visual_z_offset" value="0.045"/>
 
-  <!-- Standing pose -->
+  <xacro:property name="contact_proxy_length" value="0.5794"/>
+  <xacro:property name="contact_proxy_width" value="0.328"/>
+  <xacro:property name="contact_proxy_height" value="0.020"/>
+  <xacro:property name="contact_proxy_z" value="${-(base_z - (contact_proxy_height * 0.5))}"/>
+
   <xacro:property name="q_hip" value="0.0"/>
   <xacro:property name="q_thigh" value="0.67"/>
   <xacro:property name="q_calf" value="-1.30"/>
 
-  <!-- Base height in world when feet are on ground -->
-  <xacro:property name="base_z" value="0.380"/>
-
-  <!-- LiDAR mount from official Unitree Go2 specifications (radar_joint) -->
-  <xacro:property name="lidar_x" value="0.28945"/>
-  <xacro:property name="lidar_y" value="0.0"/>
-  <xacro:property name="lidar_z" value="-0.046825"/>
+  <!-- Lidar mount point (from khaledgabr77/unitree_go2_ros2 reference).
+       The joint uses ${lidar_z + visual_z_offset}, so lidar_z = -0.03 - 0.045 = -0.075
+       to place the sensor at z=-0.03 relative to base_link (same as reference). -->
+  <xacro:property name="lidar_x" value="0.25"/>
+  <xacro:property name="lidar_y" value="-0.038"/>
+  <xacro:property name="lidar_z" value="-0.075"/>
   <xacro:property name="lidar_r" value="0.0"/>
-  <!-- <xacro:property name="lidar_p" value="2.8782"/> -->
   <xacro:property name="lidar_p" value="0.0"/>
   <xacro:property name="lidar_yaw" value="0.0"/>
 
-  <!-- Mesh package (Option A: vendored meshes in go2_sim) -->
-  <xacro:property name="mesh_pkg" value="go2_sim"/>
+  <xacro:macro name="go2_leg_visual" params="
+      prefix
+      hip_x
+      hip_y
+      thigh_y
+      hip_visual_rpy
+      thigh_mesh
+      calf_mesh">
+    <link name="${prefix}_hip">
+      <visual>
+        <origin xyz="0 0 0" rpy="${hip_visual_rpy}"/>
+        <geometry>
+          <mesh filename="package://${mesh_pkg}/meshes/dae/hip.dae"/>
+        </geometry>
+      </visual>
+    </link>
+
+    <joint name="${prefix}_hip_joint" type="fixed">
+      <origin xyz="${hip_x} ${hip_y} ${visual_z_offset}" rpy="${q_hip} 0 0"/>
+      <parent link="base_link"/>
+      <child link="${prefix}_hip"/>
+    </joint>
+
+    <link name="${prefix}_thigh">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://${mesh_pkg}/meshes/dae/${thigh_mesh}"/>
+        </geometry>
+      </visual>
+    </link>
+
+    <joint name="${prefix}_thigh_joint" type="fixed">
+      <origin xyz="0 ${thigh_y} 0" rpy="0 ${q_thigh} 0"/>
+      <parent link="${prefix}_hip"/>
+      <child link="${prefix}_thigh"/>
+    </joint>
+
+    <link name="${prefix}_calf">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://${mesh_pkg}/meshes/dae/${calf_mesh}"/>
+        </geometry>
+      </visual>
+    </link>
+
+    <joint name="${prefix}_calf_joint" type="fixed">
+      <origin xyz="0 0 -0.213" rpy="0 ${q_calf} 0"/>
+      <parent link="${prefix}_thigh"/>
+      <child link="${prefix}_calf"/>
+    </joint>
+
+    <link name="${prefix}_foot">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://${mesh_pkg}/meshes/dae/foot.dae"/>
+        </geometry>
+      </visual>
+    </link>
+
+    <joint name="${prefix}_foot_joint" type="fixed">
+      <origin xyz="0 0 -0.213" rpy="0 0 0"/>
+      <parent link="${prefix}_calf"/>
+      <child link="${prefix}_foot"/>
+    </joint>
+  </xacro:macro>
 
   <link name="base_footprint">
     <visual>
@@ -78,725 +132,63 @@
       <inertia ixx="0.02448" ixy="0.00012166" ixz="0.0014849" iyy="0.098077" iyz="-3.12E-05" izz="0.107"/>
     </inertial>
     <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <origin xyz="0 0 ${visual_z_offset}" rpy="0 0 0"/>
       <geometry>
         <mesh filename="package://${mesh_pkg}/meshes/dae/base.dae"/>
       </geometry>
     </visual>
     <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
         <box size="${trunk_length} ${trunk_width} ${trunk_height}"/>
       </geometry>
     </collision>
-  </link>
-
-  <link name="FL_hip">
-    <inertial>
-      <origin xyz="-0.0054 0.00194 -0.000105" rpy="0 0 0"/>
-      <mass value="0.678"/>
-      <inertia ixx="0.00048" ixy="-3.01E-06" ixz="1.11E-06" iyy="0.000884" iyz="-1.42E-06" izz="0.000596"/>
-    </inertial>
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://${mesh_pkg}/meshes/dae/hip.dae"/>
-      </geometry>
-    </visual>
     <collision>
-      <origin rpy="1.5707963267948966 0 0" xyz="0 0.08 0"/>
+      <origin xyz="0 0 ${contact_proxy_z}" rpy="0 0 0"/>
       <geometry>
-        <cylinder length="0.04" radius="0.046"/>
+        <box size="${contact_proxy_length} ${contact_proxy_width} ${contact_proxy_height}"/>
       </geometry>
     </collision>
   </link>
 
-  <joint name="FL_hip_joint" type="fixed">
-    <origin xyz="0.1934 0.0465 0" rpy="${q_hip} 0 0"/>
-    <parent link="base_link"/>
-    <child link="FL_hip"/>
-  </joint>
-
-  <link name="FL_hip_rotor">
-    <inertial>
-      <origin rpy="0 0 0" xyz="0.0 0.0 0.0"/>
-      <mass value="0.089"/>
-      <inertia ixx="0.000111842" ixy="0.0" ixz="0.0" iyy="0.000059647" iyz="0.0" izz="0.000059647"/>
-    </inertial>
-  </link>
-
-  <joint name="FL_hip_rotor_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.11215 0.04675 0"/>
-    <parent link="base_link"/>
-    <child link="FL_hip_rotor"/>
-  </joint>
-
-  <link name="FL_thigh">
-    <inertial>
-      <origin xyz="-0.00374 -0.0223 -0.0327" rpy="0 0 0"/>
-      <mass value="1.152"/>
-      <inertia ixx="0.00584" ixy="8.72E-05" ixz="-0.000289" iyy="0.0058" iyz="0.000808" izz="0.00103"/>
-    </inertial>
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://${mesh_pkg}/meshes/dae/thigh.dae"/>
-      </geometry>
-    </visual>
-    <collision>
-      <origin rpy="0 1.5707963267948966 0" xyz="0 0 -0.1065"/>
-      <geometry>
-        <box size="0.213 0.0245 0.034"/>
-      </geometry>
-    </collision>
-  </link>
-
-  <joint name="FL_thigh_joint" type="fixed">
-    <origin xyz="0 0.0955 0" rpy="0 ${q_thigh} 0"/>
-    <parent link="FL_hip"/>
-    <child link="FL_thigh"/>
-  </joint>
-
-  <link name="FL_thigh_rotor">
-    <inertial>
-      <origin rpy="0 0 0" xyz="0.0 0.0 0.0"/>
-      <mass value="0.089"/>
-      <inertia ixx="0.000059647" ixy="0.0" ixz="0.0" iyy="0.000111842" iyz="0.0" izz="0.000059647"/>
-    </inertial>
-  </link>
-
-  <joint name="FL_thigh_rotor_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 -0.00015 0"/>
-    <parent link="FL_hip"/>
-    <child link="FL_thigh_rotor"/>
-  </joint>
-
-  <link name="FL_calf">
-    <inertial>
-      <origin xyz="0.00548 -0.000975 -0.115" rpy="0 0 0"/>
-      <mass value="0.154"/>
-      <inertia ixx="0.00108" ixy="3.4E-07" ixz="1.72E-05" iyy="0.0011" iyz="8.28E-06" izz="3.29E-05"/>
-    </inertial>
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://${mesh_pkg}/meshes/dae/calf.dae"/>
-      </geometry>
-    </visual>
-    <collision>
-      <origin rpy="0 -0.21 0" xyz="0.008 0 -0.06"/>
-      <geometry>
-        <cylinder length="0.12" radius="0.012"/>
-      </geometry>
-    </collision>
-  </link>
-
-  <joint name="FL_calf_joint" type="fixed">
-    <origin xyz="0 0 -0.213" rpy="0 ${q_calf} 0"/>
-    <parent link="FL_thigh"/>
-    <child link="FL_calf"/>
-  </joint>
-
-  <link name="FL_calflower">
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <cylinder length="0.065" radius="0.011"/>
-      </geometry>
-    </collision>
-  </link>
-
-  <joint name="FL_calflower_joint" type="fixed">
-    <origin xyz="0.020 0 -0.148" rpy="0 0.05 0"/>
-    <parent link="FL_calf"/>
-    <child link="FL_calflower"/>
-  </joint>
-
-  <link name="FL_calflower1">
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <cylinder length="0.03" radius="0.0155"/>
-      </geometry>
-    </collision>
-  </link>
-
-  <joint name="FL_calflower1_joint" type="fixed">
-    <origin xyz="-0.01 0 -0.04" rpy="0 0.48 0"/>
-    <parent link="FL_calflower"/>
-    <child link="FL_calflower1"/>
-  </joint>
-
-  <link name="FL_calf_rotor">
-    <inertial>
-      <origin rpy="0 0 0" xyz="0.0 0.0 0.0"/>
-      <mass value="0.089"/>
-      <inertia ixx="0.000059647" ixy="0.0" ixz="0.0" iyy="0.000111842" iyz="0.0" izz="0.000059647"/>
-    </inertial>
-  </link>
-
-  <joint name="FL_calf_rotor_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 -0.03235 0"/>
-    <parent link="FL_thigh"/>
-    <child link="FL_calf_rotor"/>
-  </joint>
-
-  <link name="FL_foot">
-    <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="0.04"/>
-      <inertia ixx="9.6e-06" ixy="0" ixz="0" iyy="9.6e-06" iyz="0" izz="9.6e-06"/>
-    </inertial>
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://${mesh_pkg}/meshes/dae/foot.dae"/>
-      </geometry>
-    </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="-0.002 0 0"/>
-      <geometry>
-        <sphere radius="0.022"/>
-      </geometry>
-    </collision>
-  </link>
-
-  <joint name="FL_foot_joint" type="fixed">
-    <origin xyz="0 0 -0.213" rpy="0 0 0"/>
-    <parent link="FL_calf"/>
-    <child link="FL_foot"/>
-  </joint>
-
-  <link name="FR_hip">
-    <inertial>
-      <origin xyz="-0.0054 -0.00194 -0.000105" rpy="0 0 0"/>
-      <mass value="0.678"/>
-      <inertia ixx="0.00048" ixy="3.01E-06" ixz="1.11E-06" iyy="0.000884" iyz="1.42E-06" izz="0.000596"/>
-    </inertial>
-    <visual>
-      <origin xyz="0 0 0" rpy="3.1415 0 0"/>
-      <geometry>
-        <mesh filename="package://${mesh_pkg}/meshes/dae/hip.dae"/>
-      </geometry>
-    </visual>
-    <collision>
-      <origin rpy="1.5707963267948966 0 0" xyz="0 -0.08 0"/>
-      <geometry>
-        <cylinder length="0.04" radius="0.046"/>
-      </geometry>
-    </collision>
-  </link>
-
-  <joint name="FR_hip_joint" type="fixed">
-    <origin xyz="0.1934 -0.0465 0" rpy="${q_hip} 0 0"/>
-    <parent link="base_link"/>
-    <child link="FR_hip"/>
-  </joint>
-
-  <link name="FR_hip_rotor">
-    <inertial>
-      <origin rpy="0 0 0" xyz="0.0 0.0 0.0"/>
-      <mass value="0.089"/>
-      <inertia ixx="0.000111842" ixy="0.0" ixz="0.0" iyy="0.000059647" iyz="0.0" izz="0.000059647"/>
-    </inertial>
-  </link>
-
-  <joint name="FR_hip_rotor_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.11215 -0.04675 0"/>
-    <parent link="base_link"/>
-    <child link="FR_hip_rotor"/>
-  </joint>
-
-  <link name="FR_thigh">
-    <inertial>
-      <origin xyz="-0.00374 0.0223 -0.0327" rpy="0 0 0"/>
-      <mass value="1.152"/>
-      <inertia ixx="0.00584" ixy="-8.72E-05" ixz="-0.000289" iyy="0.0058" iyz="-0.000808" izz="0.00103"/>
-    </inertial>
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://${mesh_pkg}/meshes/dae/thigh_mirror.dae"/>
-      </geometry>
-    </visual>
-    <collision>
-      <origin rpy="0 1.5707963267948966 0" xyz="0 0 -0.1065"/>
-      <geometry>
-        <box size="0.213 0.0245 0.034"/>
-      </geometry>
-    </collision>
-  </link>
-
-  <joint name="FR_thigh_joint" type="fixed">
-    <origin xyz="0 -0.0955 0" rpy="0 ${q_thigh} 0"/>
-    <parent link="FR_hip"/>
-    <child link="FR_thigh"/>
-  </joint>
-
-  <link name="FR_thigh_rotor">
-    <inertial>
-      <origin rpy="0 0 0" xyz="0.0 0.0 0.0"/>
-      <mass value="0.089"/>
-      <inertia ixx="0.000059647" ixy="0.0" ixz="0.0" iyy="0.000111842" iyz="0.0" izz="0.000059647"/>
-    </inertial>
-  </link>
-
-  <joint name="FR_thigh_rotor_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0.00015 0"/>
-    <parent link="FR_hip"/>
-    <child link="FR_thigh_rotor"/>
-  </joint>
-
-  <link name="FR_calf">
-    <inertial>
-      <origin xyz="0.00548 0.000975 -0.115" rpy="0 0 0"/>
-      <mass value="0.154"/>
-      <inertia ixx="0.00108" ixy="-3.4E-07" ixz="1.72E-05" iyy="0.0011" iyz="-8.28E-06" izz="3.29E-05"/>
-    </inertial>
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://${mesh_pkg}/meshes/dae/calf_mirror.dae"/>
-      </geometry>
-    </visual>
-    <collision>
-      <origin rpy="0 -0.2 0" xyz="0.01 0 -0.06"/>
-      <geometry>
-        <cylinder length="0.12" radius="0.013"/>
-      </geometry>
-    </collision>
-  </link>
-
-  <joint name="FR_calf_joint" type="fixed">
-    <origin xyz="0 0 -0.213" rpy="0 ${q_calf} 0"/>
-    <parent link="FR_thigh"/>
-    <child link="FR_calf"/>
-  </joint>
-
-  <link name="FR_calflower">
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <cylinder length="0.065" radius="0.011"/>
-      </geometry>
-    </collision>
-  </link>
-
-  <joint name="FR_calflower_joint" type="fixed">
-    <origin xyz="0.020 0 -0.148" rpy="0 0.05 0"/>
-    <parent link="FR_calf"/>
-    <child link="FR_calflower"/>
-  </joint>
-
-  <link name="FR_calflower1">
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <cylinder length="0.03" radius="0.0155"/>
-      </geometry>
-    </collision>
-  </link>
-
-  <joint name="FR_calflower1_joint" type="fixed">
-    <origin xyz="-0.01 0 -0.04" rpy="0 0.48 0"/>
-    <parent link="FR_calflower"/>
-    <child link="FR_calflower1"/>
-  </joint>
-
-  <link name="FR_calf_rotor">
-    <inertial>
-      <origin rpy="0 0 0" xyz="0.0 0.0 0.0"/>
-      <mass value="0.089"/>
-      <inertia ixx="0.000059647" ixy="0.0" ixz="0.0" iyy="0.000111842" iyz="0.0" izz="0.000059647"/>
-    </inertial>
-  </link>
-
-  <joint name="FR_calf_rotor_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0.03235 0"/>
-    <parent link="FR_thigh"/>
-    <child link="FR_calf_rotor"/>
-  </joint>
-
-  <link name="FR_foot">
-    <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="0.04"/>
-      <inertia ixx="9.6e-06" ixy="0" ixz="0" iyy="9.6e-06" iyz="0" izz="9.6e-06"/>
-    </inertial>
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://${mesh_pkg}/meshes/dae/foot.dae"/>
-      </geometry>
-    </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="-0.002 0 0"/>
-      <geometry>
-        <sphere radius="0.022"/>
-      </geometry>
-    </collision>
-  </link>
-
-  <joint name="FR_foot_joint" type="fixed">
-    <origin xyz="0 0 -0.213" rpy="0 0 0"/>
-    <parent link="FR_calf"/>
-    <child link="FR_foot"/>
-  </joint>
-
-  <link name="RL_hip">
-    <inertial>
-      <origin xyz="0.0054 0.00194 -0.000105" rpy="0 0 0"/>
-      <mass value="0.678"/>
-      <inertia ixx="0.00048" ixy="3.01E-06" ixz="-1.11E-06" iyy="0.000884" iyz="-1.42E-06" izz="0.000596"/>
-    </inertial>
-    <visual>
-      <origin xyz="0 0 0" rpy="0 3.1415 0"/>
-      <geometry>
-        <mesh filename="package://${mesh_pkg}/meshes/dae/hip.dae"/>
-      </geometry>
-    </visual>
-    <collision>
-      <origin rpy="1.5707963267948966 0 0" xyz="0 0.08 0"/>
-      <geometry>
-        <cylinder length="0.04" radius="0.046"/>
-      </geometry>
-    </collision>
-  </link>
-
-  <joint name="RL_hip_joint" type="fixed">
-    <origin xyz="-0.1934 0.0465 0" rpy="${q_hip} 0 0"/>
-    <parent link="base_link"/>
-    <child link="RL_hip"/>
-  </joint>
-
-  <link name="RL_hip_rotor">
-    <inertial>
-      <origin rpy="0 0 0" xyz="0.0 0.0 0.0"/>
-      <mass value="0.089"/>
-      <inertia ixx="0.000111842" ixy="0.0" ixz="0.0" iyy="0.000059647" iyz="0.0" izz="0.000059647"/>
-    </inertial>
-  </link>
-
-  <joint name="RL_hip_rotor_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="-0.11215 0.04675 0"/>
-    <parent link="base_link"/>
-    <child link="RL_hip_rotor"/>
-  </joint>
-
-  <link name="RL_thigh">
-    <inertial>
-      <origin xyz="-0.00374 -0.0223 -0.0327" rpy="0 0 0"/>
-      <mass value="1.152"/>
-      <inertia ixx="0.00584" ixy="8.72E-05" ixz="-0.000289" iyy="0.0058" iyz="0.000808" izz="0.00103"/>
-    </inertial>
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://${mesh_pkg}/meshes/dae/thigh.dae"/>
-      </geometry>
-    </visual>
-    <collision>
-      <origin rpy="0 1.5707963267948966 0" xyz="0 0 -0.1065"/>
-      <geometry>
-        <box size="0.213 0.0245 0.034"/>
-      </geometry>
-    </collision>
-  </link>
-
-  <joint name="RL_thigh_joint" type="fixed">
-    <origin xyz="0 0.0955 0" rpy="0 ${q_thigh} 0"/>
-    <parent link="RL_hip"/>
-    <child link="RL_thigh"/>
-  </joint>
-
-  <link name="RL_thigh_rotor">
-    <inertial>
-      <origin rpy="0 0 0" xyz="0.0 0.0 0.0"/>
-      <mass value="0.089"/>
-      <inertia ixx="0.000059647" ixy="0.0" ixz="0.0" iyy="0.000111842" iyz="0.0" izz="0.000059647"/>
-    </inertial>
-  </link>
-
-  <joint name="RL_thigh_rotor_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 -0.00015 0"/>
-    <parent link="RL_hip"/>
-    <child link="RL_thigh_rotor"/>
-  </joint>
-
-  <link name="RL_calf">
-    <inertial>
-      <origin xyz="0.00548 -0.000975 -0.115" rpy="0 0 0"/>
-      <mass value="0.154"/>
-      <inertia ixx="0.00108" ixy="3.4E-07" ixz="1.72E-05" iyy="0.0011" iyz="8.28E-06" izz="3.29E-05"/>
-    </inertial>
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://${mesh_pkg}/meshes/dae/calf.dae"/>
-      </geometry>
-    </visual>
-    <collision>
-      <origin rpy="0 -0.2 0" xyz="0.01 0 -0.06"/>
-      <geometry>
-        <cylinder length="0.12" radius="0.013"/>
-      </geometry>
-    </collision>
-  </link>
-
-  <joint name="RL_calf_joint" type="fixed">
-    <origin xyz="0 0 -0.213" rpy="0 ${q_calf} 0"/>
-    <parent link="RL_thigh"/>
-    <child link="RL_calf"/>
-  </joint>
-
-  <link name="RL_calflower">
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <cylinder length="0.065" radius="0.011"/>
-      </geometry>
-    </collision>
-  </link>
-
-  <joint name="RL_calflower_joint" type="fixed">
-    <origin xyz="0.020 0 -0.148" rpy="0 0.05 0"/>
-    <parent link="RL_calf"/>
-    <child link="RL_calflower"/>
-  </joint>
-
-  <link name="RL_calflower1">
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <cylinder length="0.03" radius="0.0155"/>
-      </geometry>
-    </collision>
-  </link>
-
-  <joint name="RL_calflower1_joint" type="fixed">
-    <origin xyz="-0.01 0 -0.04" rpy="0 0.48 0"/>
-    <parent link="RL_calflower"/>
-    <child link="RL_calflower1"/>
-  </joint>
-
-  <link name="RL_calf_rotor">
-    <inertial>
-      <origin rpy="0 0 0" xyz="0.0 0.0 0.0"/>
-      <mass value="0.089"/>
-      <inertia ixx="0.000059647" ixy="0.0" ixz="0.0" iyy="0.000111842" iyz="0.0" izz="0.000059647"/>
-    </inertial>
-  </link>
-
-  <joint name="RL_calf_rotor_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 -0.03235 0"/>
-    <parent link="RL_thigh"/>
-    <child link="RL_calf_rotor"/>
-  </joint>
-
-  <link name="RL_foot">
-    <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="0.04"/>
-      <inertia ixx="9.6e-06" ixy="0" ixz="0" iyy="9.6e-06" iyz="0" izz="9.6e-06"/>
-    </inertial>
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://${mesh_pkg}/meshes/dae/foot.dae"/>
-      </geometry>
-    </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="-0.002 0 0"/>
-      <geometry>
-        <sphere radius="0.022"/>
-      </geometry>
-    </collision>
-  </link>
-
-  <joint name="RL_foot_joint" type="fixed">
-    <origin xyz="0 0 -0.213" rpy="0 0 0"/>
-    <parent link="RL_calf"/>
-    <child link="RL_foot"/>
-  </joint>
-
-  <link name="RR_hip">
-    <inertial>
-      <origin xyz="0.0054 -0.00194 -0.000105" rpy="0 0 0"/>
-      <mass value="0.678"/>
-      <inertia ixx="0.00048" ixy="-3.01E-06" ixz="-1.11E-06" iyy="0.000884" iyz="1.42E-06" izz="0.000596"/>
-    </inertial>
-    <visual>
-      <origin xyz="0 0 0" rpy="3.1415 3.1415 0"/>
-      <geometry>
-        <mesh filename="package://${mesh_pkg}/meshes/dae/hip.dae"/>
-      </geometry>
-    </visual>
-    <collision>
-      <origin rpy="1.5707963267948966 0 0" xyz="0 -0.08 0"/>
-      <geometry>
-        <cylinder length="0.04" radius="0.046"/>
-      </geometry>
-    </collision>
-  </link>
-
-  <joint name="RR_hip_joint" type="fixed">
-    <origin xyz="-0.1934 -0.0465 0" rpy="${q_hip} 0 0"/>
-    <parent link="base_link"/>
-    <child link="RR_hip"/>
-  </joint>
-
-  <link name="RR_hip_rotor">
-    <inertial>
-      <origin rpy="0 0 0" xyz="0.0 0.0 0.0"/>
-      <mass value="0.089"/>
-      <inertia ixx="0.000111842" ixy="0.0" ixz="0.0" iyy="0.000059647" iyz="0.0" izz="0.000059647"/>
-    </inertial>
-  </link>
-
-  <joint name="RR_hip_rotor_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="-0.11215 -0.04675 0"/>
-    <parent link="base_link"/>
-    <child link="RR_hip_rotor"/>
-  </joint>
-
-  <link name="RR_thigh">
-    <inertial>
-      <origin xyz="-0.00374 0.0223 -0.0327" rpy="0 0 0"/>
-      <mass value="1.152"/>
-      <inertia ixx="0.00584" ixy="-8.72E-05" ixz="-0.000289" iyy="0.0058" iyz="-0.000808" izz="0.00103"/>
-    </inertial>
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://${mesh_pkg}/meshes/dae/thigh_mirror.dae"/>
-      </geometry>
-    </visual>
-    <collision>
-      <origin rpy="0 1.5707963267948966 0" xyz="0 0 -0.1065"/>
-      <geometry>
-        <box size="0.213 0.0245 0.034"/>
-      </geometry>
-    </collision>
-  </link>
-
-  <joint name="RR_thigh_joint" type="fixed">
-    <origin xyz="0 -0.0955 0" rpy="0 ${q_thigh} 0"/>
-    <parent link="RR_hip"/>
-    <child link="RR_thigh"/>
-  </joint>
-
-  <link name="RR_thigh_rotor">
-    <inertial>
-      <origin rpy="0 0 0" xyz="0.0 0.0 0.0"/>
-      <mass value="0.089"/>
-      <inertia ixx="0.000059647" ixy="0.0" ixz="0.0" iyy="0.000111842" iyz="0.0" izz="0.000059647"/>
-    </inertial>
-  </link>
-
-  <joint name="RR_thigh_rotor_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0.00015 0"/>
-    <parent link="RR_hip"/>
-    <child link="RR_thigh_rotor"/>
-  </joint>
-
-  <link name="RR_calf">
-    <inertial>
-      <origin xyz="0.00548 0.000975 -0.115" rpy="0 0 0"/>
-      <mass value="0.154"/>
-      <inertia ixx="0.00108" ixy="-3.4E-07" ixz="1.72E-05" iyy="0.0011" iyz="-8.28E-06" izz="3.29E-05"/>
-    </inertial>
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://${mesh_pkg}/meshes/dae/calf_mirror.dae"/>
-      </geometry>
-    </visual>
-    <collision>
-      <origin rpy="0 -0.2 0" xyz="0.01 0 -0.06"/>
-      <geometry>
-        <cylinder length="0.12" radius="0.013"/>
-      </geometry>
-    </collision>
-  </link>
-
-  <joint name="RR_calf_joint" type="fixed">
-    <origin xyz="0 0 -0.213" rpy="0 ${q_calf} 0"/>
-    <parent link="RR_thigh"/>
-    <child link="RR_calf"/>
-  </joint>
-
-  <link name="RR_calflower">
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <cylinder length="0.065" radius="0.011"/>
-      </geometry>
-    </collision>
-  </link>
-
-  <joint name="RR_calflower_joint" type="fixed">
-    <origin xyz="0.020 0 -0.148" rpy="0 0.05 0"/>
-    <parent link="RR_calf"/>
-    <child link="RR_calflower"/>
-  </joint>
-
-  <link name="RR_calflower1">
-    <collision>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <geometry>
-        <cylinder length="0.03" radius="0.0155"/>
-      </geometry>
-    </collision>
-  </link>
-
-  <joint name="RR_calflower1_joint" type="fixed">
-    <origin xyz="-0.01 0 -0.04" rpy="0 0.48 0"/>
-    <parent link="RR_calflower"/>
-    <child link="RR_calflower1"/>
-  </joint>
-
-  <link name="RR_calf_rotor">
-    <inertial>
-      <origin rpy="0 0 0" xyz="0.0 0.0 0.0"/>
-      <mass value="0.089"/>
-      <inertia ixx="0.000059647" ixy="0.0" ixz="0.0" iyy="0.000111842" iyz="0.0" izz="0.000059647"/>
-    </inertial>
-  </link>
-
-  <joint name="RR_calf_rotor_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0.03235 0"/>
-    <parent link="RR_thigh"/>
-    <child link="RR_calf_rotor"/>
-  </joint>
-
-  <link name="RR_foot">
-    <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="0.04"/>
-      <inertia ixx="9.6e-06" ixy="0" ixz="0" iyy="9.6e-06" iyz="0" izz="9.6e-06"/>
-    </inertial>
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <mesh filename="package://${mesh_pkg}/meshes/dae/foot.dae"/>
-      </geometry>
-    </visual>
-    <collision>
-      <origin rpy="0 0 0" xyz="-0.002 0 0"/>
-      <geometry>
-        <sphere radius="0.022"/>
-      </geometry>
-    </collision>
-  </link>
-
-  <joint name="RR_foot_joint" type="fixed">
-    <origin xyz="0 0 -0.213" rpy="0 0 0"/>
-    <parent link="RR_calf"/>
-    <child link="RR_foot"/>
-  </joint>
+  <xacro:go2_leg_visual
+      prefix="FL"
+      hip_x="0.1934"
+      hip_y="0.0465"
+      thigh_y="0.0955"
+      hip_visual_rpy="0 0 0"
+      thigh_mesh="thigh.dae"
+      calf_mesh="calf.dae"/>
+
+  <xacro:go2_leg_visual
+      prefix="FR"
+      hip_x="0.1934"
+      hip_y="-0.0465"
+      thigh_y="-0.0955"
+      hip_visual_rpy="3.141592653589793 0 0"
+      thigh_mesh="thigh_mirror.dae"
+      calf_mesh="calf_mirror.dae"/>
+
+  <xacro:go2_leg_visual
+      prefix="RL"
+      hip_x="-0.1934"
+      hip_y="0.0465"
+      thigh_y="0.0955"
+      hip_visual_rpy="0 3.141592653589793 0"
+      thigh_mesh="thigh.dae"
+      calf_mesh="calf.dae"/>
+
+  <xacro:go2_leg_visual
+      prefix="RR"
+      hip_x="-0.1934"
+      hip_y="-0.0465"
+      thigh_y="-0.0955"
+      hip_visual_rpy="3.141592653589793 3.141592653589793 0"
+      thigh_mesh="thigh_mirror.dae"
+      calf_mesh="calf_mirror.dae"/>
 
   <joint name="imu_joint" type="fixed">
-    <origin xyz="-0.02557 0 0.04232" rpy="0 0 0"/>
+    <origin xyz="-0.02557 0 ${0.04232 + visual_z_offset}" rpy="0 0 0"/>
     <parent link="base_link"/>
     <child link="imu_link"/>
   </joint>
@@ -810,21 +202,15 @@
   </link>
 
   <joint name="radar_joint" type="fixed">
-    <origin xyz="0.28945 0 -0.046825" rpy="0 2.8782 0"/>
+    <origin xyz="0.28945 0 ${-0.046825 + visual_z_offset}" rpy="0 2.8782 0"/>
     <parent link="base_link"/>
     <child link="radar"/>
   </joint>
 
-  <link name="radar">
-    <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="0.001"/>
-      <inertia ixx="1e-7" ixy="0" ixz="0" iyy="1e-7" iyz="0" izz="1e-7"/>
-    </inertial>
-  </link>
+  <link name="radar"/>
 
   <joint name="front_camera_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.32715 -0.00003 0.04297"/>
+    <origin xyz="0.32715 -0.00003 ${0.04297 + visual_z_offset}" rpy="0 0 0"/>
     <parent link="base_link"/>
     <child link="front_camera_link"/>
   </joint>
@@ -834,7 +220,7 @@
   <joint name="base_link_to_lidar" type="fixed">
     <parent link="base_link"/>
     <child link="lidar_link"/>
-    <origin xyz="${lidar_x} ${lidar_y} ${lidar_z}" rpy="${lidar_r} ${lidar_p} ${lidar_yaw}"/>
+    <origin xyz="${lidar_x} ${lidar_y} ${lidar_z + visual_z_offset}" rpy="${lidar_r} ${lidar_p} ${lidar_yaw}"/>
   </joint>
 
   <link name="lidar_link">
@@ -847,12 +233,6 @@
         <color rgba="0.05 0.05 0.05 1.0"/>
       </material>
     </visual>
-    <collision>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <cylinder radius="0.04" length="0.06"/>
-      </geometry>
-    </collision>
     <inertial>
       <mass value="0.001"/>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -860,7 +240,6 @@
     </inertial>
   </link>
 
-  <!-- Gazebo base properties -->
   <gazebo reference="base_link">
     <material>Gazebo/DarkGrey</material>
     <self_collide>false</self_collide>
@@ -872,104 +251,6 @@
     <material>Gazebo/Black</material>
   </gazebo>
 
-  <!-- Gazebo friction and self-collision from upstream gazebo.xacro -->
-  <gazebo reference="FL_hip">
-    <mu1>0.2</mu1>
-    <mu2>0.2</mu2>
-  </gazebo>
-  <gazebo reference="FL_thigh">
-    <mu1>0.2</mu1>
-    <mu2>0.2</mu2>
-    <self_collide>1</self_collide>
-    <kp value="1000000.0"/>
-    <kd value="1.0"/>
-  </gazebo>
-  <gazebo reference="FL_calf">
-    <mu1>0.2</mu1>
-    <mu2>0.2</mu2>
-    <self_collide>1</self_collide>
-  </gazebo>
-  <gazebo reference="FL_foot">
-    <mu1>0.6</mu1>
-    <mu2>0.6</mu2>
-    <self_collide>1</self_collide>
-    <kp value="1000000.0"/>
-    <kd value="1.0"/>
-  </gazebo>
-
-  <gazebo reference="FR_hip">
-    <mu1>0.2</mu1>
-    <mu2>0.2</mu2>
-  </gazebo>
-  <gazebo reference="FR_thigh">
-    <mu1>0.2</mu1>
-    <mu2>0.2</mu2>
-    <self_collide>1</self_collide>
-    <kp value="1000000.0"/>
-    <kd value="1.0"/>
-  </gazebo>
-  <gazebo reference="FR_calf">
-    <mu1>0.2</mu1>
-    <mu2>0.2</mu2>
-    <self_collide>1</self_collide>
-  </gazebo>
-  <gazebo reference="FR_foot">
-    <mu1>0.6</mu1>
-    <mu2>0.6</mu2>
-    <self_collide>1</self_collide>
-    <kp value="1000000.0"/>
-    <kd value="1.0"/>
-  </gazebo>
-
-  <gazebo reference="RL_hip">
-    <mu1>0.2</mu1>
-    <mu2>0.2</mu2>
-  </gazebo>
-  <gazebo reference="RL_thigh">
-    <mu1>0.2</mu1>
-    <mu2>0.2</mu2>
-    <self_collide>1</self_collide>
-    <kp value="1000000.0"/>
-    <kd value="1.0"/>
-  </gazebo>
-  <gazebo reference="RL_calf">
-    <mu1>0.2</mu1>
-    <mu2>0.2</mu2>
-    <self_collide>1</self_collide>
-  </gazebo>
-  <gazebo reference="RL_foot">
-    <mu1>0.6</mu1>
-    <mu2>0.6</mu2>
-    <self_collide>1</self_collide>
-    <kp value="1000000.0"/>
-    <kd value="1.0"/>
-  </gazebo>
-
-  <gazebo reference="RR_hip">
-    <mu1>0.2</mu1>
-    <mu2>0.2</mu2>
-  </gazebo>
-  <gazebo reference="RR_thigh">
-    <mu1>0.2</mu1>
-    <mu2>0.2</mu2>
-    <self_collide>1</self_collide>
-    <kp value="1000000.0"/>
-    <kd value="1.0"/>
-  </gazebo>
-  <gazebo reference="RR_calf">
-    <mu1>0.2</mu1>
-    <mu2>0.2</mu2>
-    <self_collide>1</self_collide>
-  </gazebo>
-  <gazebo reference="RR_foot">
-    <mu1>0.6</mu1>
-    <mu2>0.6</mu2>
-    <self_collide>1</self_collide>
-    <kp value="1000000.0"/>
-    <kd value="1.0"/>
-  </gazebo>
-
-  <!-- PLUGIN 1: planar_move (UNCHANGED) -->
   <gazebo>
     <plugin name="gazebo_ros_planar_move" filename="libgazebo_ros_planar_move.so">
       <ros>
@@ -987,22 +268,22 @@
     </plugin>
   </gazebo>
 
-  <!-- PLUGIN 2: L1 LiDAR (UNCHANGED) -->
+  <!-- L1 sensor parameters from khaledgabr77/unitree_go2_ros2 reference:
+       600 h-samples, 30 v-channels, range 0.8–30 m, noise σ=0.008 m. -->
   <xacro:l1_lidar_gazebo
       parent_link="lidar_link"
       topic="/unilidar/cloud"
       update_rate="10"
-      h_samples="360"
-      v_samples="18"
+      h_samples="600"
+      v_samples="30"
       v_min_angle_deg="-45.0"
       v_max_angle_deg="45.0"
-      range_min="0.05"
+      range_min="0.8"
       range_max="30.0"
-      noise_stddev="0.02"
+      noise_stddev="0.008"
       visualize="false"
   />
 
-  <!-- PLUGIN 3: IMU (UNCHANGED) -->
   <gazebo reference="imu_link">
     <sensor type="imu" name="go2_imu">
       <always_on>true</always_on>

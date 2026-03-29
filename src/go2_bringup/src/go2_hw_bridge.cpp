@@ -69,8 +69,10 @@ public:
     declare_parameter<std::string>("lowstate_topic",   "/lowstate");
     declare_parameter<std::string>("cmd_vel_topic",    "/cmd_vel");
     declare_parameter<std::string>("sport_req_topic",  "/api/sport/request");
+    declare_parameter<std::string>("odom_topic",       "odom");
     declare_parameter<std::string>("odom_frame",       "odom");
     declare_parameter<std::string>("base_frame",       "base_footprint");
+    declare_parameter<bool>("publish_tf",              true);
     declare_parameter<double>("cmd_timeout",           0.5);   // [s] watchdog
     declare_parameter<double>("max_linear_vel",        0.8);   // [m/s]
     declare_parameter<double>("max_lateral_vel",       0.4);   // [m/s]
@@ -80,8 +82,10 @@ public:
     lowstate_topic_ = get_parameter("lowstate_topic").as_string();
     cmd_vel_topic_  = get_parameter("cmd_vel_topic").as_string();
     sport_topic_    = get_parameter("sport_req_topic").as_string();
+    odom_topic_     = get_parameter("odom_topic").as_string();
     odom_frame_     = get_parameter("odom_frame").as_string();
     base_frame_     = get_parameter("base_frame").as_string();
+    publish_tf_     = get_parameter("publish_tf").as_bool();
     cmd_timeout_    = get_parameter("cmd_timeout").as_double();
     max_lin_        = get_parameter("max_linear_vel").as_double();
     max_lat_        = get_parameter("max_lateral_vel").as_double();
@@ -89,7 +93,7 @@ public:
 
     // ── Publishers ────────────────────────────────────────────────────────
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
-    odom_pub_   = create_publisher<nav_msgs::msg::Odometry>("odom", rclcpp::QoS(10));
+    odom_pub_   = create_publisher<nav_msgs::msg::Odometry>(odom_topic_, rclcpp::QoS(10));
     status_pub_ = create_publisher<robot_common_interfaces::msg::RobotStatus>(
       "/robot_status", rclcpp::QoS(10).transient_local());
     sport_pub_  = create_publisher<unitree_api::msg::Request>(
@@ -121,13 +125,13 @@ public:
 
     RCLCPP_INFO(
       get_logger(),
-      "Go2HwBridge ready.  state=%s  lowstate=%s  cmd=%s  sport=%s",
+      "Go2HwBridge ready.  state=%s  lowstate=%s  cmd=%s  odom=%s  sport=%s",
       state_topic_.c_str(), lowstate_topic_.c_str(),
-      cmd_vel_topic_.c_str(), sport_topic_.c_str());
+      cmd_vel_topic_.c_str(), odom_topic_.c_str(), sport_topic_.c_str());
     RCLCPP_INFO(
       get_logger(),
-      "  limits: lin=%.2f lat=%.2f ang=%.2f  watchdog=%.1fs",
-      max_lin_, max_lat_, max_ang_, cmd_timeout_);
+      "  limits: lin=%.2f lat=%.2f ang=%.2f  watchdog=%.1fs  publish_tf=%s",
+      max_lin_, max_lat_, max_ang_, cmd_timeout_, publish_tf_ ? "true" : "false");
   }
 
 private:
@@ -178,18 +182,20 @@ private:
 
     odom_pub_->publish(odom);
 
-    // ── TF: odom → base_footprint ────────────────────────────────────────
-    geometry_msgs::msg::TransformStamped tf;
-    tf.header.stamp    = stamp;
-    tf.header.frame_id = odom_frame_;
-    tf.child_frame_id  = base_frame_;
+    if (publish_tf_) {
+      // ── TF: odom → base_footprint ──────────────────────────────────────
+      geometry_msgs::msg::TransformStamped tf;
+      tf.header.stamp    = stamp;
+      tf.header.frame_id = odom_frame_;
+      tf.child_frame_id  = base_frame_;
 
-    tf.transform.translation.x = odom.pose.pose.position.x;
-    tf.transform.translation.y = odom.pose.pose.position.y;
-    tf.transform.translation.z = 0.0;
-    tf.transform.rotation      = odom.pose.pose.orientation;
+      tf.transform.translation.x = odom.pose.pose.position.x;
+      tf.transform.translation.y = odom.pose.pose.position.y;
+      tf.transform.translation.z = 0.0;
+      tf.transform.rotation      = odom.pose.pose.orientation;
 
-    tf_broadcaster_->sendTransform(tf);
+      tf_broadcaster_->sendTransform(tf);
+    }
 
     // Cache state for status publisher
     last_state_ = *msg;
@@ -291,8 +297,10 @@ private:
   std::string lowstate_topic_;
   std::string cmd_vel_topic_;
   std::string sport_topic_;
+  std::string odom_topic_;
   std::string odom_frame_;
   std::string base_frame_;
+  bool publish_tf_;
   double cmd_timeout_;
   double max_lin_, max_lat_, max_ang_;
 

@@ -50,6 +50,7 @@ dynamic linking (the default in ROS 2 / colcon workspaces).
 |------|---------|
 | `slam.launch.py` | pointcloud_to_laserscan + slam_toolbox |
 | `nav2.launch.py` | Nav2 navigation nodes |
+| `ekf.launch.py` | Optional robot_localization EKF (not enabled by default) |
 
 ## Config Files
 
@@ -58,6 +59,7 @@ dynamic linking (the default in ROS 2 / colcon workspaces).
 | `config/slam_toolbox_params.yaml` | SLAM algorithm tuning |
 | `config/scan_from_cloud.yaml` | PointCloud2 → LaserScan conversion params |
 | `config/nav2_params.yaml` | DWB controller, NavFn planner, costmaps |
+| `config/ekf_fusion_params.yaml` | Optional EKF template for `/odom_raw` + IMU + lidar odom fusion |
 
 ---
 

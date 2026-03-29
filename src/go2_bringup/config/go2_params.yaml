@@ -15,10 +15,16 @@ go2_hw_bridge:
     cmd_vel_topic:   "/cmd_vel"
     # Sport API request topic consumed by the Go2 onboard controller
     sport_req_topic: "/api/sport/request"
+    # Odometry topic published by go2_hw_bridge.
+    # Keep as "odom" for current stack; switch to "/odom_raw" when EKF fusion is enabled.
+    odom_topic: "odom"
 
     # TF frame names — must match slam_toolbox and nav2_params.yaml
     odom_frame: "odom"
     base_frame: "base_footprint"
+    # When false, go2_hw_bridge publishes Odometry only (no odom->base TF).
+    # Set false when robot_localization owns odom->base TF publication.
+    publish_tf: true
 
     # Safety: stop the robot if no /cmd_vel received within this many seconds
     cmd_timeout: 0.5
