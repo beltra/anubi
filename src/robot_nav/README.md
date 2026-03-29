@@ -95,10 +95,9 @@ ros2 launch go2_bringup go2_bringup.launch.py \
 
 ### What was changed
 - local_costmap now uses spatio_temporal_voxel_layer instead of obstacle_layer
-- The L1 LiDAR 3D point cloud (/utlidar/cloud) feeds the voxel buffer directly
+- The L1 LiDAR 3D point cloud (/lidar/points) feeds the voxel buffer directly
 - No persistent 3D map is built; voxels decay after voxel_decay seconds (default 3.0 s)
 - The global_costmap is unchanged (2D, static + inflation only)
-- Verified repo wiring uses `/lidar/points` in the `lidar_link` frame, so the active launch/config should keep that topic unless remapped externally
 
 ### Launch arguments
 
