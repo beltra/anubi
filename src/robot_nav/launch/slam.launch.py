@@ -3,7 +3,7 @@ slam.launch.py
 2D SLAM pipeline using slam_toolbox (LGPL-2.1).
 
 Starts:
-  1. pointcloud_to_laserscan  — converts /unilidar/cloud (PointCloud2) to /scan (LaserScan)
+  1. pointcloud_to_laserscan  — converts /lidar/points (PointCloud2) to /scan (LaserScan)
   2. slam_toolbox             — async 2D SLAM; mapping or localisation mode
   3. map_saver + lifecycle_manager_localization
                                keeps Nav2's localization lifecycle panel active
@@ -11,7 +11,7 @@ Starts:
 
 Arguments
 ---------
-use_sim_time : bool   (default: false)
+use_sim_time : bool   (default: true)
 slam_params  : str    Path to slam_toolbox YAML params file
 slam_mode    : str    'mapping' (default) | 'localization'
 map          : str    For localization mode: path to .posegraph file
@@ -71,7 +71,7 @@ def generate_launch_description():
     default_scan_params  = os.path.join(robot_nav_share, "config", "scan_from_cloud.yaml")
 
     args = [
-        DeclareLaunchArgument("use_sim_time", default_value="false"),
+        DeclareLaunchArgument("use_sim_time", default_value="true"),
         DeclareLaunchArgument("slam_params",  default_value=default_slam_params),
         DeclareLaunchArgument("slam_mode",    default_value="mapping",
                               description="'mapping' or 'localization'"),
@@ -103,7 +103,7 @@ def generate_launch_description():
             {"use_sim_time": use_sim_time},
         ],
         remappings=[
-            ("cloud_in", "/unilidar/cloud"),
+            ("cloud_in", "/lidar/points"),
             ("scan",     "/scan"),
         ],
     )

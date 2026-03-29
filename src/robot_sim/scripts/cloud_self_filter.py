@@ -15,8 +15,8 @@ class CloudSelfFilter(Node):
     def __init__(self) -> None:
         super().__init__("cloud_self_filter")
 
-        self.declare_parameter("input_topic", "/unilidar/cloud")
-        self.declare_parameter("output_topic", "/unilidar/cloud_filtered")
+        self.declare_parameter("input_topic", "/lidar/points")
+        self.declare_parameter("output_topic", "/lidar/points_filtered")
         self.declare_parameter("lidar_x", 0.25)
         self.declare_parameter("lidar_y", -0.038)
         self.declare_parameter("lidar_z", -0.03)

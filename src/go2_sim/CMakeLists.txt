@@ -3,7 +3,7 @@ project(go2_sim)
 
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY urdf config meshes
+install(DIRECTORY urdf config meshes launch worlds
   DESTINATION share/${PROJECT_NAME}
 )
 

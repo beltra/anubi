@@ -278,8 +278,8 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'use_sim_time': True,
-            'input_topic': '/unilidar/cloud',
-            'output_topic': '/unilidar/cloud_filtered',
+            'input_topic': '/lidar/points',
+            'output_topic': '/lidar/points_filtered',
         }],
         condition=IfCondition(is_go2),
     )

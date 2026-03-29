@@ -9,6 +9,7 @@ fi
 # Collect ROS-related processes and avoid killing this script shell.
 self=$$
 parent=$PPID
+workspace_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 declare -a pids=()
 
@@ -19,13 +20,47 @@ add_pids() {
   done
 }
 
-# Common ROS/Gazebo process names.
-for name in roscore rosmaster roslaunch rosout ros2 rviz2 rqt gzserver gzclient; do
+
+# Common ROS/Gazebo/CHAMP process names.
+for name in \
+  roscore rosmaster roslaunch rosout ros2 rviz2 rqt \
+  ign ignition gazebo gz gzserver gzclient \
+  gzserver-11 gzclient-11 \
+  gzserver-fortress gzclient-fortress \
+  gazebo gazebo-11 gazebo-fortress \
+  parameter_bridge create \
+  robot_state_publisher static_transform_publisher \
+  pointcloud_to_laserscan_node velocity_limiter \
+  quadruped_controller_node state_estimation_node \
+  ekf_node spawner \
+  champ champ_base champ_msgs champ_gazebo champ_utils champ_localization champ_navigation champ_teleop champ_description; do
   add_pids < <(pgrep -x "$name" || true)
 done
 
 # Catch ROS-installed executables that may not use common names.
 add_pids < <(pgrep -f '/opt/ros/' || true)
+# Catch workspace-built ROS executables.
+add_pids < <(pgrep -f "${workspace_root}/install/" || true)
+add_pids < <(pgrep -f "${workspace_root}/build/" || true)
+
+# Catch Gazebo Fortress processes by path or args
+add_pids < <(pgrep -f 'gazebo.*fortress' || true)
+add_pids < <(pgrep -f 'gzserver.*fortress' || true)
+add_pids < <(pgrep -f 'gzclient.*fortress' || true)
+add_pids < <(pgrep -f 'ign gazebo' || true)
+add_pids < <(pgrep -f 'ignition-gazebo' || true)
+add_pids < <(pgrep -f 'gz sim' || true)
+
+# Catch ROS 2 launch + bridge processes for the new Go2 sim stack.
+add_pids < <(pgrep -f 'sim_champ.launch.py' || true)
+add_pids < <(pgrep -f 'ros_ign_gazebo' || true)
+add_pids < <(pgrep -f 'ros_ign_bridge' || true)
+add_pids < <(pgrep -f 'controller_manager/spawner' || true)
+add_pids < <(pgrep -f 'pointcloud_to_laserscan' || true)
+add_pids < <(pgrep -f 'velocity_limiter' || true)
+
+# Catch CHAMP python nodes/scripts
+add_pids < <(pgrep -f 'champ' || true)
 
 # Unique + filter out this script shell and parent.
 pids=$(

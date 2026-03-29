@@ -8,7 +8,7 @@ Robot-agnostic Nav2 configuration and launch files.
 ## Architecture
 
 ```
-/unilidar/cloud (PointCloud2)
+/lidar/points (PointCloud2)
     ├──► pointcloud_to_laserscan ──► /scan (LaserScan)
     │          └──► slam_toolbox ──► /map + TF(map→odom)
     └──► Nav2 local/global costmaps (obstacle detection)
@@ -85,8 +85,8 @@ ros2 launch go2_bringup go2_bringup.launch.py \
 
 ## Costmap Configuration
 
-- **Local costmap**: PointCloud2 from `/unilidar/cloud`, rolling window 10×10 m
-- **Global costmap**: PointCloud2 from `/unilidar/cloud` + static map layer
+- **Local costmap**: PointCloud2 from `/lidar/points`, rolling window 10×10 m
+- **Global costmap**: PointCloud2 from `/lidar/points` + static map layer
 - Obstacle height filter: 0.08 m – 1.8 m (ignores ground, clears ceiling)
 - Footprint: polygon 0.70×0.31 m (full standing footprint including legs)
 - Inflation radius: 0.58 m (local), 0.68 m (global)
@@ -139,7 +139,7 @@ contract below. If these frame/topic names are kept stable, the shared files
 
 ### Required Topics
 
-- `/unilidar/cloud` — LiDAR `sensor_msgs/PointCloud2` (or remapped to this)
+- `/lidar/points` — LiDAR `sensor_msgs/PointCloud2` (or remapped to this)
 - `/scan` — 2D `sensor_msgs/LaserScan` from `pointcloud_to_laserscan`
 - `/odom` — `nav_msgs/Odometry`
 - `/cmd_vel` — `geometry_msgs/Twist` command input
@@ -149,7 +149,7 @@ contract below. If these frame/topic names are kept stable, the shared files
 1. Create `src/d1_description/urdf/d1.urdf.xacro` with the required frame names.
 2. Create `src/d1_bringup/` with `robot_interface.launch.py` that remaps native
    odometry/velocity topics to `/odom` and `/cmd_vel`.
-3. If the LiDAR topic differs, remap it to `/unilidar/cloud` in launch, or add
+3. If the LiDAR topic differs, remap it to `/lidar/points` in launch, or add
    a `d1_scan_from_cloud.yaml` and keep outward nav topics unchanged.
 4. Keep shared nav files unchanged:
    `config/nav2_params.yaml`, `config/slam_toolbox_params.yaml`,

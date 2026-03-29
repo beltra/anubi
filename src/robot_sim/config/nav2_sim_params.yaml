@@ -7,8 +7,8 @@
 #
 # ASSUMPTIONS:
 #   A-NAV-1: Robot is configured as holonomic in DWB with constrained lateral motion.
-#   A-NAV-2: Sim LiDAR PointCloud2 on /unilidar/cloud is filtered to
-#            /unilidar/cloud_filtered for voxel costmaps.
+#   A-NAV-2: Sim LiDAR PointCloud2 on /lidar/points is filtered to
+#            /lidar/points_filtered for voxel costmaps.
 #            LaserScan on /scan (lidar_link frame) is still produced from the
 #            raw cloud for slam_toolbox.
 #   A-NAV-3: map → odom is published by slam_toolbox (not AMCL).
@@ -247,7 +247,7 @@ local_costmap:
         combination_method: 1
         observation_sources: cloud
         cloud:
-          topic: /unilidar/cloud_filtered
+          topic: /lidar/points_filtered
           data_type: "PointCloud2"
           clearing: true
           marking: true
@@ -335,7 +335,7 @@ global_costmap:
         combination_method: 1
         observation_sources: cloud
         cloud:
-          topic: /unilidar/cloud_filtered
+          topic: /lidar/points_filtered
           data_type: "PointCloud2"
           clearing: true
           marking: true

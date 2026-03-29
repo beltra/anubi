@@ -33,6 +33,7 @@ go2_hw_bridge's cmd_vel_topic is overridden to /cmd_vel_safe by the launch file.
 
 import rclpy
 from rclpy.node import Node
+from rclpy.executors import ExternalShutdownException
 from geometry_msgs.msg import Twist
 from robot_common_interfaces.msg import RobotStatus
 
@@ -120,8 +121,15 @@ def main(args=None):
     node = VelocityLimiter()
     try:
         rclpy.spin(node)
+    except ExternalShutdownException:
+        pass
     except KeyboardInterrupt:
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

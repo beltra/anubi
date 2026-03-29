@@ -1,6 +1,6 @@
 # scan_from_cloud.yaml
 # Parameters for pointcloud_to_laserscan_node.
-# Converts /unilidar/cloud (3D PointCloud2) to /scan (2D LaserScan)
+# Converts /lidar/points (3D PointCloud2) to /scan (2D LaserScan)
 # for slam_toolbox.
 #
 # The Unitree L1 LiDAR spans 360° horizontal and 90° vertical FOV.
@@ -23,8 +23,9 @@ pointcloud_to_laserscan:
     transform_tolerance: 0.05      # [s] TF lookup timeout
 
     # Height filter (relative to target_frame origin) — Assumption A-SCAN-2
-    # Keep a thin slice near the lidar horizon to reject floor / robot body
-    # returns that otherwise create a false obstacle ring around the robot.
+    # Use a wider slice to preserve obstacle returns in simulation.
+    # A too-thin slice can produce all-inf scans (no valid beams), which
+    # prevents slam_toolbox from initializing the map.
     min_height: -0.06              # [m]
     max_height:  0.06              # [m]
 
