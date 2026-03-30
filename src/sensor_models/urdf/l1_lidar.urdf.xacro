@@ -36,8 +36,9 @@
              expects target_frame: lidar_link; with prefix="" this yields "lidar_link")
     - Joint: ${prefix}lidar_l1_joint  (fixed, parent→child, origin from block)
     - Gazebo gpu_lidar sensor on ${prefix}lidar_link
-      Gazebo topic:
-        /lidar/points  (PointCloudPacked, bridged to ROS /lidar/points)
+      Gazebo topics:
+        /lidar        (LaserScan — unused by nav stack)
+        /lidar/points (PointCloudPacked, bridged to ROS /lidar/points)
 
   ─────────────────────────────────────────────────────────────────────────────
   MACRO: l1_lidar_gazebo  (Classic / Gazebo 11) — legacy, do not use for Fortress
@@ -53,7 +54,7 @@
   <xacro:macro name="l1_lidar" params="
       parent
       prefix
-      range_min:=0.1
+      range_min:=0.05
       range_max:=30.0
       *origin">
 
@@ -93,22 +94,28 @@
     -->
     <gazebo reference="${prefix}lidar_link">
       <sensor name="${prefix}lidar_l1" type="gpu_lidar">
-        <topic>/lidar/points</topic>
+        <!-- gpu_lidar publishes PointCloudPacked on <topic>/points, so the base
+             topic must be /lidar to land the point cloud on /lidar/points (bridged
+             to ROS).  LaserScan lands on /lidar (unused by nav stack). -->
+        <topic>/lidar</topic>
         <update_rate>10</update_rate>
         <always_on>1</always_on>
-        <visualize>false</visualize>
+        <!-- <visualize>false</visualize> -->
         <ignition_frame_id>${prefix}lidar_link</ignition_frame_id>
-        <ray>
+        <!-- Ignition Fortress gpu_lidar requires <lidar>, not <ray> (Gazebo Classic).
+             Using <ray> causes Ignition to ignore the config and fall back to a
+             narrow default FOV, producing only a front-arc partial scan. -->
+        <lidar>
           <scan>
             <horizontal>
-              <!-- 360° sweep -->
+              <!-- 360° sweep — L1 spec: 360° horizontal FOV -->
               <samples>600</samples>
               <resolution>1</resolution>
               <min_angle>-3.14159265358979</min_angle>
               <max_angle>3.14159265358979</max_angle>
             </horizontal>
             <vertical>
-              <!-- ±45° vertical FOV, 30 channels -->
+              <!-- ±45° vertical FOV — L1 spec: 90° vertical FOV (±45°) -->
               <samples>30</samples>
               <resolution>1</resolution>
               <min_angle>-0.78539816339745</min_angle>
@@ -116,6 +123,7 @@
             </vertical>
           </scan>
           <range>
+            <!-- L1 spec: 0.05 m min, 30 m max (L1 RM variant) -->
             <min>${range_min}</min>
             <max>${range_max}</max>
             <resolution>0.001</resolution>
@@ -125,7 +133,7 @@
             <mean>0.0</mean>
             <stddev>0.008</stddev>
           </noise>
-        </ray>
+        </lidar>
       </sensor>
     </gazebo>
 

@@ -12,7 +12,7 @@ Topic bridge (all required by nav stack):
   /imu/data           ignition → ROS   sensor_msgs/Imu
   /joint_states       ignition → ROS   sensor_msgs/JointState
   /lidar/points       ignition → ROS   sensor_msgs/PointCloud2
-  /odom/raw           ignition → ROS   nav_msgs/Odometry
+  /model/go2/odometry ignition → ROS   nav_msgs/Odometry (remapped to /odom/raw for EKF)
   /tf                 ignition → ROS   tf2_msgs/TFMessage
   /joint_group_effort_controller/joint_trajectory
                       ROS → ignition   trajectory_msgs/JointTrajectory
@@ -275,14 +275,14 @@ def generate_launch_description():
             "/tf@tf2_msgs/msg/TFMessage[ignition.msgs.Pose_V",
             "/world/default/model/go2/joint_state@sensor_msgs/msg/JointState[ignition.msgs.Model",
             "/lidar/points@sensor_msgs/msg/PointCloud2[ignition.msgs.PointCloudPacked",
-            "/odom@nav_msgs/msg/Odometry[ignition.msgs.Odometry",
+            "/model/go2/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry",
             # ── ROS → Ignition ──────────────────────────────────────────
             "/joint_group_effort_controller/joint_trajectory"
             "@trajectory_msgs/msg/JointTrajectory]ignition.msgs.JointTrajectory",
         ],
         remappings=[
             ("/world/default/model/go2/joint_state", "/joint_states"),
-            ("/odom", "/odom/raw"),
+            ("/model/go2/odometry", "/odom/raw"),
         ],
     )
 

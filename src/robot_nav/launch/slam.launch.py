@@ -71,7 +71,7 @@ def generate_launch_description():
     default_scan_params  = os.path.join(robot_nav_share, "config", "scan_from_cloud.yaml")
 
     args = [
-        DeclareLaunchArgument("use_sim_time", default_value="true"),
+        DeclareLaunchArgument("use_sim_time", default_value="false"),
         DeclareLaunchArgument("slam_params",  default_value=default_slam_params),
         DeclareLaunchArgument("slam_mode",    default_value="mapping",
                               description="'mapping' or 'localization'"),
@@ -166,7 +166,7 @@ def generate_launch_description():
         parameters=[{
             "use_sim_time": use_sim_time,
             "autostart": autostart,
-            "node_names": ["map_saver"],
+            "node_names": ["map_saver", "slam_toolbox"],
         }],
     )
 

@@ -36,7 +36,7 @@ slam_toolbox:
     # Use ros2 service to serialize/load maps at runtime.
     # Serialised format: .posegraph + .data files
     use_map_saver: true
-    mode: mapping                 # 'mapping' | 'localization' (overridden by slam.launch.py)
+    mode: mapping                 # ignored at runtime — mode is selected by executable (slam.launch.py)
 
     # ── Motion thresholds (minimum travel before processing a new scan) ──
     # Assumption A-SLAM-4: indoor, relatively slow robot
@@ -51,7 +51,7 @@ slam_toolbox:
     # ── Map parameters ───────────────────────────────────────────────────
     resolution: 0.05          # [m/cell] 5 cm grid
     max_laser_range: 30.0
-    min_laser_range: 0.05
+    min_laser_range: 0.15
 
     # ── Loop closure ────────────────────────────────────────────────────
     # Keeps the map consistent over long mapping sessions.

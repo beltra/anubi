@@ -24,8 +24,8 @@ pointcloud_to_laserscan:
     # Height filter (relative to target_frame origin) — Assumption A-SCAN-2
     # A too-thin slice can produce all-inf scans (no valid beams), which
     # prevents slam_toolbox from initializing the map.
-    min_height: -0.01              # [m]
-    max_height:  0.01              # [m]
+    min_height: -0.06              # [m]
+    max_height:  0.06              # [m]
 
     # Angular scan parameters
     angle_min: -3.14159265         # [rad] -180°
@@ -34,8 +34,8 @@ pointcloud_to_laserscan:
     angle_increment: 0.01745329    # [rad] 1.0°
 
     scan_time: 0.1                 # [s] 10 Hz
-    range_min: 0.05                # [m]  Unitree L1 minimum range
-    range_max: 30.0                # [m]  Unitree L1 practical maximum range
+    range_min: 0.15                # [m]  Unitree L1 minimum range + safety
+    range_max: 30.0                # [m]  Unitree L1 practical maximum range for sim stability
 
     use_inf: true                  # Publish inf for out-of-range points (not NaN)
     inf_epsilon: 1.0               # [m] inf offset

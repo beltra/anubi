@@ -41,7 +41,6 @@ def generate_launch_description():
     default_world = os.path.join(go2_sim_share, "worlds", "default.sdf")
     default_ros_control = os.path.join(go2_sim_share, "config", "ros_control.yaml")
     default_slam_params = os.path.join(robot_nav_share, "config", "slam_toolbox_params.yaml")
-    default_nav_params = os.path.join(robot_nav_share, "config", "nav2_params.yaml")
     default_rviz_config = os.path.join(robot_nav_share, "rviz", "nav2.rviz")
 
     args = [
@@ -66,7 +65,6 @@ def generate_launch_description():
         DeclareLaunchArgument("slam_mode", default_value="mapping"),
         DeclareLaunchArgument("map", default_value=""),
         DeclareLaunchArgument("slam_params", default_value=default_slam_params),
-        DeclareLaunchArgument("nav_params", default_value=default_nav_params),
         DeclareLaunchArgument("launch_cloud_filter", default_value="false"),
         DeclareLaunchArgument("use_rviz", default_value="true"),
         DeclareLaunchArgument("rviz_config", default_value=default_rviz_config),
@@ -128,20 +126,19 @@ def generate_launch_description():
         condition=IfCondition(start_nav),
         launch_arguments={
             "use_sim_time": use_sim_time,
-            "params_file": LaunchConfiguration("nav_params"),
             "use_stvl": use_stvl,
         }.items(),
     )
 
     # slam starts after nav_delay_sec (default 8 s) — long enough for Gazebo + CHAMP + EKF to
     # stabilise and for the LiDAR bridge to deliver the first scans.
-    # nav2 starts 6 s after slam — allows slam_toolbox to initialise and publish map→odom
-    # before Nav2 activates its lifecycle nodes.  Total Nav2 start offset = nav_delay_sec + 6 s.
+    # nav2 starts 12 s after slam — allows slam_toolbox to initialise and publish map→odom
+    # before Nav2 activates its lifecycle nodes.  Total Nav2 start offset = nav_delay_sec + 12 s.
     start_nav_stack = TimerAction(
         period=LaunchConfiguration("nav_delay_sec"),
         actions=[
             slam,
-            TimerAction(period=6.0, actions=[nav2]),
+            TimerAction(period=12.0, actions=[nav2]),
         ],
     )
 
