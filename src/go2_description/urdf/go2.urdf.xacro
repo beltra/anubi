@@ -24,11 +24,6 @@
 <robot name="go2" xmlns:xacro="http://www.ros.org/wiki/xacro">
 
   <!-- ═══════════════════════════════════════════════════════════════════════
-       Arguments
-  ════════════════════════════════════════════════════════════════════════════ -->
-  <xacro:arg name="use_gazebo" default="false"/>
-
-  <!-- ═══════════════════════════════════════════════════════════════════════
        Physical constants
   ════════════════════════════════════════════════════════════════════════════ -->
   <xacro:property name="body_length"  value="0.440"/>   <!-- trunk X -->
@@ -183,19 +178,8 @@
     </inertial>
   </link>
 
-  <!-- ═══════════════════════════════════════════════════════════════════════
-       Gazebo plugins  (only included when use_gazebo:=true)
-       NOTE: these placeholders remain intentionally empty in this hardware URDF.
-  ════════════════════════════════════════════════════════════════════════════ -->
-  <xacro:if value="$(arg use_gazebo)">
-
-    <!-- Gazebo material -->
-    <gazebo reference="base_link">
-      <material>Gazebo/DarkGrey</material>
-    </gazebo>
-
-    <!-- Simulation plugins are provided by go2_sim/urdf/go2_sim.urdf.xacro -->
-
-  </xacro:if>
+  <!-- FIX(agent5): Removed <gazebo> block that was present in go2_description.
+       All Gazebo material/plugin tags belong exclusively in go2_sim/urdf/go2_sim.urdf.xacro.
+       The use_gazebo xacro:arg is also removed as it is no longer referenced. -->
 
 </robot>

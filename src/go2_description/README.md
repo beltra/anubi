@@ -15,7 +15,7 @@ base_footprint   (z=0, ground projection — Nav2 footprint reference)
 
 | File | Purpose |
 |------|---------|
-| `urdf/go2.urdf.xacro` | Main robot description; accepts `use_gazebo` xacro arg |
+| `urdf/go2.urdf.xacro` | Main robot description; no Gazebo content (belongs in go2_sim) |  <!-- FIX(agent5): Updated stale reference to removed use_gazebo arg -->
 | `rviz/` | Reserved for RViz configs specific to the description |
 | `config/` | Reserved for joint state publisher config if legs are added |
 

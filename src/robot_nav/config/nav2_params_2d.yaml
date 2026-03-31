@@ -148,6 +148,10 @@ controller_server:
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
       debug_trajectory_details: false
+      # FIX(agent3): holonomic: true is required when min_vel_y / max_vel_y are set.
+      # Without it, DWB ignores lateral velocity samples and treats the robot as
+      # differential-drive, making the y-velocity parameters ineffective.
+      holonomic: true
       # DWB does not define a separate footprint polygon here; it inherits
       # collision geometry from the active local/global costmap footprint.
 
@@ -291,7 +295,9 @@ global_costmap:
       use_sim_time: true
       global_frame: map
       robot_base_frame: base_footprint
-      rolling_window: false
+      # FIX(agent3): set rolling_window: true for SLAM mode (static_layer removed from plugins).
+      # For localization mode, set false and restore static_layer plugin.
+      rolling_window: true
       width: 30
       height: 30
       resolution: 0.05
@@ -310,13 +316,12 @@ global_costmap:
       footprint: "[ [-0.35, -0.155], [-0.35, 0.155], [0.35, 0.155], [0.35, -0.155] ]"
       footprint_padding: 0.01
 
-      # For SLAM-only (no pre-built map): remove static_layer from this list
-      plugins: ["static_layer", "voxel_layer", "obstacle_layer", "inflation_layer"]
-
-      static_layer:
-        plugin: "nav2_costmap_2d::StaticLayer"
-        map_subscribe_transient_local: true
-        enabled: true
+      # FIX(agent3): SLAM mode — rolling_window: true is set above; static_layer removed here
+      # because Nav2 Humble ignores the static layer when rolling_window: true, causing a
+      # silent conflict. For localization mode (pre-built map + AMCL), set rolling_window: false
+      # and restore: plugins: ["static_layer", "voxel_layer", "obstacle_layer", "inflation_layer"]
+      # and re-add the static_layer block below.
+      plugins: ["voxel_layer", "obstacle_layer", "inflation_layer"]
 
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"

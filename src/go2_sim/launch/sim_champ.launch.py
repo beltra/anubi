@@ -11,11 +11,17 @@ Topic bridge (all required by nav stack):
   /clock              ignition → ROS   rosgraph_msgs/Clock
   /imu/data           ignition → ROS   sensor_msgs/Imu
   /joint_states       ignition → ROS   sensor_msgs/JointState
-  /lidar/points       ignition → ROS   sensor_msgs/PointCloud2
+  /unilidar/cloud/points ignition → ROS   sensor_msgs/PointCloud2  (remapped to /lidar/points)
   /model/go2/odometry ignition → ROS   nav_msgs/Odometry (remapped to /odom/raw for EKF)
-  /tf                 ignition → ROS   tf2_msgs/TFMessage
   /joint_group_effort_controller/joint_trajectory
                       ROS → ignition   trajectory_msgs/JointTrajectory
+
+NOTE: The Ignition /tf topic is intentionally NOT bridged.
+  ignition-gazebo-odometry-publisher-system publishes an odom→base_link transform
+  on the Ignition /tf topic by default.  Bridging it would give base_link two
+  parents in the ROS TF tree (base_footprint via static TF and odom via the bridge),
+  causing a TF cycle that breaks pointcloud_to_laserscan and slam_toolbox lookups.
+  The full TF tree is provided by EKF (odom→base_footprint), static transforms, and RSP.
 
 Usage:
   ros2 launch go2_sim sim_champ.launch.py
@@ -257,11 +263,11 @@ def generate_launch_description():
     # Required topics for nav stack:
     #   /joint_states   → robot_state_publisher, CHAMP
     #   /imu/data       → EKF
-    #   /lidar/points   → voxel_layer, pointcloud_to_laserscan
+    #   /lidar/points   → voxel_layer, pointcloud_to_laserscan  (bridged from /unilidar/cloud/points)
     #   /odom/raw       → EKF footprint_to_odom
     #   /clock          → use_sim_time
-    #   /tf             → TF tree
     #   /joint_group_effort_controller/joint_trajectory → effort controller
+    #   NOTE: /tf is NOT bridged (see module docstring)
     gazebo_bridge = Node(
         package="ros_ign_bridge",
         executable="parameter_bridge",
@@ -272,9 +278,11 @@ def generate_launch_description():
             # ── Ignition → ROS ──────────────────────────────────────────
             "/clock@rosgraph_msgs/msg/Clock[ignition.msgs.Clock",
             "/imu/data@sensor_msgs/msg/Imu[ignition.msgs.IMU",
-            "/tf@tf2_msgs/msg/TFMessage[ignition.msgs.Pose_V",
+            # NOTE: /tf is intentionally absent — see module docstring for rationale.
             "/world/default/model/go2/joint_state@sensor_msgs/msg/JointState[ignition.msgs.Model",
-            "/lidar/points@sensor_msgs/msg/PointCloud2[ignition.msgs.PointCloudPacked",
+            # FIX(agent1): bridge the sensor's native Ignition topic /unilidar/cloud/points;
+            # remapping below redirects it to /lidar/points for the nav stack.
+            "/unilidar/cloud/points@sensor_msgs/msg/PointCloud2[ignition.msgs.PointCloudPacked",
             "/model/go2/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry",
             # ── ROS → Ignition ──────────────────────────────────────────
             "/joint_group_effort_controller/joint_trajectory"
@@ -283,6 +291,8 @@ def generate_launch_description():
         remappings=[
             ("/world/default/model/go2/joint_state", "/joint_states"),
             ("/model/go2/odometry", "/odom/raw"),
+            # FIX(agent1): remap Ignition sensor topic to the ROS nav stack topic name
+            ("/unilidar/cloud/points", "/lidar/points"),
         ],
     )
 

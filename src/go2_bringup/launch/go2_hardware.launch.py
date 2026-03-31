@@ -33,9 +33,9 @@ def generate_launch_description():
 
     use_sim_time = LaunchConfiguration("use_sim_time")
 
-    robot_description = Command(
-        ["xacro ", urdf_file, " use_gazebo:=", use_sim_time]
-    )
+    # FIX(agent5): Removed "use_gazebo:=" arg — go2_description URDF no longer
+    # accepts use_gazebo; all Gazebo content lives in go2_sim only.
+    robot_description = Command(["xacro ", urdf_file])
 
     nodes = [
         Node(

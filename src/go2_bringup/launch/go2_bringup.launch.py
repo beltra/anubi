@@ -22,6 +22,16 @@ slam_params     : str    Override slam_toolbox params file
 slam_mode       : str    'mapping' or 'localization' (default: 'mapping')
 use_safety      : bool   Enable velocity_limiter safety gate (default: false)
                          When true: go2_hw_bridge reads /cmd_vel_safe instead of /cmd_vel.
+
+LiDAR topic contract (real robot)
+----------------------------------
+# FIX(agent5): Documented real-robot LiDAR topic requirement.
+# The Go2 internal ROS 2 bridge publishes raw point cloud on /utlidar/cloud.
+# A republisher node that remaps /utlidar/cloud → /lidar/points MUST be
+# launched before starting the navigation stack, as nav2_params.yaml and
+# slam.launch.py expect PointCloud2 data on /lidar/points (frame: lidar_link).
+# Example one-liner (run before this launch):
+#   ros2 run topic_tools relay /utlidar/cloud /lidar/points
 """
 
 import os
@@ -88,9 +98,9 @@ def generate_launch_description():
     )
 
     # ── 1. robot_state_publisher ──────────────────────────────────────────
-    robot_description = Command(
-        ["xacro ", urdf_file, " use_gazebo:=", use_sim_time]
-    )
+    # FIX(agent5): Removed "use_gazebo:=" arg — go2_description URDF no longer
+    # accepts use_gazebo; all Gazebo content lives in go2_sim only.
+    robot_description = Command(["xacro ", urdf_file])
     robot_state_publisher = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",

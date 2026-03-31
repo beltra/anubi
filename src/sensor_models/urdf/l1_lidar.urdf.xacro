@@ -37,8 +37,8 @@
     - Joint: ${prefix}lidar_l1_joint  (fixed, parent→child, origin from block)
     - Gazebo gpu_lidar sensor on ${prefix}lidar_link
       Gazebo topics:
-        /lidar        (LaserScan — unused by nav stack)
-        /lidar/points (PointCloudPacked, bridged to ROS /lidar/points)
+        /unilidar/cloud        (LaserScan — unused by nav stack)
+        /unilidar/cloud/points (PointCloudPacked, bridged to ROS /lidar/points via remapping)
 
   ─────────────────────────────────────────────────────────────────────────────
   MACRO: l1_lidar_gazebo  (Classic / Gazebo 11) — legacy, do not use for Fortress
@@ -90,14 +90,16 @@
       ignition_frame_id: sets the ROS frame_id in the bridged PointCloud2 message.
       With prefix="" this yields "lidar_link" which matches scan_from_cloud.yaml
       (target_frame: lidar_link) and go2_description/go2_bringup conventions.
-      PointCloud topic /lidar/points is bridged by ros_ign_bridge in the launch file.
+      PointCloud topic /unilidar/cloud/points is bridged and remapped to /lidar/points
+      by ros_ign_bridge in the launch file.
     -->
     <gazebo reference="${prefix}lidar_link">
       <sensor name="${prefix}lidar_l1" type="gpu_lidar">
-        <!-- gpu_lidar publishes PointCloudPacked on <topic>/points, so the base
-             topic must be /lidar to land the point cloud on /lidar/points (bridged
-             to ROS).  LaserScan lands on /lidar (unused by nav stack). -->
-        <topic>/lidar</topic>
+        <!-- FIX(agent1): sensor topic changed to /unilidar/cloud so gpu_lidar emits
+             /unilidar/cloud/points (PointCloudPacked).  The bridge in sim_champ.launch.py
+             bridges /unilidar/cloud/points and remaps it to the ROS topic /lidar/points.
+             This matches the Unitree L1 real-hardware topic name convention. -->
+        <topic>/unilidar/cloud</topic>
         <update_rate>10</update_rate>
         <always_on>1</always_on>
         <!-- <visualize>false</visualize> -->

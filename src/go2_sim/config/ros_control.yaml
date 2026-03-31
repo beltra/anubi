@@ -57,16 +57,20 @@ joint_group_effort_controller:
     hold_trajectory_duration: 0.0
     action_tolerance: 1.0
 
+    # ff_velocity_scale: JointTrajectoryController (Humble) requires this field
+    # explicitly under each joint's gains block; omitting it produces the deprecation
+    # warning "'ff_velocity_scale' parameters is not defined under gains.<joint>.".
+    # 0.0 = no feedforward velocity term (pure PID), which is correct for this effort controller.
     gains:
-      lf_hip_joint        : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5}
-      lf_upper_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5}
-      lf_lower_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5}
-      rf_hip_joint        : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5}
-      rf_upper_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5}
-      rf_lower_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5}
-      lh_hip_joint        : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5}
-      lh_upper_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5}
-      lh_lower_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5}
-      rh_hip_joint        : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5}
-      rh_upper_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5}
-      rh_lower_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5}
+      lf_hip_joint        : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
+      lf_upper_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
+      lf_lower_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
+      rf_hip_joint        : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
+      rf_upper_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
+      rf_lower_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
+      lh_hip_joint        : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
+      lh_upper_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
+      lh_lower_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
+      rh_hip_joint        : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
+      rh_upper_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
+      rh_lower_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
