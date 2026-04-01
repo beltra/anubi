@@ -9,9 +9,10 @@ Robot-agnostic Nav2 configuration and launch files.
 
 ```
 /lidar/points (PointCloud2)
-    ├──► pointcloud_to_laserscan ──► /scan (LaserScan)
-    │          └──► slam_toolbox ──► /map + TF(map→odom)
-    └──► Nav2 local/global costmaps (obstacle detection)
+    ├──► distortion_corrector ──► /lidar/points_undistorted
+    │          ├──► pointcloud_to_laserscan ──► /scan (LaserScan)
+    │          │          └──► slam_toolbox ──► /map + TF(map→odom)
+    │          └──► Nav2 local/global costmaps (obstacle detection)
 
 /odom + TF(odom→base_footprint) ──► slam_toolbox + Nav2
 Nav2 /cmd_vel ──► [go2_hw_bridge] ──► Go2 hardware
@@ -37,6 +38,7 @@ The Nav2 footprint parameter uses the FULL robot dimensions including legs.
 |---------|---------|------|
 | slam_toolbox | LGPL-2.1 | 2D SLAM: map + map→odom TF |
 | pointcloud_to_laserscan | BSD-3-Clause | UniLidar PointCloud2 → /scan |
+| robot_nav `distortion_corrector.py` | Apache-2.0 | PointCloud2 deskew using `/odom` + optional `/imu/data` |
 | nav2_bringup + components | Apache-2.0 | Navigation stack |
 
 **slam_toolbox LGPL-2.1** — compatible with industrial/commercial projects under
@@ -48,7 +50,7 @@ dynamic linking (the default in ROS 2 / colcon workspaces).
 
 | File | Purpose |
 |------|---------|
-| `slam.launch.py` | pointcloud_to_laserscan + slam_toolbox |
+| `slam.launch.py` | distortion_corrector + pointcloud_to_laserscan + slam_toolbox |
 | `nav2.launch.py` | Nav2 navigation nodes |
 | `ekf.launch.py` | Optional robot_localization EKF (not enabled by default) |
 
@@ -58,6 +60,7 @@ dynamic linking (the default in ROS 2 / colcon workspaces).
 |------|---------|
 | `config/slam_toolbox_params.yaml` | SLAM algorithm tuning |
 | `config/scan_from_cloud.yaml` | PointCloud2 → LaserScan conversion params |
+| `config/distortion_corrector.yaml` | LiDAR deskew / undistortion tuning |
 | `config/nav2_params.yaml` | DWB controller, NavFn planner, costmaps |
 | `config/ekf_fusion_params.yaml` | Optional EKF template for `/odom_raw` + IMU + lidar odom fusion |
 
@@ -85,8 +88,8 @@ ros2 launch go2_bringup go2_bringup.launch.py \
 
 ## Costmap Configuration
 
-- **Local costmap**: PointCloud2 from `/lidar/points`, rolling window 4×4 m
-- **Global costmap**: PointCloud2 from `/lidar/points` + static map layer, rolling window 30×30 m
+- **Local costmap**: PointCloud2 from `/lidar/points_undistorted`, rolling window 4×4 m
+- **Global costmap**: PointCloud2 from `/lidar/points_undistorted` + static map layer, rolling window 30×30 m
 - Obstacle height filter: 0.05 m – 2.0 m
 - Footprint: polygon 0.70×0.31 m (full standing footprint including legs)
 - Inflation radius: 0.58 m (local), 0.68 m (global)
@@ -95,7 +98,7 @@ ros2 launch go2_bringup go2_bringup.launch.py \
 
 ### What was changed
 - local_costmap now uses spatio_temporal_voxel_layer instead of obstacle_layer
-- The L1 LiDAR 3D point cloud (/lidar/points) feeds the voxel buffer directly
+- The L1 LiDAR 3D point cloud is first deskewed to `/lidar/points_undistorted`, then feeds the voxel buffer
 - No persistent 3D map is built; voxels decay after voxel_decay seconds (default 3.0 s)
 - The global_costmap is unchanged (2D, static + inflation only)
 
@@ -154,6 +157,7 @@ contract below. If these frame/topic names are kept stable, the shared files
 
 - `base_footprint` — ground projection, `z=0` at contact
 - `base_link` — torso center at standing height
+- `lidar_stabilized` — gravity-leveled LiDAR frame for 2D scan extraction
 - `lidar_link` — LiDAR optical center, horizontal mount (`rpy="0 0 0"`)
 - `imu_link` — IMU frame
 - `odom` — odometry origin (published by robot bridge)
@@ -162,6 +166,7 @@ contract below. If these frame/topic names are kept stable, the shared files
 ### Required Topics
 
 - `/lidar/points` — LiDAR `sensor_msgs/PointCloud2` (or remapped to this)
+- `/lidar/points_undistorted` — deskewed LiDAR `sensor_msgs/PointCloud2`
 - `/scan` — 2D `sensor_msgs/LaserScan` from `pointcloud_to_laserscan`
 - `/odom` — `nav_msgs/Odometry`
 - `/cmd_vel` — `geometry_msgs/Twist` command input

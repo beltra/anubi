@@ -3,9 +3,10 @@ slam.launch.py
 2D SLAM pipeline using slam_toolbox (LGPL-2.1).
 
 Starts:
-  1. pointcloud_to_laserscan  — converts /lidar/points (PointCloud2) to /scan (LaserScan)
-  2. slam_toolbox             — async 2D SLAM; mapping or localisation mode
-  3. map_saver + lifecycle_manager_localization
+  1. distortion_corrector     — deskews /lidar/points into /lidar/points_undistorted
+  2. pointcloud_to_laserscan  — converts /lidar/points_undistorted to /scan (LaserScan)
+  3. slam_toolbox             — async 2D SLAM; mapping or localisation mode
+  4. map_saver + lifecycle_manager_localization
                                keeps Nav2's localization lifecycle panel active
                                and provides map saving services
 
@@ -69,6 +70,9 @@ def generate_launch_description():
 
     default_slam_params  = os.path.join(robot_nav_share, "config", "slam_toolbox_params.yaml")
     default_scan_params  = os.path.join(robot_nav_share, "config", "scan_from_cloud.yaml")
+    default_distortion_params = os.path.join(
+        robot_nav_share, "config", "distortion_corrector.yaml"
+    )
 
     args = [
         DeclareLaunchArgument("use_sim_time", default_value="false"),
@@ -89,10 +93,25 @@ def generate_launch_description():
     is_mapping       = PythonExpression(["'", slam_mode, "' == 'mapping'"])
     is_localization  = PythonExpression(["'", slam_mode, "' == 'localization'"])
 
-    # ── 1. pointcloud_to_laserscan ────────────────────────────────────────
-    # Converts the 3D UniLidar PointCloud2 to a 2D LaserScan required by
-    # slam_toolbox and by Nav2 costmaps (configured on /scan).
-    # A horizontal slice is extracted around z=0 relative to lidar_link.
+    # ── 1. distortion_corrector ───────────────────────────────────────────
+    # Deskews the 3D LiDAR cloud using /odom twist and optional /imu/data
+    # angular rates. This keeps body pitch/roll during motion from projecting
+    # the floor into the obstacle pipeline.
+    distortion_corrector = Node(
+        package="robot_nav",
+        executable="distortion_corrector.py",
+        name="distortion_corrector",
+        output="screen",
+        parameters=[
+            default_distortion_params,
+            {"use_sim_time": use_sim_time},
+        ],
+    )
+
+    # ── 2. pointcloud_to_laserscan ────────────────────────────────────────
+    # Converts the undistorted 3D UniLidar PointCloud2 to a 2D LaserScan
+    # required by slam_toolbox and by Nav2 obstacle layers that use /scan.
+    # A horizontal slice is extracted around z=0 relative to lidar_stabilized.
     pointcloud_to_laserscan = Node(
         package="pointcloud_to_laserscan",
         executable="pointcloud_to_laserscan_node",
@@ -103,12 +122,12 @@ def generate_launch_description():
             {"use_sim_time": use_sim_time},
         ],
         remappings=[
-            ("cloud_in", "/lidar/points"),
+            ("cloud_in", "/lidar/points_undistorted"),
             ("scan",     "/scan"),
         ],
     )
 
-    # ── 2a. slam_toolbox — async mapping mode ─────────────────────────────
+    # ── 3a. slam_toolbox — async mapping mode ─────────────────────────────
     slam_mapping = Node(
         package="slam_toolbox",
         executable="async_slam_toolbox_node",
@@ -121,7 +140,7 @@ def generate_launch_description():
         condition=IfCondition(is_mapping),
     )
 
-    # ── 2b. slam_toolbox — localisation mode (no mapping) ─────────────────
+    # ── 3b. slam_toolbox — localisation mode (no mapping) ─────────────────
     # Used after a map has been saved with:
     #   ros2 service call /slam_toolbox/serialize_map
     #   slam_toolbox/srv/SerializePoseGraph "{filename: '/path/to/map'}"
@@ -140,7 +159,7 @@ def generate_launch_description():
         condition=IfCondition(is_localization),
     )
 
-    # ── 3. map_saver + localization lifecycle manager ─────────────────────
+    # ── 4. map_saver + localization lifecycle manager ─────────────────────
     # Nav2 RViz plugin expects a localization lifecycle manager. Even when
     # SLAM provides map->odom (without AMCL), running map_saver under
     # lifecycle_manager_localization keeps the localization stack state active.
@@ -166,12 +185,15 @@ def generate_launch_description():
         parameters=[{
             "use_sim_time": use_sim_time,
             "autostart": autostart,
-            "node_names": ["map_saver", "slam_toolbox"],
+            # slam_toolbox async/localization nodes are not managed as Nav2 lifecycle
+            # nodes in this launch, so keep the manager scoped to map_saver only.
+            "node_names": ["map_saver"],
         }],
     )
 
     return LaunchDescription(args + [
         OpaqueFunction(function=_validate_localization_inputs),
+        distortion_corrector,
         pointcloud_to_laserscan,
         slam_mapping,
         slam_localization,

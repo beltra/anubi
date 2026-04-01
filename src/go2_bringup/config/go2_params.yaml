@@ -16,21 +16,26 @@ go2_hw_bridge:
     # Odometry topic published by go2_hw_bridge.
     # Keep as "/odom" for current stack; switch to "/odom_raw" when EKF fusion is enabled.
     odom_topic: "/odom"
+    imu_topic: "/imu/data"
 
     # TF frame names — must match slam_toolbox and nav2_params.yaml
     odom_frame: "odom"
     base_frame: "base_footprint"
+    base_link_frame: "base_link"
+    imu_frame: "imu_link"
     # When false, go2_hw_bridge publishes Odometry only (no odom->base TF).
     # Set false when robot_localization owns odom->base TF publication.
     publish_tf: true
+    publish_body_tf: true
+    standing_height: 0.28
 
     # Safety: stop the robot if no /cmd_vel received within this many seconds
     cmd_timeout: 0.5
 
     # Velocity limits [m/s, rad/s] — applied before forwarding to Sport API
     # Adjust for the operating environment (slow down indoors, etc.)
-    max_linear_vel:  1.0
-    max_lateral_vel: 0.3
+    max_linear_vel:  0.8
+    max_lateral_vel: 0.2
     max_angular_vel: 1.5
 
 # ── robot_state_publisher ─────────────────────────────────────────────────────

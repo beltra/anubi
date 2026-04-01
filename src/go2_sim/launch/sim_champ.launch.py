@@ -38,10 +38,10 @@ from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
     TimerAction,
-    SetEnvironmentVariable,
     AppendEnvironmentVariable,
+    SetEnvironmentVariable,
 )
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.parameter_descriptions import ParameterValue
@@ -49,6 +49,10 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 def generate_launch_description():
     use_sim_time = LaunchConfiguration("use_sim_time")
+    standing_height_m = 0.28
+    lidar_x_m = 0.28945
+    lidar_y_m = 0.0
+    lidar_z_m = standing_height_m - 0.046825
 
     go2_sim_dir = get_package_share_directory("go2_sim")
 
@@ -112,6 +116,25 @@ def generate_launch_description():
             "Publish static map->odom identity transform. "
             "Set false when SLAM/localization owns map->odom."
         ),
+    )
+    declare_sim_partition = DeclareLaunchArgument(
+        "sim_partition",
+        default_value=f"go2_sim_{os.getpid()}",
+        description=(
+            "Gazebo transport partition for this launch. "
+            "Unique default avoids scene/topic collisions from stale sim processes."
+        ),
+    )
+
+    # Keep all Gazebo participants isolated to one launch instance.
+    # Setting both names covers Fortress (IGN_*) and newer Gazebo (GZ_*).
+    ign_partition = SetEnvironmentVariable(
+        name="IGN_PARTITION",
+        value=LaunchConfiguration("sim_partition"),
+    )
+    gz_partition = SetEnvironmentVariable(
+        name="GZ_PARTITION",
+        value=LaunchConfiguration("sim_partition"),
     )
 
     # ── Robot description (processed at launch time by xacro) ──────────────
@@ -185,6 +208,34 @@ def generate_launch_description():
         remappings=[("odometry/filtered", "odom")],
     )
 
+    # Static transform: base_footprint → base_link
+    # The sim URDF (go2_sim.urdf.xacro) has base_link as its root, so Nav2/SLAM need
+    # an explicit ground-projection frame bridge. This must preserve the nominal
+    # body-center height used everywhere else in the stack; an identity transform
+    # incorrectly places lidar_link below the ground plane in the TF tree.
+    base_footprint_to_base_link_tf = Node(
+        package="tf2_ros",
+        name="base_footprint_to_base_link_tf",
+        executable="static_transform_publisher",
+        parameters=[{"use_sim_time": use_sim_time}],
+        arguments=[
+            "--x", "0", "--y", "0", "--z", str(standing_height_m),
+            "--roll", "0", "--pitch", "0", "--yaw", "0",
+            "--frame-id", "base_footprint", "--child-frame-id", "base_link",
+        ],
+    )
+    lidar_stabilized_tf = Node(
+        package="tf2_ros",
+        name="base_footprint_to_lidar_stabilized_tf",
+        executable="static_transform_publisher",
+        parameters=[{"use_sim_time": use_sim_time}],
+        arguments=[
+            "--x", str(lidar_x_m), "--y", str(lidar_y_m), "--z", str(lidar_z_m),
+            "--roll", "0", "--pitch", "0", "--yaw", "0",
+            "--frame-id", "base_footprint", "--child-frame-id", "lidar_stabilized",
+        ],
+    )
+
     # Static transform: map → odom (identity; nav stack expects this until SLAM publishes)
     map_to_odom_tf = Node(
         package="tf2_ros",
@@ -196,19 +247,6 @@ def generate_launch_description():
             "--x", "0", "--y", "0", "--z", "0",
             "--roll", "0", "--pitch", "0", "--yaw", "0",
             "--frame-id", "map", "--child-frame-id", "odom",
-        ],
-    )
-
-    # Static transform: base_footprint → base_link (planar Nav2 convention)
-    base_footprint_to_base_link_tf = Node(
-        package="tf2_ros",
-        name="base_footprint_to_base_link_tf",
-        executable="static_transform_publisher",
-        parameters=[{"use_sim_time": use_sim_time}],
-        arguments=[
-            "--x", "0", "--y", "0", "--z", "0",
-            "--roll", "0", "--pitch", "0", "--yaw", "0",
-            "--frame-id", "base_footprint", "--child-frame-id", "base_link",
         ],
     )
 
@@ -224,15 +262,30 @@ def generate_launch_description():
     # ── Gazebo Fortress (ign gazebo) ────────────────────────────────────────
     pkg_ros_ign_gazebo = get_package_share_directory("ros_ign_gazebo")
 
-    ign_gazebo = IncludeLaunchDescription(
+    ign_gazebo_gui = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_ros_ign_gazebo, "launch", "ign_gazebo.launch.py")
         ),
+        condition=IfCondition(LaunchConfiguration("gui")),
         launch_arguments={
             "gz_args": [
                 LaunchConfiguration("world"),
                 " -r",  # start unpaused
             ],
+            "on_exit_shutdown": "true",
+        }.items(),
+    )
+    ign_gazebo_headless = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_ros_ign_gazebo, "launch", "ign_gazebo.launch.py")
+        ),
+        condition=UnlessCondition(LaunchConfiguration("gui")),
+        launch_arguments={
+            "gz_args": [
+                LaunchConfiguration("world"),
+                " -r -s",  # start unpaused, server-only (no GUI)
+            ],
+            "on_exit_shutdown": "true",
         }.items(),
     )
 
@@ -306,7 +359,7 @@ def generate_launch_description():
             "use_sim_time": use_sim_time,
             "cmd_timeout": 0.5,
             "publish_rate": 20.0,
-            "cmd_vel_in": "/cmd_vel",
+            "cmd_vel_in": "/cmd_vel_collision_free",
             "cmd_vel_out": "/cmd_vel_safe",
             # Simulation has no RobotStatus publisher; run watchdog-only gating.
             "status_topic": "",
@@ -319,7 +372,7 @@ def generate_launch_description():
     # to ready.  The spawner's --controller-manager-timeout 120 provides an additional
     # safety margin if init is slow on the host machine.
     controller_spawner_js = TimerAction(
-        period=20.0,
+        period=10.0,
         actions=[
             Node(
                 package="controller_manager",
@@ -335,7 +388,7 @@ def generate_launch_description():
     )
 
     controller_spawner_effort = TimerAction(
-        period=30.0,
+        period=15.0,
         actions=[
             Node(
                 package="controller_manager",
@@ -368,9 +421,13 @@ def generate_launch_description():
         declare_world_init_z,
         declare_world_init_heading,
         declare_publish_map_to_odom_tf,
+        declare_sim_partition,
 
         # Gazebo + robot spawn
-        ign_gazebo,
+        ign_partition,
+        gz_partition,
+        ign_gazebo_gui,
+        ign_gazebo_headless,
         robot_state_publisher,
         gazebo_spawn_robot,
         gazebo_bridge,
@@ -381,8 +438,9 @@ def generate_launch_description():
 
         # Odometry / TF
         footprint_to_odom_ekf,
-        map_to_odom_tf,
         base_footprint_to_base_link_tf,
+        lidar_stabilized_tf,
+        map_to_odom_tf,
 
         # Controller lifecycle
         controller_spawner_js,

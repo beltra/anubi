@@ -1,0 +1,37 @@
+distortion_corrector:
+  ros__parameters:
+    input_topic: /lidar/points
+    output_topic: /lidar/points_undistorted
+    odom_topic: /odom
+    imu_topic: /imu/data
+
+    # Mirrors the Autoware-style integration: twist-based correction with IMU
+    # angular rates for full 3D deskew on a pitching/rolling body.
+    use_twist: true
+    use_imu: true
+    use_3d_distortion_correction: true
+
+    # Unitree L1 nominal rotation frequency is 10 Hz -> 0.1 s per revolution.
+    scan_period: 0.1
+
+    # If the cloud exposes a relative-time field, prefer it. Otherwise fall back
+    # to azimuth-based timing over one revolution.
+    timestamp_field_name: ""
+    timestamp_field_candidates: ["time_stamp", "timestamp", "time", "t"]
+    timestamp_unit: auto
+    fallback_mode: azimuth
+    azimuth_direction: ccw
+
+    # During startup, publish raw clouds rather than dropping data while waiting
+    # for the first synchronized odom/IMU samples.
+    passthrough_on_missing_state: true
+    state_timeout_sec: 0.25
+
+    # Keep the deskew stage real-time. If processing falls behind, drop stale
+    # clouds instead of feeding old data into SLAM, costmaps, and safety nodes.
+    drop_stale_clouds: true
+    max_input_delay_sec: 0.25
+
+    # Downstream Nav2 / safety nodes reason about the freshest available cloud.
+    # Stamp outputs at publish time so late-processed frames are not rejected as stale.
+    output_stamp_mode: now

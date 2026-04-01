@@ -5,7 +5,7 @@ Full navigation stack launch for a real robot.
 Starts (in order):
   1. ekf.launch.py     — robot_localization EKF: fuses raw odometry + IMU
                          → publishes /odom and odom→base_footprint TF
-  2. slam.launch.py    — pointcloud_to_laserscan + slam_toolbox
+  2. slam.launch.py    — distortion_corrector + pointcloud_to_laserscan + slam_toolbox
                          → publishes /map, /scan, and map→odom TF
   3. nav2.launch.py    — Nav2 navigation stack (planner, controller, bt, etc.)
 
@@ -78,7 +78,8 @@ def generate_launch_description():
     )
 
     # ── 2. SLAM pipeline ──────────────────────────────────────────────────────
-    # pointcloud_to_laserscan converts /lidar/points → /scan.
+    # distortion_corrector deskews /lidar/points → /lidar/points_undistorted.
+    # pointcloud_to_laserscan then converts /lidar/points_undistorted → /scan.
     # slam_toolbox runs in mapping or localization mode depending on slam_mode.
     # use_sim_time is hard-coded false — real-robot only.
     slam = IncludeLaunchDescription(

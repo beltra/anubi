@@ -193,6 +193,7 @@
     </sensor>
   </gazebo>
 
+
   <!-- ════════════════════════════════════════════════════════════════════
        LEGS  (4× instantiation via leg macro — defines foot links LF/RF/LH/RH_FOOT)
        ════════════════════════════════════════════════════════════════════ -->
@@ -281,7 +282,9 @@
          nav2_params.yaml      voxel_layer expects /lidar/points in lidar_link
        ════════════════════════════════════════════════════════════════════ -->
   <xacro:l1_lidar parent="base_link" prefix="">
-    <origin xyz="0.28945 0 -0.046825" rpy="0 0 0"/>
+    <!-- The Unitree L1 is mounted upside down on Go2, so its upward
+         hemispherical scan in sensor frame points toward the floor. -->
+    <origin xyz="0.28945 0 -0.056825" rpy="3.14159265358979 0 0"/>
   </xacro:l1_lidar>
 
 </robot>

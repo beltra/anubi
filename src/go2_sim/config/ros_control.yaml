@@ -1,4 +1,3 @@
-# ros_control.yaml
 # ign_ros2_control joint controller configuration for the Unitree Go2.
 #
 # Source: khaledgabr77/unitree_go2_ros2 / unitree_go2_sim/config/ros_control/ros_control.yaml
@@ -57,20 +56,77 @@ joint_group_effort_controller:
     hold_trajectory_duration: 0.0
     action_tolerance: 1.0
 
-    # ff_velocity_scale: JointTrajectoryController (Humble) requires this field
-    # explicitly under each joint's gains block; omitting it produces the deprecation
-    # warning "'ff_velocity_scale' parameters is not defined under gains.<joint>.".
-    # 0.0 = no feedforward velocity term (pure PID), which is correct for this effort controller.
+    # Expanded dictionary format required for ROS 2 parameter parsing
     gains:
-      lf_hip_joint        : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
-      lf_upper_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
-      lf_lower_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
-      rf_hip_joint        : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
-      rf_upper_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
-      rf_lower_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
-      lh_hip_joint        : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
-      lh_upper_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
-      lh_lower_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
-      rh_hip_joint        : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
-      rh_upper_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
-      rh_lower_leg_joint  : {p: 100.0, i: 0.2, d: 1.0, i_clamp: 2.5, ff_velocity_scale: 0.0}
+      lf_hip_joint:
+        p: 100.0
+        i: 0.2
+        d: 1.0
+        i_clamp: 2.5
+        ff_velocity_scale: 0.0
+      lf_upper_leg_joint:
+        p: 100.0
+        i: 0.2
+        d: 1.0
+        i_clamp: 2.5
+        ff_velocity_scale: 0.0
+      lf_lower_leg_joint:
+        p: 100.0
+        i: 0.2
+        d: 1.0
+        i_clamp: 2.5
+        ff_velocity_scale: 0.0
+      rf_hip_joint:
+        p: 100.0
+        i: 0.2
+        d: 1.0
+        i_clamp: 2.5
+        ff_velocity_scale: 0.0
+      rf_upper_leg_joint:
+        p: 100.0
+        i: 0.2
+        d: 1.0
+        i_clamp: 2.5
+        ff_velocity_scale: 0.0
+      rf_lower_leg_joint:
+        p: 100.0
+        i: 0.2
+        d: 1.0
+        i_clamp: 2.5
+        ff_velocity_scale: 0.0
+      lh_hip_joint:
+        p: 100.0
+        i: 0.2
+        d: 1.0
+        i_clamp: 2.5
+        ff_velocity_scale: 0.0
+      lh_upper_leg_joint:
+        p: 100.0
+        i: 0.2
+        d: 1.0
+        i_clamp: 2.5
+        ff_velocity_scale: 0.0
+      lh_lower_leg_joint:
+        p: 100.0
+        i: 0.2
+        d: 1.0
+        i_clamp: 2.5
+        ff_velocity_scale: 0.0
+      rh_hip_joint:
+        p: 100.0
+        i: 0.2
+        d: 1.0
+        i_clamp: 2.5
+        ff_velocity_scale: 0.0
+      rh_upper_leg_joint:
+        p: 100.0
+        i: 0.2
+        d: 1.0
+        i_clamp: 2.5
+        ff_velocity_scale: 0.0
+      rh_lower_leg_joint:
+        p: 100.0
+        i: 0.2
+        d: 1.0
+        i_clamp: 2.5
+        ff_velocity_scale: 0.0

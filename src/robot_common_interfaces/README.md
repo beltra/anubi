@@ -20,8 +20,8 @@ map  ──►  odom  ──►  base_footprint  ──►  base_link  ──►
 | Frame | Published by | Notes |
 |-------|-------------|-------|
 | `map → odom` | slam_toolbox | Async 2D SLAM; mapping or localization mode |
-| `odom → base_footprint` | go2_hw_bridge (real) / CHAMP EKF chain (sim) | Dynamic odometry |
-| `base_footprint → base_link` | robot_state_publisher (from URDF) | Fixed, z = standing height |
+| `odom → base_footprint` | go2_hw_bridge (real) / CHAMP EKF chain (sim) | Dynamic planar odometry (x, y, yaw) |
+| `base_footprint → base_link` | go2_hw_bridge (real) / sim_champ.launch.py (sim) | Standing-height z with separated body attitude |
 | `base_link → lidar_link` | robot_state_publisher (from URDF) | Static |
 | `base_link → imu_link` | robot_state_publisher (from URDF) | Static |
 

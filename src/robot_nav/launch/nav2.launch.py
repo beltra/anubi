@@ -21,6 +21,9 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, SetEnvironmentVariable
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch_ros.actions import Node
+from launch_ros.descriptions import ParameterFile
+from nav2_common.launch import RewrittenYaml
 
 
 def generate_launch_description():
@@ -30,6 +33,16 @@ def generate_launch_description():
 
     default_nav2_params_stvl = os.path.join(robot_nav_share, "config", "nav2_params.yaml")
     default_nav2_params_2d = os.path.join(robot_nav_share, "config", "nav2_params_2d.yaml")
+    default_collision_monitor_params = os.path.join(
+        robot_nav_share, "config", "collision_monitor_params.yaml"
+    )
+    default_nav_to_pose_bt = os.path.join(
+        robot_nav_share, "behavior_trees", "navigate_to_pose_industrial_safety.xml"
+    )
+    default_nav_through_poses_bt = os.path.join(
+        robot_nav_share, "behavior_trees", "navigate_through_poses_industrial_safety.xml"
+    )
+    default_lattice_file = os.path.join(robot_nav_share, "config", "lattice_omni_5.json")
 
     declare_use_stvl = DeclareLaunchArgument(
         "use_stvl",
@@ -64,10 +77,46 @@ def generate_launch_description():
         "namespace", default_value="",
         description="Robot namespace for multi-robot setups",
     )
+    declare_collision_monitor_params = DeclareLaunchArgument(
+        "collision_monitor_params",
+        default_value=default_collision_monitor_params,
+        description="Collision monitor params YAML",
+    )
+    declare_lattice_filepath = DeclareLaunchArgument(
+        "lattice_filepath",
+        default_value=default_lattice_file,
+        description="Absolute path to Smac lattice primitive file",
+    )
 
     use_sim_time = LaunchConfiguration("use_sim_time")
     params_file  = LaunchConfiguration("params_file")
     namespace    = LaunchConfiguration("namespace")
+    collision_monitor_params_file = LaunchConfiguration("collision_monitor_params")
+    lattice_filepath = LaunchConfiguration("lattice_filepath")
+
+    # Ensure SmacPlannerLattice always receives an absolute lattice file path.
+    # Relative paths are resolved against process CWD and can fail at runtime.
+    configured_params = RewrittenYaml(
+        source_file=params_file,
+        root_key=namespace,
+        param_rewrites={
+            "lattice_filepath": lattice_filepath,
+            "use_sim_time": use_sim_time,
+            "default_nav_to_pose_bt_xml": default_nav_to_pose_bt,
+            "default_nav_through_poses_bt_xml": default_nav_through_poses_bt,
+        },
+        convert_types=True,
+    )
+    configured_collision_monitor_params = ParameterFile(
+        RewrittenYaml(
+            source_file=collision_monitor_params_file,
+            root_key=namespace,
+            param_rewrites={"use_sim_time": use_sim_time},
+            convert_types=True,
+        ),
+        allow_substs=True,
+    )
+    remappings = [("/tf", "tf"), ("/tf_static", "tf_static")]
 
     # Delegate to nav2_bringup for standard node composition and lifecycle management.
     # slam=false: slam_toolbox is started separately via slam.launch.py.
@@ -79,10 +128,30 @@ def generate_launch_description():
         ),
         launch_arguments={
             "use_sim_time": use_sim_time,
-            "params_file":  params_file,
+            "params_file":  configured_params,
             "namespace":    namespace,
             "autostart":    "true",
         }.items(),
+    )
+
+    collision_monitor = Node(
+        package="nav2_collision_monitor",
+        executable="collision_monitor",
+        name="collision_monitor",
+        output="screen",
+        parameters=[configured_collision_monitor_params],
+        remappings=remappings,
+    )
+    collision_monitor_lifecycle = Node(
+        package="nav2_lifecycle_manager",
+        executable="lifecycle_manager",
+        name="lifecycle_manager_collision_monitor",
+        output="screen",
+        parameters=[
+            {"use_sim_time": use_sim_time},
+            {"autostart": True},
+            {"node_names": ["collision_monitor"]},
+        ],
     )
 
     return LaunchDescription([
@@ -93,5 +162,9 @@ def generate_launch_description():
         declare_nav2_params,
         declare_params_file,
         declare_namespace,
+        declare_collision_monitor_params,
+        declare_lattice_filepath,
         nav2_bringup,
+        collision_monitor,
+        collision_monitor_lifecycle,
     ])

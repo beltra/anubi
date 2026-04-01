@@ -25,7 +25,8 @@ env/
 .DS_Store
 Thumbs.db
 
-# Text editor / IDE configurations
+# Text editor / IDE configurations / AI generated files
 .vscode/
 .idea/
 *.swp
+*.codex

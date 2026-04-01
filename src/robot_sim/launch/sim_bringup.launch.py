@@ -61,7 +61,15 @@ def generate_launch_description():
         DeclareLaunchArgument("world_init_heading", default_value="0.0"),
         DeclareLaunchArgument("publish_map_to_odom_tf", default_value="false"),
         DeclareLaunchArgument("start_nav", default_value="true"),
-        DeclareLaunchArgument("nav_delay_sec", default_value="8.0"),
+        DeclareLaunchArgument(
+            "nav_delay_sec",
+            default_value="20.0",
+            description=(
+                "Delay before starting SLAM. Must exceed the CHAMP controller "
+                "spawn and stand-up time so perception starts from the settled "
+                "standing pose."
+            ),
+        ),
         DeclareLaunchArgument("slam_mode", default_value="mapping"),
         DeclareLaunchArgument("map", default_value=""),
         DeclareLaunchArgument("slam_params", default_value=default_slam_params),
@@ -130,15 +138,17 @@ def generate_launch_description():
         }.items(),
     )
 
-    # slam starts after nav_delay_sec (default 8 s) — long enough for Gazebo + CHAMP + EKF to
-    # stabilise and for the LiDAR bridge to deliver the first scans.
-    # nav2 starts 12 s after slam — allows slam_toolbox to initialise and publish map→odom
-    # before Nav2 activates its lifecycle nodes.  Total Nav2 start offset = nav_delay_sec + 12 s.
+    # SLAM starts only after CHAMP has had time to spawn both controllers
+    # (20 s + 30 s in sim_champ.launch.py) and settle into its standing pose.
+    # Starting scan processing before then pollutes SLAM and the downstream
+    # obstacle stack with observations from the collapsed/spawning posture.
+    # Nav2 starts 10 s after SLAM so slam_toolbox can publish map→odom first.
+    # Total Nav2 start offset = nav_delay_sec + 10 s.
     start_nav_stack = TimerAction(
         period=LaunchConfiguration("nav_delay_sec"),
         actions=[
             slam,
-            TimerAction(period=12.0, actions=[nav2]),
+            TimerAction(period=10.0, actions=[nav2]),
         ],
     )
 

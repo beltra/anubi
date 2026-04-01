@@ -11,8 +11,8 @@
   MACRO: l1_lidar  (Fortress / Ignition Gazebo 6)
   ─────────────────────────────────────────────────────────────────────────────
   Unitree L1 device specifications (from Unitree datasheet):
-    - Scan lines (vertical channels): 18 (simulation uses 30 for fidelity)
-    - Vertical FOV: ±45° (−45° to +45°)
+    - Scan lines (vertical channels): 18 (simulation uses 32 for fidelity)
+    - Vertical FOV: 90° hemispherical
     - Horizontal FOV: 360°
     - Rotation frequency (typical): 10 Hz
     - Range: 0.8 m – 30 m
@@ -40,11 +40,6 @@
         /unilidar/cloud        (LaserScan — unused by nav stack)
         /unilidar/cloud/points (PointCloudPacked, bridged to ROS /lidar/points via remapping)
 
-  ─────────────────────────────────────────────────────────────────────────────
-  MACRO: l1_lidar_gazebo  (Classic / Gazebo 11) — legacy, do not use for Fortress
-  ─────────────────────────────────────────────────────────────────────────────
-  Usage:
-    <xacro:l1_lidar_gazebo parent_link="lidar_link"/>
 -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
@@ -54,7 +49,7 @@
   <xacro:macro name="l1_lidar" params="
       parent
       prefix
-      range_min:=0.05
+      range_min:=0.1
       range_max:=30.0
       *origin">
 
@@ -95,40 +90,34 @@
     -->
     <gazebo reference="${prefix}lidar_link">
       <sensor name="${prefix}lidar_l1" type="gpu_lidar">
-        <!-- FIX(agent1): sensor topic changed to /unilidar/cloud so gpu_lidar emits
-             /unilidar/cloud/points (PointCloudPacked).  The bridge in sim_champ.launch.py
-             bridges /unilidar/cloud/points and remaps it to the ROS topic /lidar/points.
-             This matches the Unitree L1 real-hardware topic name convention. -->
         <topic>/unilidar/cloud</topic>
-        <update_rate>10</update_rate>
-        <always_on>1</always_on>
-        <!-- <visualize>false</visualize> -->
+        <update_rate>11</update_rate>
+        <always_on>true</always_on>
+        <visualize>true</visualize>
         <ignition_frame_id>${prefix}lidar_link</ignition_frame_id>
-        <!-- Ignition Fortress gpu_lidar requires <lidar>, not <ray> (Gazebo Classic).
-             Using <ray> causes Ignition to ignore the config and fall back to a
-             narrow default FOV, producing only a front-arc partial scan. -->
         <lidar>
           <scan>
             <horizontal>
               <!-- 360° sweep — L1 spec: 360° horizontal FOV -->
-              <samples>600</samples>
+              <samples>360</samples>
               <resolution>1</resolution>
-              <min_angle>-3.14159265358979</min_angle>
+              <min_angle>-3.14159265358978</min_angle>
               <max_angle>3.14159265358979</max_angle>
             </horizontal>
             <vertical>
-              <!-- ±45° vertical FOV — L1 spec: 90° vertical FOV (±45°) -->
-              <samples>30</samples>
+              <!-- 90° hemisphere in sensor frame; the Go2 mount flips the sensor
+                   so this sweeps toward the floor in the world frame. -->
+              <samples>32</samples>
               <resolution>1</resolution>
-              <min_angle>-0.78539816339745</min_angle>
-              <max_angle>0.78539816339745</max_angle>
+              <min_angle>0.00</min_angle>
+              <max_angle>1.5</max_angle>
             </vertical>
           </scan>
           <range>
-            <!-- L1 spec: 0.05 m min, 30 m max (L1 RM variant) -->
+            <!-- Fortress is stable here with a 0.1 m near clip. -->
             <min>${range_min}</min>
             <max>${range_max}</max>
-            <resolution>0.001</resolution>
+            <resolution>0.01</resolution>
           </range>
           <noise>
             <type>gaussian</type>

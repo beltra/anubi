@@ -4,14 +4,16 @@
   Minimal Go2 robot description for Nav2 navigation.
 
   Frame tree (Nav2 standard contract):
-    base_footprint  (ground projection, z=0 at foot contact level)
-      └─ base_link        (robot body center at standing height)
+    base_footprint  (published dynamically by the hardware bridge / sim launch)
+      └─ base_link        (robot body center at standing height, roll/pitch-capable)
            ├─ trunk        (visual/collision body mesh)
            ├─ imu_link     (co-located with trunk centre)
            └─ lidar_link   (Unitree L1 LiDAR mount)
 
   Notes:
-    - base_link is placed at nominal standing torso centre height (0.28 m above ground).
+    - This URDF is rooted at base_link. base_footprint is intentionally not part of
+      robot_description so bringup can publish base_footprint→base_link dynamically
+      from IMU roll/pitch without conflicting with robot_state_publisher.
     - lidar_link pose matches Go2 mounting location used by Nav2/SLAM.
     - Leg links are omitted (not needed for Nav2). Add them when joint-state
       visualization or IK is required.
@@ -34,6 +36,8 @@
   <!-- Full robot standing envelope including legs (Unitree Go2 official specs) -->
   <xacro:property name="stance_length"  value="0.700"/>  <!-- full X with legs -->
   <xacro:property name="stance_width"   value="0.310"/>  <!-- full Y with legs -->
+  <xacro:property name="safety_length"  value="0.800"/>  <!-- +50 mm safety margin on each side -->
+  <xacro:property name="safety_width"   value="0.410"/>  <!-- +50 mm safety margin on each side -->
   <xacro:property name="stance_height"  value="0.230"/>  <!-- approx clearance:
                                                               ground to body bottom
                                                               (standing_height - body_height/2)
@@ -51,23 +55,8 @@
   <xacro:property name="lidar_yaw" value="0.0"/>
 
   <!-- ═══════════════════════════════════════════════════════════════════════
-       base_footprint  —  ground contact reference (Nav2 global frame anchor)
-  ════════════════════════════════════════════════════════════════════════════ -->
-  <link name="base_footprint">
-    <visual>
-      <geometry><box size="0.001 0.001 0.001"/></geometry>
-    </visual>
-  </link>
-
-  <!-- ═══════════════════════════════════════════════════════════════════════
        base_link  —  robot body centre
   ════════════════════════════════════════════════════════════════════════════ -->
-  <joint name="base_footprint_to_base_link" type="fixed">
-    <parent link="base_footprint"/>
-    <child  link="base_link"/>
-    <origin xyz="0 0 ${standing_height}" rpy="0 0 0"/>
-  </joint>
-
   <link name="base_link">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -85,7 +74,7 @@
         <color rgba="0.2 0.2 0.2 1.0"/>
       </material>
     </visual>
-    <!-- Leg stance envelope — represents full swept area including legs.
+    <!-- Leg stance envelope — represents the physical standing footprint.
          Positioned at z = -(standing_height - stance_height/2) relative to
          base_link, which is: -(0.28 - 0.115) = -0.165 m -->
     <visual name="stance_visual">
@@ -110,13 +99,11 @@
         <box size="${body_length} ${body_width*2} ${body_height}"/>
       </geometry>
     </collision>
-    <!-- Leg stance envelope — represents full swept area including legs.
-         Positioned at z = -(standing_height - stance_height/2) relative to
-         base_link, which is: -(0.28 - 0.115) = -0.165 m -->
+    <!-- Safety envelope used by collision consumers that inspect URDF collision geometry. -->
     <collision>
       <origin xyz="0 0 ${-(standing_height - stance_height/2)}" rpy="0 0 0"/>
       <geometry>
-        <box size="${stance_length} ${stance_width} ${stance_height}"/>
+        <box size="${safety_length} ${safety_width} ${stance_height}"/>
       </geometry>
     </collision>
     <inertial>
