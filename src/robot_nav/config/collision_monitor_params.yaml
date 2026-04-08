@@ -62,8 +62,14 @@ collision_monitor:
     pointcloud:
       type: "pointcloud"
       topic: "/lidar/points_undistorted"
-      min_height: 0.05
-      max_height: 2.5   # covers tall warehouse racks + standing humans with margin
-      min_range: 0.1
+      min_height: 0.25
+      max_height: 2.5
+      # Self-hit rejection: the L1 LiDAR at x=0.29 m from body centre sees the
+      # robot's own legs and trunk at ranges up to ~0.48 m.  Setting min_range
+      # to 0.5 m suppresses these returns while still detecting external obstacles
+      # that are ≥0.21 m from the robot's front edge (footprint extends 0.40 m
+      # forward from centre, LiDAR is at 0.29 m, so 0.5 m from LiDAR ≈ 0.79 m
+      # from centre ≈ 0.39 m clearance from the front footprint edge).
+      min_range: 0.5
       enabled: True
       source_timeout: 0.5

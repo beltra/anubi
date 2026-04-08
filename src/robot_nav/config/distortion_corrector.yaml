@@ -11,6 +11,12 @@ distortion_corrector:
     use_imu: true
     use_3d_distortion_correction: true
 
+    # Static mount rotation [roll, pitch, yaw] from body frame (base_link) to
+    # sensor frame (lidar_link).  The Unitree L1 LiDAR on the Go2 is mounted
+    # upside-down, giving Rx(π).  This rotation is applied to odom/IMU
+    # velocities so that the deskew operates correctly in the sensor frame.
+    sensor_mount_rpy: [3.14159265358979, 0.0, 0.0]
+
     # Unitree L1 nominal rotation frequency is 10 Hz -> 0.1 s per revolution.
     scan_period: 0.1
 

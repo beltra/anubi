@@ -2,7 +2,7 @@
 
 import math
 from collections import deque
-from typing import Deque, List, Optional, Sequence, Tuple
+from typing import Deque, Optional, Tuple
 
 import numpy as np
 
@@ -11,28 +11,10 @@ from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from rclpy.qos import QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import Imu, PointCloud2
-from sensor_msgs_py import point_cloud2
 
 
 def _stamp_to_seconds(stamp) -> float:
     return float(stamp.sec) + float(stamp.nanosec) * 1e-9
-
-
-def _quat_to_rpy(x: float, y: float, z: float, w: float) -> Tuple[float, float, float]:
-    sinr_cosp = 2.0 * (w * x + y * z)
-    cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
-    roll = math.atan2(sinr_cosp, cosr_cosp)
-
-    sinp = 2.0 * (w * y - z * x)
-    if abs(sinp) >= 1.0:
-        pitch = math.copysign(math.pi / 2.0, sinp)
-    else:
-        pitch = math.asin(sinp)
-
-    siny_cosp = 2.0 * (w * z + x * y)
-    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
-    yaw = math.atan2(siny_cosp, cosy_cosp)
-    return roll, pitch, yaw
 
 
 def _rotation_from_rpy(roll: float, pitch: float, yaw: float) -> np.ndarray:
@@ -53,35 +35,6 @@ def _rotation_from_rpy(roll: float, pitch: float, yaw: float) -> np.ndarray:
     )
 
 
-def _rotation_from_omega(omega: np.ndarray, dt: float) -> np.ndarray:
-    theta = float(np.linalg.norm(omega) * dt)
-    if theta < 1e-9:
-        wx, wy, wz = omega * dt
-        skew = np.array(
-            [
-                [0.0, -wz, wy],
-                [wz, 0.0, -wx],
-                [-wy, wx, 0.0],
-            ],
-            dtype=np.float64,
-        )
-        return np.eye(3, dtype=np.float64) + skew
-
-    axis = omega / float(np.linalg.norm(omega))
-    ax, ay, az = axis
-    skew = np.array(
-        [
-            [0.0, -az, ay],
-            [az, 0.0, -ax],
-            [-ay, ax, 0.0],
-        ],
-        dtype=np.float64,
-    )
-    return (
-        np.eye(3, dtype=np.float64)
-        + math.sin(theta) * skew
-        + (1.0 - math.cos(theta)) * (skew @ skew)
-    )
 
 
 class DistortionCorrector(Node):
@@ -98,6 +51,10 @@ class DistortionCorrector(Node):
         self.declare_parameter("use_twist", True)
         self.declare_parameter("use_3d_distortion_correction", True)
         self.declare_parameter("scan_period", 0.1)
+        # Static mount rotation from body frame (base_link) to sensor frame
+        # (lidar_link).  For the Unitree Go2 with the L1 LiDAR mounted
+        # upside-down this is Rx(π) = [roll=π, pitch=0, yaw=0].
+        self.declare_parameter("sensor_mount_rpy", [3.14159265358979, 0.0, 0.0])
         self.declare_parameter("timestamp_field_name", "")
         self.declare_parameter(
             "timestamp_field_candidates",
@@ -134,6 +91,10 @@ class DistortionCorrector(Node):
         self._drop_stale_clouds = bool(self.get_parameter("drop_stale_clouds").value)
         self._max_input_delay_sec = float(self.get_parameter("max_input_delay_sec").value)
         self._output_stamp_mode = str(self.get_parameter("output_stamp_mode").value).lower()
+
+        # Pre-compute the static rotation from body frame to sensor frame.
+        mount_rpy = list(self.get_parameter("sensor_mount_rpy").value)
+        self._R_mount = _rotation_from_rpy(mount_rpy[0], mount_rpy[1], mount_rpy[2])
 
         self._imu_history: Deque[Imu] = deque(maxlen=400)
         self._odom_history: Deque[Odometry] = deque(maxlen=200)
@@ -186,8 +147,6 @@ class DistortionCorrector(Node):
 
         linear_velocity = np.zeros(3, dtype=np.float64)
         angular_velocity = np.zeros(3, dtype=np.float64)
-        roll = 0.0
-        pitch = 0.0
 
         if odom_msg is not None:
             twist = odom_msg.twist.twist
@@ -199,7 +158,8 @@ class DistortionCorrector(Node):
             )
 
         if imu_msg is not None:
-            imu_omega = np.array(
+            # Prefer IMU angular velocity (higher rate, more accurate)
+            angular_velocity = np.array(
                 [
                     imu_msg.angular_velocity.x,
                     imu_msg.angular_velocity.y,
@@ -207,26 +167,21 @@ class DistortionCorrector(Node):
                 ],
                 dtype=np.float64,
             )
-            angular_velocity = imu_omega
-            orientation = imu_msg.orientation
-            if math.isfinite(orientation.x) and math.isfinite(orientation.y) and math.isfinite(
-                orientation.z
-            ) and math.isfinite(orientation.w):
-                roll, pitch, _ = _quat_to_rpy(
-                    orientation.x, orientation.y, orientation.z, orientation.w
-                )
 
         if not self._use_3d:
             linear_velocity[2] = 0.0
             angular_velocity[0] = 0.0
             angular_velocity[1] = 0.0
-            roll = 0.0
-            pitch = 0.0
 
-        body_to_sensor = _rotation_from_rpy(roll, pitch, 0.0)
-        linear_sensor = body_to_sensor @ linear_velocity
+        # Transform velocities from body frame to sensor frame using the
+        # static mount rotation.  The point cloud lives in the sensor frame
+        # (lidar_link), so the deskew corrections must be in that frame too.
+        # Previous code incorrectly used IMU roll/pitch here instead of the
+        # fixed mount rotation, and never transformed angular velocity.
+        linear_sensor = self._R_mount @ linear_velocity
+        angular_sensor = self._R_mount @ angular_velocity
 
-        return linear_sensor, angular_velocity, odom_msg, imu_msg
+        return linear_sensor, angular_sensor, odom_msg, imu_msg
 
     def _resolve_time_field(self, msg: PointCloud2) -> Tuple[Optional[int], Optional[str]]:
         field_names = [field.name for field in msg.fields]
@@ -238,32 +193,16 @@ class DistortionCorrector(Node):
                 return field_names.index(candidate), candidate
         return None, None
 
-    def _resolve_xyz_indices(
-        self, msg: PointCloud2
-    ) -> Tuple[Optional[int], Optional[int], Optional[int]]:
-        field_names = [field.name for field in msg.fields]
-        if "x" not in field_names or "y" not in field_names or "z" not in field_names:
-            return None, None, None
-        return field_names.index("x"), field_names.index("y"), field_names.index("z")
+    def _relative_times_from_field_np(
+        self, values: np.ndarray,
+    ) -> np.ndarray:
+        finite_mask = np.isfinite(values)
+        if not np.any(finite_mask):
+            return np.zeros(len(values), dtype=np.float64)
 
-    def _relative_times_from_field(
-        self, points: Sequence[Tuple], field_index: int
-    ) -> List[float]:
-        values = []
-        for point in points:
-            raw = point[field_index]
-            try:
-                value = float(raw)
-            except (TypeError, ValueError):
-                value = float("nan")
-            values.append(value)
-
-        finite_values = [value for value in values if math.isfinite(value)]
-        if not finite_values:
-            return [0.0] * len(points)
-
-        min_value = min(finite_values)
-        max_abs = max(abs(value) for value in finite_values)
+        finite_values = values[finite_mask]
+        min_value = float(np.min(finite_values))
+        max_abs = float(np.max(np.abs(finite_values)))
 
         if self._timestamp_unit == "seconds":
             scale = 1.0
@@ -283,55 +222,36 @@ class DistortionCorrector(Node):
             else:
                 scale = 1e-9
 
-        return [
-            max(0.0, (value - min_value) * scale) if math.isfinite(value) else 0.0
-            for value in values
-        ]
+        result = np.where(finite_mask, np.maximum(0.0, (values - min_value) * scale), 0.0)
+        return result
 
-    def _relative_times_from_azimuth(
-        self, points: Sequence[Tuple], x_index: int, y_index: int
-    ) -> List[float]:
-        start_azimuth = None
-        azimuths = []
-        for point in points:
-            x = float(point[x_index])
-            y = float(point[y_index])
-            if math.isfinite(x) and math.isfinite(y):
-                azimuth = math.atan2(y, x)
-                if azimuth < 0.0:
-                    azimuth += 2.0 * math.pi
-                if start_azimuth is None:
-                    start_azimuth = azimuth
-            else:
-                azimuth = float("nan")
-            azimuths.append(azimuth)
+    def _relative_times_from_azimuth_np(
+        self, x: np.ndarray, y: np.ndarray,
+    ) -> np.ndarray:
+        finite_mask = np.isfinite(x) & np.isfinite(y)
+        if not np.any(finite_mask):
+            return np.zeros(len(x), dtype=np.float64)
 
-        if start_azimuth is None:
-            return [0.0] * len(points)
+        azimuths = np.arctan2(y, x)
+        azimuths = np.where(azimuths < 0.0, azimuths + 2.0 * math.pi, azimuths)
 
-        times = []
-        for azimuth in azimuths:
-            if not math.isfinite(azimuth):
-                times.append(0.0)
-                continue
+        # Find start azimuth from the first finite point
+        first_finite = int(np.argmax(finite_mask))
+        start_azimuth = float(azimuths[first_finite])
 
-            if self._azimuth_direction == "cw":
-                progress = (start_azimuth - azimuth) % (2.0 * math.pi)
-            else:
-                progress = (azimuth - start_azimuth) % (2.0 * math.pi)
+        if self._azimuth_direction == "cw":
+            progress = (start_azimuth - azimuths) % (2.0 * math.pi)
+        else:
+            progress = (azimuths - start_azimuth) % (2.0 * math.pi)
 
-            times.append((progress / (2.0 * math.pi)) * self._scan_period)
+        times = (progress / (2.0 * math.pi)) * self._scan_period
+        times = np.where(finite_mask, times, 0.0)
         return times
 
-    def _relative_times_from_index(self, points: Sequence[Tuple]) -> List[float]:
-        if not points:
-            return []
-        if len(points) == 1:
-            return [0.0]
-        return [
-            (float(index) / float(len(points) - 1)) * self._scan_period
-            for index in range(len(points))
-        ]
+    def _relative_times_from_index_np(self, n: int) -> np.ndarray:
+        if n <= 1:
+            return np.zeros(max(n, 0), dtype=np.float64)
+        return np.linspace(0.0, self._scan_period, n, dtype=np.float64)
 
     def _warn_timestamp_mode_once(self, mode: str) -> None:
         if self._warned_timestamp_mode == mode:
@@ -351,6 +271,31 @@ class DistortionCorrector(Node):
         self._warned_stale_drop = reason
         self.get_logger().warning(f"Dropping stale cloud: {reason}")
 
+    @staticmethod
+    def _build_dtype(msg: PointCloud2):
+        """Build a numpy structured dtype from the PointCloud2 field descriptors.
+
+        Accounts for padding between fields and at the end of each point so that
+        the dtype itemsize equals msg.point_step.  Without this, np.frombuffer
+        misaligns every point after the first.
+        """
+        _ROS_TO_NP = {1: np.int8, 2: np.uint8, 3: np.int16, 4: np.uint16,
+                      5: np.int32, 6: np.uint32, 7: np.float32, 8: np.float64}
+        _ROS_SIZES = {1: 1, 2: 1, 3: 2, 4: 2, 5: 4, 6: 4, 7: 4, 8: 8}
+        fields = {}
+        for f in msg.fields:
+            np_type = _ROS_TO_NP.get(f.datatype, np.uint8)
+            size = _ROS_SIZES.get(f.datatype, 1)
+            if f.count == 1:
+                fields[f.name] = (np_type, f.offset)
+            else:
+                fields[f.name] = (np_type, (f.count,), f.offset)
+        return np.dtype({"names": list(fields.keys()),
+                         "formats": [v[0] if len(v) == 2 else (v[0], v[1])
+                                     for v in fields.values()],
+                         "offsets": [v[-1] for v in fields.values()],
+                         "itemsize": msg.point_step})
+
     def _cloud_cb(self, msg: PointCloud2) -> None:
         now_sec = self.get_clock().now().nanoseconds * 1e-9
         cloud_stamp = _stamp_to_seconds(msg.header.stamp)
@@ -361,17 +306,19 @@ class DistortionCorrector(Node):
             )
             return
 
-        points = list(point_cloud2.read_points(msg, field_names=None, skip_nans=False))
-        if not points:
+        n_points = msg.width * msg.height
+        if n_points == 0:
             self._publisher.publish(msg)
             return
 
-        x_index, y_index, z_index = self._resolve_xyz_indices(msg)
-        if x_index is None or y_index is None or z_index is None:
+        # ── Parse field layout ────────────────────────────────────────────
+        field_names = [f.name for f in msg.fields]
+        if "x" not in field_names or "y" not in field_names or "z" not in field_names:
             self._warn_passthrough_once("cloud is missing x/y/z fields")
             self._publisher.publish(msg)
             return
 
+        # ── State lookup ──────────────────────────────────────────────────
         linear_velocity, angular_velocity, odom_msg, imu_msg = self._select_state(cloud_stamp)
 
         if self._use_twist and odom_msg is None:
@@ -386,45 +333,69 @@ class DistortionCorrector(Node):
                 self._publisher.publish(msg)
                 return
 
+        # ── Read cloud as numpy structured array (zero-copy view) ─────────
+        dt_struct = self._build_dtype(msg)
+        raw = np.frombuffer(msg.data, dtype=dt_struct)
+
+        x = raw["x"].astype(np.float64)
+        y = raw["y"].astype(np.float64)
+        z = raw["z"].astype(np.float64)
+
+        # ── Compute per-point relative times (vectorised) ─────────────────
         time_field_index, time_field_name = self._resolve_time_field(msg)
         if time_field_index is not None and time_field_name is not None:
-            relative_times = self._relative_times_from_field(points, time_field_index)
+            t_vals = raw[time_field_name].astype(np.float64)
+            rel_t = self._relative_times_from_field_np(t_vals)
             self._warn_timestamp_mode_once(f"field:{time_field_name}")
         elif self._fallback_mode == "index":
-            relative_times = self._relative_times_from_index(points)
+            rel_t = self._relative_times_from_index_np(n_points)
             self._warn_timestamp_mode_once("fallback:index")
         else:
-            relative_times = self._relative_times_from_azimuth(points, x_index, y_index)
+            rel_t = self._relative_times_from_azimuth_np(x, y)
             self._warn_timestamp_mode_once("fallback:azimuth")
 
-        corrected_points = []
-        for point, dt in zip(points, relative_times):
-            point_values = list(point)
-            x = float(point_values[x_index])
-            y = float(point_values[y_index])
-            z = float(point_values[z_index])
+        # ── Vectorised deskew ─────────────────────────────────────────────
+        # First-order Rodrigues: R(dt) ≈ I + dt·K  where K = skew(ω).
+        # For typical scan_period=0.1 s and |ω| < 5 rad/s, max θ = 0.5 rad,
+        # sin(θ)/θ ≈ 0.96 — first-order is accurate to ~4%.  This avoids
+        # computing a per-point 3×3 matrix multiply.
+        wx, wy, wz = angular_velocity
+        vx, vy, vz = linear_velocity
 
-            if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z)):
-                corrected_points.append(tuple(point_values))
-                continue
+        finite_mask = np.isfinite(x) & np.isfinite(y) & np.isfinite(z)
 
-            rotation = _rotation_from_omega(angular_velocity, dt)
-            translation = linear_velocity * dt
-            corrected_xyz = rotation @ np.array([x, y, z], dtype=np.float64) + translation
+        # dx = dt*(vx + wy*z - wz*y)   (cross product + translation)
+        # dy = dt*(vy + wz*x - wx*z)
+        # dz = dt*(vz + wx*y - wy*x)
+        dx = rel_t * (vx + wy * z - wz * y)
+        dy = rel_t * (vy + wz * x - wx * z)
+        dz = rel_t * (vz + wx * y - wy * x)
 
-            point_values[x_index] = float(corrected_xyz[0])
-            point_values[y_index] = float(corrected_xyz[1])
-            point_values[z_index] = float(corrected_xyz[2])
-            corrected_points.append(tuple(point_values))
+        cx = np.where(finite_mask, (x + dx).astype(np.float32), raw["x"])
+        cy = np.where(finite_mask, (y + dy).astype(np.float32), raw["y"])
+        cz = np.where(finite_mask, (z + dz).astype(np.float32), raw["z"])
 
-        output_header = msg.header
+        # ── Write corrected data back ─────────────────────────────────────
+        out_data = bytearray(msg.data)
+        out_arr = np.frombuffer(out_data, dtype=dt_struct)
+        out_arr["x"] = cx
+        out_arr["y"] = cy
+        out_arr["z"] = cz
+
+        # ── Publish ───────────────────────────────────────────────────────
+        out_msg = PointCloud2()
+        out_msg.header = msg.header
         if self._output_stamp_mode == "now":
-            output_header.stamp = self.get_clock().now().to_msg()
-
-        corrected = point_cloud2.create_cloud(output_header, msg.fields, corrected_points)
-        corrected.is_bigendian = msg.is_bigendian
-        corrected.is_dense = msg.is_dense
-        self._publisher.publish(corrected)
+            out_msg.header.stamp = self.get_clock().now().to_msg()
+        out_msg.height = msg.height
+        out_msg.width = msg.width
+        out_msg.fields = msg.fields
+        out_msg.is_bigendian = msg.is_bigendian
+        out_msg.point_step = msg.point_step
+        out_msg.row_step = msg.row_step
+        out_msg.data = bytes(out_data)
+        out_msg.is_dense = msg.is_dense
+        self._publisher.publish(out_msg)
 
 
 def main() -> None:

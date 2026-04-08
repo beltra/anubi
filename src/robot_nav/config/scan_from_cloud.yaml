@@ -22,11 +22,16 @@ pointcloud_to_laserscan:
 
     transform_tolerance: 0.05      # [s] TF lookup timeout
 
-    # Height filter (relative to target_frame origin) — Assumption A-SCAN-2
-    # A too-thin slice can produce all-inf scans (no valid beams), which
-    # prevents slam_toolbox from initializing the map.
-    min_height: 0.2             # [m]
-    max_height: 0.4              # [m]
+    # Height filter (relative to target_frame = base_footprint origin)
+    # The L1 LiDAR is at z ≈ 0.233 m above base_footprint.  Near-horizontal
+    # obstacle returns arrive at approximately that height.  The band must be
+    # centred on the LiDAR height and wide enough to accommodate ±5° body
+    # pitch during CHAMP locomotion.
+    # NOTE: some ground returns may slip through at close range with body
+    # pitch, but slam_toolbox handles sparse ground noise well.  The costmap
+    # layers use a higher min_obstacle_height (0.25 m) for tighter rejection.
+    min_height: 0.10            # [m]  ~13 cm below LiDAR — captures horizontal returns
+    max_height: 0.55            # [m]  ~32 cm above LiDAR — captures pitched-up returns
 
     # Angular scan parameters
     angle_min: -3.14159265         # [rad] -180°
