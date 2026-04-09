@@ -3,9 +3,8 @@
   l1_lidar.urdf.xacro
   Reusable sensor macros for the Unitree L1 LiDAR sensor.
 
-  Two macros are provided:
-    1. l1_lidar          — Gazebo Fortress (Ignition Gazebo 6, ROS 2 Humble) — USE THIS
-    2. l1_lidar_gazebo   — Gazebo Classic (Gazebo 11) — kept for robot_sim Classic pipeline
+  Macro provided:
+    1. l1_lidar          — Gazebo Fortress (Ignition Gazebo 6, ROS 2 Humble)
 
   ─────────────────────────────────────────────────────────────────────────────
   MACRO: l1_lidar  (Fortress / Ignition Gazebo 6)

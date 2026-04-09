@@ -19,8 +19,8 @@ Services exposed
 
 Gazebo services used
 --------------------
-/spawn_entity   gazebo_msgs/srv/SpawnEntity
-/delete_entity  gazebo_msgs/srv/DeleteEntity
+/world/<name>/create  ros_gz_interfaces/srv/SpawnEntity
+/world/<name>/remove  ros_gz_interfaces/srv/DeleteEntity
 
 Scenario YAML format
 --------------------
@@ -48,7 +48,8 @@ from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
 
 from std_srvs.srv import Trigger
-from gazebo_msgs.srv import SpawnEntity, DeleteEntity
+from ros_gz_interfaces.srv import SpawnEntity, DeleteEntity
+from ros_gz_interfaces.msg import Entity
 from geometry_msgs.msg import Pose
 
 from ament_index_python.packages import get_package_share_directory
@@ -61,18 +62,22 @@ class ScenarioManager(Node):
 
         # ── Parameters ────────────────────────────────────────────────
         self.declare_parameter('scenario_file', '')
+        self.declare_parameter('world_name', 'indoor_office')
         self.declare_parameter(
             'models_path',
             os.path.join(get_package_share_directory('sim_worlds'), 'models'),
         )
 
+        self._world_name = self.get_parameter('world_name').value
         self._scenario_file = self.get_parameter('scenario_file').value
         self._models_path   = self.get_parameter('models_path').value
 
         # ── Gazebo clients ─────────────────────────────────────────────
+        spawn_service = f'/world/{self._world_name}/create'
+        delete_service = f'/world/{self._world_name}/remove'
         cb = ReentrantCallbackGroup()
-        self._spawn_client  = self.create_client(SpawnEntity,  '/spawn_entity',  callback_group=cb)
-        self._delete_client = self.create_client(DeleteEntity, '/delete_entity', callback_group=cb)
+        self._spawn_client  = self.create_client(SpawnEntity, spawn_service, callback_group=cb)
+        self._delete_client = self.create_client(DeleteEntity, delete_service, callback_group=cb)
 
         # ── Exposed services ───────────────────────────────────────────
         self.create_service(Trigger, '/sim/clear_obstacles', self._clear_cb)
@@ -197,14 +202,16 @@ class ScenarioManager(Node):
 
         # Wait for service
         if not self._spawn_client.wait_for_service(timeout_sec=5.0):
-            self.get_logger().error('/spawn_entity service not available')
+            self.get_logger().error(
+                f"{self._spawn_client.srv_name} service not available"
+            )
             return False
 
         req = SpawnEntity.Request()
-        req.name          = name
-        req.xml           = entity_xml
-        req.initial_pose  = pose
-        req.reference_frame = 'world'
+        req.entity_factory.name = name
+        req.entity_factory.sdf = entity_xml
+        req.entity_factory.pose = pose
+        req.entity_factory.relative_to = 'world'
 
         future = self._spawn_client.call_async(req)
         rclpy.spin_until_future_complete(self, future, timeout_sec=10.0)
@@ -213,9 +220,7 @@ class ScenarioManager(Node):
             self.get_logger().error(f'SpawnEntity call failed for {name}')
             return False
         if not future.result().success:
-            self.get_logger().error(
-                f'SpawnEntity rejected {name}: {future.result().status_message}'
-            )
+            self.get_logger().error(f'SpawnEntity rejected {name}')
             return False
 
         self.get_logger().info(f'Spawned obstacle: {name} ({model_name})')
@@ -224,18 +229,20 @@ class ScenarioManager(Node):
 
     def _delete_obstacle(self, name: str) -> bool:
         if not self._delete_client.wait_for_service(timeout_sec=5.0):
-            self.get_logger().error('/delete_entity service not available')
+            self.get_logger().error(
+                f"{self._delete_client.srv_name} service not available"
+            )
             return False
 
         req = DeleteEntity.Request()
-        req.name = name
+        req.entity.name = name
+        req.entity.type = Entity.MODEL
 
         future = self._delete_client.call_async(req)
         rclpy.spin_until_future_complete(self, future, timeout_sec=10.0)
 
         if future.result() is None or not future.result().success:
-            msg = future.result().status_message if future.result() else 'timeout'
-            self.get_logger().warning(f'DeleteEntity failed for {name}: {msg}')
+            self.get_logger().warning(f'DeleteEntity failed for {name}')
             return False
 
         self.get_logger().info(f'Deleted obstacle: {name}')

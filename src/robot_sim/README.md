@@ -88,7 +88,6 @@ ros2 run sim_scenarios scenario_manager \
 ## Known Limitations
 
 - Fortress + CHAMP is the maintained simulation path.
-- `sim_classic_bringup.launch.py` is kept as a legacy Gazebo Classic workflow.
 - AgiBot D1 Ultra model (`d1_sim/`) is a stub — chassis dimensions are placeholders.
   Launch with `robot:=d1` is supported once `d1_sim/urdf/d1_sim.urdf.xacro` is completed.
 - `config/sim_params.yaml` is intentionally empty — `use_sim_time=true` is set via

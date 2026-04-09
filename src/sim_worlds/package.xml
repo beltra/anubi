@@ -4,7 +4,7 @@
   <name>sim_worlds</name>
   <version>0.1.0</version>
   <description>
-    Gazebo Classic (Gazebo 11) world files and SDF obstacle models.
+    Gazebo Fortress world files and SDF obstacle models.
 
     Worlds:
       navigation_empty.world — flat 20×15 m room, good for first-run testing
@@ -24,8 +24,6 @@
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
-
-  <exec_depend>gazebo_ros</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

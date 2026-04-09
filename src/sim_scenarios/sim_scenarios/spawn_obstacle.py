@@ -29,7 +29,8 @@ import sys
 
 import rclpy
 from rclpy.node import Node
-from gazebo_msgs.srv import SpawnEntity, DeleteEntity
+from ros_gz_interfaces.srv import SpawnEntity, DeleteEntity
+from ros_gz_interfaces.msg import Entity
 from geometry_msgs.msg import Pose, Quaternion
 
 from ament_index_python.packages import get_package_share_directory
@@ -65,23 +66,22 @@ def spawn(node: Node, args, models_path: str) -> bool:
     pose.position.z = args.z
     pose.orientation = _euler_to_quat(args.roll, args.pitch, args.yaw)
 
-    client = node.create_client(SpawnEntity, '/spawn_entity')
+    client = node.create_client(SpawnEntity, f'/world/{args.world_name}/create')
     if not client.wait_for_service(timeout_sec=5.0):
-        node.get_logger().error('/spawn_entity service not available')
+        node.get_logger().error(f'{client.srv_name} service not available')
         return False
 
     req = SpawnEntity.Request()
-    req.name           = args.name
-    req.xml            = xml
-    req.initial_pose   = pose
-    req.reference_frame = 'world'
+    req.entity_factory.name = args.name
+    req.entity_factory.sdf = xml
+    req.entity_factory.pose = pose
+    req.entity_factory.relative_to = 'world'
 
     future = client.call_async(req)
     rclpy.spin_until_future_complete(node, future, timeout_sec=10.0)
 
     if future.result() is None or not future.result().success:
-        msg = future.result().status_message if future.result() else 'timeout'
-        node.get_logger().error(f'SpawnEntity failed: {msg}')
+        node.get_logger().error('SpawnEntity failed')
         return False
 
     node.get_logger().info(f'Spawned {args.name} ({args.model}) at ({args.x},{args.y},{args.z})')
@@ -89,20 +89,21 @@ def spawn(node: Node, args, models_path: str) -> bool:
 
 
 def delete(node: Node, name: str) -> bool:
-    client = node.create_client(DeleteEntity, '/delete_entity')
+    world_name = node.get_parameter('world_name').value
+    client = node.create_client(DeleteEntity, f'/world/{world_name}/remove')
     if not client.wait_for_service(timeout_sec=5.0):
-        node.get_logger().error('/delete_entity service not available')
+        node.get_logger().error(f'{client.srv_name} service not available')
         return False
 
     req = DeleteEntity.Request()
-    req.name = name
+    req.entity.name = name
+    req.entity.type = Entity.MODEL
 
     future = client.call_async(req)
     rclpy.spin_until_future_complete(node, future, timeout_sec=10.0)
 
     if future.result() is None or not future.result().success:
-        msg = future.result().status_message if future.result() else 'timeout'
-        node.get_logger().error(f'DeleteEntity failed: {msg}')
+        node.get_logger().error('DeleteEntity failed')
         return False
 
     node.get_logger().info(f'Deleted {name}')
@@ -132,12 +133,15 @@ def main(args=None):
     parser.add_argument('--yaw',   type=float, default=0.0)
     parser.add_argument('--models-path', default='',
                         help='Override path to model SDF directory')
+    parser.add_argument('--world-name', default='indoor_office',
+                        help='Gazebo world name for /world/<name>/create|remove services')
 
     # Split ROS args from program args
     rclpy.init(args=args)
     parsed = parser.parse_args(sys.argv[1:])
 
     node = Node('spawn_obstacle_cli')
+    node.declare_parameter('world_name', parsed.world_name)
 
     models_path = parsed.models_path or os.path.join(
         get_package_share_directory('sim_worlds'), 'models'

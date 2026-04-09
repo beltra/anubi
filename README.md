@@ -243,7 +243,6 @@ ros2 run sim_scenarios scenario_manager \
 ### Known simulation limits
 
 - Gazebo Fortress + CHAMP is the maintained simulation path.
-- `sim_classic_bringup.launch.py` remains available for legacy Gazebo Classic workflows.
 - AgiBot D1 Ultra sim (`d1_sim/`) is a stub — chassis dimensions are placeholders.
 
 ---

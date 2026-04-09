@@ -25,9 +25,8 @@ add_pids() {
 for name in \
   roscore rosmaster roslaunch rosout ros2 rviz2 rqt \
   ign ignition gazebo gz gzserver gzclient \
-  gzserver-11 gzclient-11 \
   gzserver-fortress gzclient-fortress \
-  gazebo gazebo-11 gazebo-fortress \
+  gazebo gazebo-fortress \
   parameter_bridge create \
   robot_state_publisher static_transform_publisher \
   pointcloud_to_laserscan_node velocity_limiter \

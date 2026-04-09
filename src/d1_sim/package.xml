@@ -4,16 +4,14 @@
   <name>d1_sim</name>
   <version>0.1.0</version>
   <description>
-    AgiBot D1 Ultra Gazebo Classic simulation URDF stub.
+    AgiBot D1 Ultra Gazebo Fortress simulation URDF stub.
 
     TODO(agibot): Implement d1_sim.urdf.xacro following the same pattern as
     go2_sim/urdf/go2_sim.urdf.xacro:
       1. Use the same frame names: base_footprint, base_link, lidar_link, imu_link
       2. Adjust trunk dimensions and inertia to D1 Ultra specs
-      3. Replace l1_lidar_gazebo macro with D1's sensor macro (add to sensor_models/)
-         or reuse l1_lidar_gazebo with D1 LiDAR parameters
-      4. Keep the libgazebo_ros_planar_move block unchanged
-      5. Zero changes required in robot_nav/ or robot_sim/
+      3. Reuse l1_lidar macro or add D1-specific sensor macro in sensor_models/
+      4. Zero changes required in robot_nav/ or robot_sim/
 
     After implementing:
       ros2 launch robot_sim sim_bringup.launch.py robot:=d1
@@ -24,7 +22,6 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <exec_depend>xacro</exec_depend>
-  <exec_depend>gazebo_ros</exec_depend>
   <exec_depend>sensor_models</exec_depend>
 
   <export>

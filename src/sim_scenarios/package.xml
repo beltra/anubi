@@ -4,11 +4,11 @@
   <name>sim_scenarios</name>
   <version>0.1.0</version>
   <description>
-    Runtime obstacle management for Gazebo Classic simulation.
+    Runtime obstacle management for Gazebo simulation.
 
     Nodes:
       scenario_manager — loads a YAML scenario file and spawns/removes obstacles
-                          via Gazebo SpawnEntity / DeleteEntity services.
+                          via ros_gz SpawnEntity / DeleteEntity services.
                           Exposes /sim/clear_obstacles (std_srvs/Trigger).
 
     CLI tools (ros2 run sim_scenarios ...):
@@ -24,7 +24,7 @@
   <buildtool_depend>ament_python</buildtool_depend>
 
   <exec_depend>rclpy</exec_depend>
-  <exec_depend>gazebo_msgs</exec_depend>
+  <exec_depend>ros_gz_interfaces</exec_depend>
   <exec_depend>std_srvs</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>sim_worlds</exec_depend>

@@ -6,12 +6,10 @@
   <description>
     Reusable xacro sensor macros for Gazebo simulation.
 
-    Two macros for the Unitree L1 LiDAR:
-      l1_lidar       — Gazebo Fortress (Ignition Gazebo 6, ROS 2 Humble)
-                       Uses gpu_lidar sensor type, ignition_frame_id.
-                       Interface: parent, prefix, *origin (block).
-      l1_lidar_gazebo — Gazebo Classic (Gazebo 11) — legacy robot_sim pipeline.
-                        Uses gpu_ray + libgazebo_ros_ray_sensor.
+    L1 LiDAR macro:
+      l1_lidar — Gazebo Fortress (Ignition Gazebo 6, ROS 2 Humble)
+                 Uses gpu_lidar sensor type and ignition_frame_id.
+                 Interface: parent, prefix, *origin (block).
 
     Add new macros here when porting to additional robot platforms.
   </description>
