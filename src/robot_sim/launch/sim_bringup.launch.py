@@ -9,8 +9,9 @@ What this launch file starts
        - ros_ign bridges
        - robot_state_publisher
        - CHAMP controller + EKF odometry (odom -> base_footprint)
-  2. cloud_self_filter.py (optional)
-       - /lidar/points -> /debug/lidar/points_filtered (debug view only)
+  2. cloud_self_filter.py
+       - /lidar/points -> /lidar/points_undistorted for SLAM / costmaps in sim
+       - optional debug cloud on /debug/lidar/points_filtered
   3. robot_nav/slam.launch.py (optional via start_nav:=true)
   4. robot_nav/nav2.launch.py (optional via start_nav:=true)
   5. RViz2 (optional)
@@ -36,9 +37,10 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     go2_sim_share = get_package_share_directory("go2_sim")
+    sim_worlds_share = get_package_share_directory("sim_worlds")
     robot_nav_share = get_package_share_directory("robot_nav")
 
-    default_world = os.path.join(go2_sim_share, "worlds", "default.sdf")
+    default_world = os.path.join(sim_worlds_share, "worlds", "indoor_office.world")
     default_ros_control = os.path.join(go2_sim_share, "config", "ros_control.yaml")
     default_slam_params = os.path.join(robot_nav_share, "config", "slam_toolbox_params.yaml")
     default_rviz_config = os.path.join(robot_nav_share, "rviz", "nav2.rviz")
@@ -52,6 +54,11 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument("use_sim_time", default_value="true"),
         DeclareLaunchArgument("world", default_value=default_world),
+        DeclareLaunchArgument(
+            "world_name",
+            default_value="indoor_office",
+            description="Gazebo world name used in transport topic paths",
+        ),
         DeclareLaunchArgument("gui", default_value="true"),
         DeclareLaunchArgument("robot_name", default_value="go2"),
         DeclareLaunchArgument("ros_control_file", default_value=default_ros_control),
@@ -92,6 +99,7 @@ def generate_launch_description():
             "robot_name": LaunchConfiguration("robot_name"),
             "ros_control_file": LaunchConfiguration("ros_control_file"),
             "world": LaunchConfiguration("world"),
+            "world_name": LaunchConfiguration("world_name"),
             "gui": LaunchConfiguration("gui"),
             "world_init_x": LaunchConfiguration("world_init_x"),
             "world_init_y": LaunchConfiguration("world_init_y"),
@@ -101,10 +109,23 @@ def generate_launch_description():
         }.items(),
     )
 
-    cloud_self_filter = Node(
+    nav_cloud_filter = Node(
         package="robot_sim",
         executable="cloud_self_filter.py",
-        name="cloud_self_filter",
+        name="nav_cloud_filter",
+        output="screen",
+        parameters=[{
+            "use_sim_time": use_sim_time,
+            "input_topic": "/lidar/points",
+            "output_topic": "/lidar/points_undistorted",
+        }],
+        condition=IfCondition(start_nav),
+    )
+
+    debug_cloud_filter = Node(
+        package="robot_sim",
+        executable="cloud_self_filter.py",
+        name="cloud_self_filter_debug",
         output="screen",
         parameters=[{
             "use_sim_time": use_sim_time,
@@ -124,6 +145,10 @@ def generate_launch_description():
             "slam_mode": LaunchConfiguration("slam_mode"),
             "slam_params": LaunchConfiguration("slam_params"),
             "map": LaunchConfiguration("map"),
+            # Gazebo produces instantaneous LiDAR snapshots, so bypass deskew
+            # and use the self-filtered nav cloud directly in simulation.
+            "bypass_distortion_corrector": "true",
+            "scan_cloud_topic": "/lidar/points_undistorted",
         }.items(),
     )
 
@@ -164,7 +189,8 @@ def generate_launch_description():
 
     return LaunchDescription(args + [
         champ_sim,
-        cloud_self_filter,
+        nav_cloud_filter,
+        debug_cloud_filter,
         start_nav_stack,
         rviz,
     ])

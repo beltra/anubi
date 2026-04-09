@@ -68,6 +68,9 @@ class DistortionCorrector(Node):
         self.declare_parameter("drop_stale_clouds", True)
         self.declare_parameter("max_input_delay_sec", 0.25)
         self.declare_parameter("output_stamp_mode", "now")
+        # Bypass mode: republish the input cloud unchanged.  Use in simulation
+        # where Gazebo produces instantaneous snapshots with no scan distortion.
+        self.declare_parameter("bypass", False)
 
         self._input_topic = str(self.get_parameter("input_topic").value)
         self._output_topic = str(self.get_parameter("output_topic").value)
@@ -91,6 +94,7 @@ class DistortionCorrector(Node):
         self._drop_stale_clouds = bool(self.get_parameter("drop_stale_clouds").value)
         self._max_input_delay_sec = float(self.get_parameter("max_input_delay_sec").value)
         self._output_stamp_mode = str(self.get_parameter("output_stamp_mode").value).lower()
+        self._bypass = bool(self.get_parameter("bypass").value)
 
         # Pre-compute the static rotation from body frame to sensor frame.
         mount_rpy = list(self.get_parameter("sensor_mount_rpy").value)
@@ -297,6 +301,11 @@ class DistortionCorrector(Node):
                          "itemsize": msg.point_step})
 
     def _cloud_cb(self, msg: PointCloud2) -> None:
+        # Bypass mode: republish unchanged (for simulation)
+        if self._bypass:
+            self._publisher.publish(msg)
+            return
+
         now_sec = self.get_clock().now().nanoseconds * 1e-9
         cloud_stamp = _stamp_to_seconds(msg.header.stamp)
         input_delay_sec = now_sec - cloud_stamp

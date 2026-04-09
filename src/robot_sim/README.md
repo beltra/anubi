@@ -37,7 +37,7 @@ All Nav2 configuration is shared with the real robot (`robot_nav/`).
 source /opt/ros/humble/setup.bash
 source /ws/anubi/install/setup.bash
 
-# Full sim — navigation_empty world, mapping mode, Gazebo GUI + RViz
+# Full sim — indoor office world (default), mapping mode, Gazebo GUI + RViz
 ros2 launch robot_sim sim_bringup.launch.py
 
 # Warehouse world, localization with a saved map, no GUI
@@ -58,7 +58,7 @@ ros2 launch robot_sim sim_bringup.launch.py \
 
 | Argument | Default | Description |
 |----------|---------|-------------|
-| `world` | `navigation_empty.world` | Path to Gazebo world file |
+| `world` | `indoor_office.world` | Path to Gazebo world file |
 | `robot` | `go2` | Robot model: `go2` or `d1` |
 | `slam_mode` | `mapping` | `mapping` or `localization` |
 | `map` | `''` | Path to `.posegraph` file (localization mode only) |

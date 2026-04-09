@@ -17,31 +17,29 @@
 pointcloud_to_laserscan:
   ros__parameters:
     # Output frame for the LaserScan.
-    # Must be a frame that slam_toolbox can look up relative to base_footprint.
-    target_frame: base_footprint  # Assumption A-SCAN-1
+    # Use a leveled frame co-located with the lidar so scan extraction does not
+    # depend on the robot's standing height or body pitch/roll.
+    # slam_toolbox can transform this frame to base_footprint through TF.
+    target_frame: lidar_stabilized
 
-    transform_tolerance: 0.05      # [s] TF lookup timeout
+    transform_tolerance: 0.3       # [s] TF lookup timeout for cloud->scan projection
 
-    # Height filter (relative to target_frame = base_footprint origin)
-    # The L1 LiDAR is at z ≈ 0.233 m above base_footprint.  Near-horizontal
-    # obstacle returns arrive at approximately that height.  The band must be
-    # centred on the LiDAR height and wide enough to accommodate ±5° body
-    # pitch during CHAMP locomotion.
-    # NOTE: some ground returns may slip through at close range with body
-    # pitch, but slam_toolbox handles sparse ground noise well.  The costmap
-    # layers use a higher min_obstacle_height (0.25 m) for tighter rejection.
-    min_height: 0.10            # [m]  ~13 cm below LiDAR — captures horizontal returns
-    max_height: 0.55            # [m]  ~32 cm above LiDAR — captures pitched-up returns
+    # Height filter relative to lidar_stabilized.
+    # A slightly wider band improves scan density in sparse indoor scenes while
+    # still rejecting the floor, which sits roughly 0.23 m below the sensor.
+    min_height: -0.1
+    max_height: 0.1
 
     # Angular scan parameters
     angle_min: -3.14159265         # [rad] -180°
     angle_max:  3.14159265         # [rad] +180°
-    # Match the simulated horizontal sampling (360 points / revolution).
-    angle_increment: 0.01745329    # [rad] 1.0°
+    # Use finer bins than the raw 1 degree setting so sparse walls/corners are
+    # less likely to disappear during PointCloud2 -> LaserScan rasterization.
+    angle_increment: 0.00872665    # [rad] 0.5°
 
     scan_time: 0.1                 # [s] 10 Hz
-    range_min: 0.15                # [m]  Unitree L1 minimum range + safety
-    range_max: 30.0                # [m]  Unitree L1 practical maximum range for sim stability
+    range_min: 0.15                # [m]  reject near-body clutter
+    range_max: 25.0                # [m]  slightly wider indoor mapping range without going overly noisy
 
-    use_inf: false                  # Publish inf for out-of-range points (not NaN)
+    use_inf: true                   # Preserve free-space rays for scan-based SLAM
     inf_epsilon: 1.0               # [m] inf offset

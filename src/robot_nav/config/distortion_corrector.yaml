@@ -26,7 +26,7 @@ distortion_corrector:
     timestamp_field_candidates: ["time_stamp", "timestamp", "time", "t"]
     timestamp_unit: auto
     fallback_mode: azimuth
-    azimuth_direction: ccw
+    azimuth_direction: cw  # Flipped from ccw due to Rx(π) upside-down mount rotation affecting arctan2(y,x)
 
     # During startup, publish raw clouds rather than dropping data while waiting
     # for the first synchronized odom/IMU samples.
@@ -38,6 +38,8 @@ distortion_corrector:
     drop_stale_clouds: true
     max_input_delay_sec: 0.25
 
-    # Downstream Nav2 / safety nodes reason about the freshest available cloud.
-    # Stamp outputs at publish time so late-processed frames are not rejected as stale.
-    output_stamp_mode: now
+    # Preserve the original cloud timestamp so that downstream TF lookups
+    # (pointcloud_to_laserscan, SLAM, costmap) project the scan from the
+    # correct robot pose at acquisition time.  Using "now" caused 13–20 ms
+    # timestamp shifts that misaligned scans in SLAM, producing a smeared map.
+    output_stamp_mode: input

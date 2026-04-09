@@ -12,11 +12,15 @@ Starts:
 
 Arguments
 ---------
-use_sim_time : bool   (default: true)
-slam_params  : str    Path to slam_toolbox YAML params file
-slam_mode    : str    'mapping' (default) | 'localization'
-map          : str    For localization mode: path to .posegraph file
-autostart    : bool   Autostart localization lifecycle manager (default: true)
+use_sim_time                : bool   (default: true)
+slam_params                 : str    Path to slam_toolbox YAML params file
+scan_params                 : str    Path to pointcloud_to_laserscan YAML params file
+distortion_params           : str    Path to distortion_corrector YAML params file
+slam_mode                   : str    'mapping' (default) | 'localization'
+map                         : str    For localization mode: path to .posegraph file
+autostart                   : bool   Autostart localization lifecycle manager (default: true)
+bypass_distortion_corrector : bool   Skip deskew when an upstream stage already
+                                      publishes /lidar/points_undistorted
 
 SLAM choice rationale
 ---------------------
@@ -40,7 +44,7 @@ from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
@@ -77,18 +81,32 @@ def generate_launch_description():
     args = [
         DeclareLaunchArgument("use_sim_time", default_value="false"),
         DeclareLaunchArgument("slam_params",  default_value=default_slam_params),
+        DeclareLaunchArgument("scan_params",  default_value=default_scan_params),
+        DeclareLaunchArgument("distortion_params", default_value=default_distortion_params),
         DeclareLaunchArgument("slam_mode",    default_value="mapping",
                               description="'mapping' or 'localization'"),
         DeclareLaunchArgument("map",          default_value="",
                               description="Path to .posegraph file for localization mode"),
         DeclareLaunchArgument("autostart",    default_value="true"),
+        DeclareLaunchArgument(
+            "bypass_distortion_corrector", default_value="false",
+            description="Skip deskew (use in simulation where scans are instantaneous)",
+        ),
+        DeclareLaunchArgument(
+            "scan_cloud_topic", default_value="/lidar/points_undistorted",
+            description="PointCloud2 topic consumed by pointcloud_to_laserscan",
+        ),
     ]
 
     use_sim_time = LaunchConfiguration("use_sim_time")
     slam_params  = LaunchConfiguration("slam_params")
+    scan_params  = LaunchConfiguration("scan_params")
+    distortion_params = LaunchConfiguration("distortion_params")
     slam_mode    = LaunchConfiguration("slam_mode")
     map_path     = LaunchConfiguration("map")
     autostart    = LaunchConfiguration("autostart")
+    bypass_distortion_corrector = LaunchConfiguration("bypass_distortion_corrector")
+    scan_cloud_topic = LaunchConfiguration("scan_cloud_topic")
 
     is_mapping       = PythonExpression(["'", slam_mode, "' == 'mapping'"])
     is_localization  = PythonExpression(["'", slam_mode, "' == 'localization'"])
@@ -103,9 +121,10 @@ def generate_launch_description():
         name="distortion_corrector",
         output="screen",
         parameters=[
-            default_distortion_params,
+            distortion_params,
             {"use_sim_time": use_sim_time},
         ],
+        condition=UnlessCondition(bypass_distortion_corrector),
     )
 
     # ── 2. pointcloud_to_laserscan ────────────────────────────────────────
@@ -118,11 +137,11 @@ def generate_launch_description():
         name="pointcloud_to_laserscan",
         output="screen",
         parameters=[
-            default_scan_params,
+            scan_params,
             {"use_sim_time": use_sim_time},
         ],
         remappings=[
-            ("cloud_in", "/lidar/points_undistorted"),
+            ("cloud_in", scan_cloud_topic),
             ("scan",     "/scan"),
         ],
     )

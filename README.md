@@ -117,6 +117,29 @@ source install/setup.bash
 
 ## How to Run on a Real Go2
 
+### Essential scripts (recommended)
+
+You can use these wrappers instead of typing long `ros2 launch` commands:
+
+```bash
+# Simulation (mapping mode)
+/ws/anubi/scripts/run_go2_sim.sh
+
+# Simulation (localization mode)
+/ws/anubi/scripts/run_go2_sim.sh localization --map /ws/anubi/src/robot_nav/maps/my_map
+
+# Real robot (mapping mode, with LiDAR relay /utlidar/cloud -> /lidar/points)
+/ws/anubi/scripts/run_go2_real.sh
+
+# Real robot (localization mode + safety gate)
+/ws/anubi/scripts/run_go2_real.sh localization --map /ws/anubi/src/robot_nav/maps/my_map --use-safety
+```
+
+Script options:
+
+- `run_go2_sim.sh --help`
+- `run_go2_real.sh --help`
+
 ### Step 1 — Start the Go2 internal bridge on the robot
 
 The Unitree Go2 internal software must publish:
@@ -189,7 +212,7 @@ The simulation layer is fully implemented. **No hardware required.**
 source /opt/ros/humble/setup.bash
 source /ws/anubi/install/setup.bash
 
-# Full simulation — mapping mode, with GUI and RViz
+# Full simulation — office world (default), mapping mode, with GUI and RViz
 ros2 launch robot_sim sim_bringup.launch.py
 
 # Warehouse world, localization with a saved map, no GUI

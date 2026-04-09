@@ -97,6 +97,13 @@ def generate_launch_description():
         "world", default_value=world_path,
         description="Path to Gazebo world SDF",
     )
+    declare_world_name = DeclareLaunchArgument(
+        "world_name", default_value="default",
+        description=(
+            "Gazebo world name used in transport topic paths. "
+            "Set this to the <world name=\"...\"> value from the SDF."
+        ),
+    )
     declare_gui = DeclareLaunchArgument(
         "gui", default_value="true", description="Launch Gazebo GUI"
     )
@@ -193,17 +200,25 @@ def generate_launch_description():
             {"frequency": 50.0},
             {"two_d_mode": True},
             {"odom0": "/odom/raw"},
-            {"odom0_config": [False, False, False,
-                              False, False, False,
+            # In simulation /odom/raw is already world-referenced odometry from
+            # Ignition's odometry publisher. Fuse its planar pose directly so
+            # /odom follows the robot's actual motion instead of dead-reckoning
+            # only from twist.
+            {"odom0_config": [True, True, False,
+                              False, False, True,
                               True, True, False,
                               False, False, True,
                               False, False, False]},
+            {"odom0_differential": False},
+            {"odom0_relative": False},
             {"imu0": "imu/data"},
+            # Keep IMU as a yaw-rate stabilizer instead of a second pose source.
             {"imu0_config": [False, False, False,
-                             False, False, True,
+                             False, False, False,
                              False, False, False,
                              False, False, True,
                              False, False, False]},
+            {"imu0_remove_gravitational_acceleration": True},
         ],
         remappings=[("odometry/filtered", "odom")],
     )
@@ -295,6 +310,7 @@ def generate_launch_description():
         executable="create",
         output="screen",
         arguments=[
+            "-world", LaunchConfiguration("world_name"),
             "-name", LaunchConfiguration("robot_name"),
             "-topic", "robot_description",
             "-x", LaunchConfiguration("world_init_x"),
@@ -332,7 +348,11 @@ def generate_launch_description():
             "/clock@rosgraph_msgs/msg/Clock[ignition.msgs.Clock",
             "/imu/data@sensor_msgs/msg/Imu[ignition.msgs.IMU",
             # NOTE: /tf is intentionally absent — see module docstring for rationale.
-            "/world/default/model/go2/joint_state@sensor_msgs/msg/JointState[ignition.msgs.Model",
+            [
+                "/world/",
+                LaunchConfiguration("world_name"),
+                "/model/go2/joint_state@sensor_msgs/msg/JointState[ignition.msgs.Model",
+            ],
             # FIX(agent1): bridge the sensor's native Ignition topic /unilidar/cloud/points;
             # remapping below redirects it to /lidar/points for the nav stack.
             "/unilidar/cloud/points@sensor_msgs/msg/PointCloud2[ignition.msgs.PointCloudPacked",
@@ -342,7 +362,11 @@ def generate_launch_description():
             "@trajectory_msgs/msg/JointTrajectory]ignition.msgs.JointTrajectory",
         ],
         remappings=[
-            ("/world/default/model/go2/joint_state", "/joint_states"),
+            ([
+                "/world/",
+                LaunchConfiguration("world_name"),
+                "/model/go2/joint_state",
+            ], "/joint_states"),
             ("/model/go2/odometry", "/odom/raw"),
             # FIX(agent1): remap Ignition sensor topic to the ROS nav stack topic name
             ("/unilidar/cloud/points", "/lidar/points"),
@@ -415,6 +439,7 @@ def generate_launch_description():
         declare_robot_name,
         declare_ros_control_file,
         declare_world,
+        declare_world_name,
         declare_gui,
         declare_world_init_x,
         declare_world_init_y,

@@ -144,6 +144,63 @@ the BT runs up to 6 retries of: ClearCostmap + Spin(1.57 rad) + **Wait(5 s)** +
 BackUp(0.3 m). Worst case: ~90 s before navigation aborts.  The fixes above
 reduce the frequency of recovery triggering near the goal.
 
+## Simulation Stability Tuning (2026-04-09)
+
+Recent simulation regressions showed frequent falls when Nav2 generated lateral
+or high angular commands faster than the gait controller could track.
+
+Applied tuning changes:
+- DWB switched to non-holonomic commanding (`holonomic: false`, `vy_samples: 1`)
+- Reduced DWB limits to `max_vel_x: 0.75`, `max_vel_theta: 0.6`
+- Reduced DWB accel/decel limits to smoother values (`acc_lim_x: 0.6`, `acc_lim_theta: 0.8`)
+- Reduced behavior server spin dynamics (`max_rotational_vel: 0.6`, `rotational_acc_lim: 0.8`)
+- Aligned `velocity_smoother` limits with DWB (`[0.75, 0.0, 0.6]`)
+- Reduced CHAMP gait caps in sim (`max_linear_velocity_x: 0.9`, `max_angular_velocity_z: 0.7`, no lateral)
+
+Changed files:
+- `go2_sim/config/gait.yaml`
+- `robot_nav/config/nav2_params.yaml`
+- `robot_nav/config/nav2_params_2d.yaml`
+- `robot_nav/config/nav2_params_navfn.yaml`
+
+Rationale:
+- Keep Nav2 command envelope inside stable sim gait limits.
+- Avoid lateral strafing commands that are a common fall trigger for this setup.
+- Limit rotational transients to reduce foot slip and tipping during tight maneuvers.
+
+## Speed Profile Update (2026-04-09)
+
+To better match observed real Go2 pace while keeping simulation stable, Nav2 was
+updated from an ultra-conservative profile to a moderate-fast quasi-holonomic one.
+
+Updated command envelope:
+- DWB: `max_vel_x: 1.2`, `max_vel_y: 0.2`, `max_vel_theta: 1.0`
+- DWB: `holonomic: true` with bounded lateral sampling (`vy_samples: 6`)
+- velocity_smoother aligned to the same limits and accel/decel envelope
+- behavior_server spin limits raised to `max_rotational_vel: 1.0`
+- CHAMP gait caps in sim raised to `1.4 m/s` forward, `0.25 m/s` lateral, `1.0 rad/s` yaw
+
+Rationale:
+- Go2 is not strictly differential-drive; moderate lateral motion is valid.
+- Prior non-holonomic + low-speed profile was safer but unrealistically slow.
+- This profile increases throughput while keeping bounded transients.
+
+## Slip Mitigation Notes (2026-04-09)
+
+Online patterns checked:
+- CHAMP docs and robot configs emphasize that large `stance_duration` increases step displacement.
+- Community quadruped setups commonly require careful foot friction + inertia/contact tuning in Gazebo.
+- Unitree Go2 URDF notes mention collision-model adjustments are often required for simulation stability.
+
+What was changed in this repo:
+- Reduced step-length tendency while keeping speed: lower `stance_duration` and `swing_height` in CHAMP gait.
+- Increased foot/ground friction and disabled unnecessary leg self-collision in sim URDF.
+- Tightened accel/transient limits in Nav2 + velocity_smoother while keeping a fast top-speed envelope.
+
+URDF feet validation:
+- Foot kinematic chain (`*_lower_leg_link` -> fixed `*_FOOT`) and nominal foot geometry are structurally consistent.
+- Main issue was contact parameterization (friction/self-collision), not foot-link topology.
+
 ---
 
 ## Adding a New Robot

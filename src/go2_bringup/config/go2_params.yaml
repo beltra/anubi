@@ -34,9 +34,9 @@ go2_hw_bridge:
 
     # Velocity limits [m/s, rad/s] — applied before forwarding to Sport API
     # Adjust for the operating environment (slow down indoors, etc.)
-    max_linear_vel:  0.8
-    max_lateral_vel: 0.2
-    max_angular_vel: 1.5
+    max_linear_vel:  1.5
+    max_lateral_vel: 0.4
+    max_angular_vel: 1.8
 
 # ── robot_state_publisher ─────────────────────────────────────────────────────
 robot_state_publisher:

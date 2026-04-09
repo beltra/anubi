@@ -54,15 +54,7 @@
       *origin">
 
     <link name="${prefix}lidar_link">
-      <visual>
-        <origin xyz="0 0 0" rpy="0 0 0"/>
-        <geometry>
-          <cylinder radius="0.04" length="0.05"/>
-        </geometry>
-        <material name="lidar_black">
-          <color rgba="0.05 0.05 0.05 1.0"/>
-        </material>
-      </visual>
+      <!-- No visual geometry in sim: prevents GPU LiDAR self-occlusion at the sensor origin. -->
       <inertial>
         <mass value="0.5"/>
         <origin xyz="0 0 0" rpy="0 0 0"/>
