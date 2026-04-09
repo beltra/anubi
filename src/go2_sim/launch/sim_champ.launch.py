@@ -11,12 +11,17 @@ Topic bridge (all required by nav stack):
   /clock              ignition → ROS   rosgraph_msgs/Clock
   /imu/data           ignition → ROS   sensor_msgs/Imu
   /joint_states       ignition → ROS   sensor_msgs/JointState
-  /lidar/points             ignition(/unilidar/cloud/points) → ROS   sensor_msgs/PointCloud2
-  /odom/raw           ignition → ROS   nav_msgs/Odometry
-  /tf                 ignition → ROS   tf2_msgs/TFMessage
-  /cmd_vel_safe       ROS → ignition   geometry_msgs/Twist
+  /unilidar/cloud/points ignition → ROS   sensor_msgs/PointCloud2  (remapped to /lidar/points)
+  /model/go2/odometry ignition → ROS   nav_msgs/Odometry (remapped to /odom/raw for EKF)
   /joint_group_effort_controller/joint_trajectory
                       ROS → ignition   trajectory_msgs/JointTrajectory
+
+NOTE: The Ignition /tf topic is intentionally NOT bridged.
+  ignition-gazebo-odometry-publisher-system publishes an odom→base_link transform
+  on the Ignition /tf topic by default.  Bridging it would give base_link two
+  parents in the ROS TF tree (base_footprint via static TF and odom via the bridge),
+  causing a TF cycle that breaks pointcloud_to_laserscan and slam_toolbox lookups.
+  The full TF tree is provided by EKF (odom→base_footprint), static transforms, and RSP.
 
 Usage:
   ros2 launch go2_sim sim_champ.launch.py
@@ -33,10 +38,10 @@ from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
     TimerAction,
-    SetEnvironmentVariable,
     AppendEnvironmentVariable,
+    SetEnvironmentVariable,
 )
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.parameter_descriptions import ParameterValue
@@ -44,6 +49,10 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 def generate_launch_description():
     use_sim_time = LaunchConfiguration("use_sim_time")
+    standing_height_m = 0.28
+    lidar_x_m = 0.28945
+    lidar_y_m = 0.0
+    lidar_z_m = standing_height_m - 0.046825
 
     go2_sim_dir = get_package_share_directory("go2_sim")
 
@@ -88,6 +97,13 @@ def generate_launch_description():
         "world", default_value=world_path,
         description="Path to Gazebo world SDF",
     )
+    declare_world_name = DeclareLaunchArgument(
+        "world_name", default_value="default",
+        description=(
+            "Gazebo world name used in transport topic paths. "
+            "Set this to the <world name=\"...\"> value from the SDF."
+        ),
+    )
     declare_gui = DeclareLaunchArgument(
         "gui", default_value="true", description="Launch Gazebo GUI"
     )
@@ -107,6 +123,25 @@ def generate_launch_description():
             "Publish static map->odom identity transform. "
             "Set false when SLAM/localization owns map->odom."
         ),
+    )
+    declare_sim_partition = DeclareLaunchArgument(
+        "sim_partition",
+        default_value=f"go2_sim_{os.getpid()}",
+        description=(
+            "Gazebo transport partition for this launch. "
+            "Unique default avoids scene/topic collisions from stale sim processes."
+        ),
+    )
+
+    # Keep all Gazebo participants isolated to one launch instance.
+    # Setting both names covers Fortress (IGN_*) and newer Gazebo (GZ_*).
+    ign_partition = SetEnvironmentVariable(
+        name="IGN_PARTITION",
+        value=LaunchConfiguration("sim_partition"),
+    )
+    gz_partition = SetEnvironmentVariable(
+        name="GZ_PARTITION",
+        value=LaunchConfiguration("sim_partition"),
     )
 
     # ── Robot description (processed at launch time by xacro) ──────────────
@@ -150,38 +185,6 @@ def generate_launch_description():
         remappings=[("/cmd_vel/smooth", "/cmd_vel_safe")],
     )
 
-    # CHAMP state estimator (orientation from IMU)
-    state_estimator_node = Node(
-        package="champ_base",
-        executable="state_estimation_node",
-        output="screen",
-        parameters=[
-            {"use_sim_time": use_sim_time},
-            {"orientation_from_imu": True},
-            {"urdf": robot_description_content},
-            joints_config,
-            links_config,
-            gait_config,
-        ],
-    )
-
-    # EKF: base_link → base_footprint (local odometry frame)
-    base_to_footprint_ekf = Node(
-        package="robot_localization",
-        executable="ekf_node",
-        name="base_to_footprint_ekf",
-        output="screen",
-        parameters=[
-            {"base_link_frame": "base_link"},
-            {"use_sim_time": use_sim_time},
-            os.path.join(
-                get_package_share_directory("champ_base"),
-                "config", "ekf", "base_to_footprint.yaml",
-            ),
-        ],
-        remappings=[("odometry/filtered", "odom/local")],
-    )
-
     # EKF: base_footprint → odom (global odometry, publishes /odom + TF)
     footprint_to_odom_ekf = Node(
         package="robot_localization",
@@ -196,20 +199,56 @@ def generate_launch_description():
             {"publish_tf": True},
             {"frequency": 50.0},
             {"two_d_mode": True},
-            {"odom0": "odom/raw"},
-            {"odom0_config": [False, False, False,
-                              False, False, False,
+            {"odom0": "/odom/raw"},
+            # In simulation /odom/raw is already world-referenced odometry from
+            # Ignition's odometry publisher. Fuse its planar pose directly so
+            # /odom follows the robot's actual motion instead of dead-reckoning
+            # only from twist.
+            {"odom0_config": [True, True, False,
+                              False, False, True,
                               True, True, False,
                               False, False, True,
                               False, False, False]},
+            {"odom0_differential": False},
+            {"odom0_relative": False},
             {"imu0": "imu/data"},
+            # Keep IMU as a yaw-rate stabilizer instead of a second pose source.
             {"imu0_config": [False, False, False,
-                             False, False, True,
+                             False, False, False,
                              False, False, False,
                              False, False, True,
                              False, False, False]},
+            {"imu0_remove_gravitational_acceleration": True},
         ],
         remappings=[("odometry/filtered", "odom")],
+    )
+
+    # Static transform: base_footprint → base_link
+    # The sim URDF (go2_sim.urdf.xacro) has base_link as its root, so Nav2/SLAM need
+    # an explicit ground-projection frame bridge. This must preserve the nominal
+    # body-center height used everywhere else in the stack; an identity transform
+    # incorrectly places lidar_link below the ground plane in the TF tree.
+    base_footprint_to_base_link_tf = Node(
+        package="tf2_ros",
+        name="base_footprint_to_base_link_tf",
+        executable="static_transform_publisher",
+        parameters=[{"use_sim_time": use_sim_time}],
+        arguments=[
+            "--x", "0", "--y", "0", "--z", str(standing_height_m),
+            "--roll", "0", "--pitch", "0", "--yaw", "0",
+            "--frame-id", "base_footprint", "--child-frame-id", "base_link",
+        ],
+    )
+    lidar_stabilized_tf = Node(
+        package="tf2_ros",
+        name="base_footprint_to_lidar_stabilized_tf",
+        executable="static_transform_publisher",
+        parameters=[{"use_sim_time": use_sim_time}],
+        arguments=[
+            "--x", str(lidar_x_m), "--y", str(lidar_y_m), "--z", str(lidar_z_m),
+            "--roll", "0", "--pitch", "0", "--yaw", "0",
+            "--frame-id", "base_footprint", "--child-frame-id", "lidar_stabilized",
+        ],
     )
 
     # Static transform: map → odom (identity; nav stack expects this until SLAM publishes)
@@ -226,19 +265,6 @@ def generate_launch_description():
         ],
     )
 
-    # Static transform: base_footprint → base_link (identity; CHAMP manages this)
-    base_footprint_to_base_link_tf = Node(
-        package="tf2_ros",
-        name="base_footprint_to_base_link_tf",
-        executable="static_transform_publisher",
-        parameters=[{"use_sim_time": use_sim_time}],
-        arguments=[
-            "--x", "0", "--y", "0", "--z", "0",
-            "--roll", "0", "--pitch", "0", "--yaw", "0",
-            "--frame-id", "base_footprint", "--child-frame-id", "base_link",
-        ],
-    )
-
     # RViz2 (optional; no bundled config — pass -d <config> via extra_args if needed)
     rviz2 = Node(
         package="rviz2",
@@ -251,15 +277,30 @@ def generate_launch_description():
     # ── Gazebo Fortress (ign gazebo) ────────────────────────────────────────
     pkg_ros_ign_gazebo = get_package_share_directory("ros_ign_gazebo")
 
-    ign_gazebo = IncludeLaunchDescription(
+    ign_gazebo_gui = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_ros_ign_gazebo, "launch", "ign_gazebo.launch.py")
         ),
+        condition=IfCondition(LaunchConfiguration("gui")),
         launch_arguments={
             "gz_args": [
                 LaunchConfiguration("world"),
                 " -r",  # start unpaused
             ],
+            "on_exit_shutdown": "true",
+        }.items(),
+    )
+    ign_gazebo_headless = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_ros_ign_gazebo, "launch", "ign_gazebo.launch.py")
+        ),
+        condition=UnlessCondition(LaunchConfiguration("gui")),
+        launch_arguments={
+            "gz_args": [
+                LaunchConfiguration("world"),
+                " -r -s",  # start unpaused, server-only (no GUI)
+            ],
+            "on_exit_shutdown": "true",
         }.items(),
     )
 
@@ -269,6 +310,7 @@ def generate_launch_description():
         executable="create",
         output="screen",
         arguments=[
+            "-world", LaunchConfiguration("world_name"),
             "-name", LaunchConfiguration("robot_name"),
             "-topic", "robot_description",
             "-x", LaunchConfiguration("world_init_x"),
@@ -289,14 +331,12 @@ def generate_launch_description():
     #
     # Required topics for nav stack:
     #   /joint_states   → robot_state_publisher, CHAMP
-    #   /imu/data       → CHAMP state estimator, EKF
-    #   /lidar/points         ← ignition /unilidar/cloud/points
-    #                         → voxel_layer, pointcloud_to_laserscan
+    #   /imu/data       → EKF
+    #   /lidar/points   → voxel_layer, pointcloud_to_laserscan  (bridged from /unilidar/cloud/points)
     #   /odom/raw       → EKF footprint_to_odom
     #   /clock          → use_sim_time
-    #   /tf             → TF tree
-    #   /cmd_vel_safe   → CHAMP locomotion controller (through safety gate)
     #   /joint_group_effort_controller/joint_trajectory → effort controller
+    #   NOTE: /tf is NOT bridged (see module docstring)
     gazebo_bridge = Node(
         package="ros_ign_bridge",
         executable="parameter_bridge",
@@ -307,20 +347,29 @@ def generate_launch_description():
             # ── Ignition → ROS ──────────────────────────────────────────
             "/clock@rosgraph_msgs/msg/Clock[ignition.msgs.Clock",
             "/imu/data@sensor_msgs/msg/Imu[ignition.msgs.IMU",
-            "/tf@tf2_msgs/msg/TFMessage[ignition.msgs.Pose_V",
-            "/world/default/model/go2/joint_state@sensor_msgs/msg/JointState[ignition.msgs.Model",
+            # NOTE: /tf is intentionally absent — see module docstring for rationale.
+            [
+                "/world/",
+                LaunchConfiguration("world_name"),
+                "/model/go2/joint_state@sensor_msgs/msg/JointState[ignition.msgs.Model",
+            ],
+            # FIX(agent1): bridge the sensor's native Ignition topic /unilidar/cloud/points;
+            # remapping below redirects it to /lidar/points for the nav stack.
             "/unilidar/cloud/points@sensor_msgs/msg/PointCloud2[ignition.msgs.PointCloudPacked",
-            "/odom@nav_msgs/msg/Odometry[ignition.msgs.Odometry",
+            "/model/go2/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry",
             # ── ROS → Ignition ──────────────────────────────────────────
-            "/cmd_vel@geometry_msgs/msg/Twist]ignition.msgs.Twist",
             "/joint_group_effort_controller/joint_trajectory"
             "@trajectory_msgs/msg/JointTrajectory]ignition.msgs.JointTrajectory",
         ],
         remappings=[
-            ("/world/default/model/go2/joint_state", "/joint_states"),
+            ([
+                "/world/",
+                LaunchConfiguration("world_name"),
+                "/model/go2/joint_state",
+            ], "/joint_states"),
+            ("/model/go2/odometry", "/odom/raw"),
+            # FIX(agent1): remap Ignition sensor topic to the ROS nav stack topic name
             ("/unilidar/cloud/points", "/lidar/points"),
-            ("/odom", "/odom/raw"),
-            ("/cmd_vel", "/cmd_vel_safe"),
         ],
     )
 
@@ -334,16 +383,20 @@ def generate_launch_description():
             "use_sim_time": use_sim_time,
             "cmd_timeout": 0.5,
             "publish_rate": 20.0,
-            "cmd_vel_in": "/cmd_vel",
+            "cmd_vel_in": "/cmd_vel_collision_free",
             "cmd_vel_out": "/cmd_vel_safe",
-            "status_topic": "/robot_status",
+            # Simulation has no RobotStatus publisher; run watchdog-only gating.
+            "status_topic": "",
         }],
     )
 
     # ── Controller spawners (delayed to allow Gazebo + ign_ros2_control init) ──
     # controller_manager is brought up by ign_ros2_control-system plugin in the URDF.
+    # Delays are empirical: Fortress + ign_ros2_control typically takes 15-20 s from spawn
+    # to ready.  The spawner's --controller-manager-timeout 120 provides an additional
+    # safety margin if init is slow on the host machine.
     controller_spawner_js = TimerAction(
-        period=20.0,
+        period=10.0,
         actions=[
             Node(
                 package="controller_manager",
@@ -359,7 +412,7 @@ def generate_launch_description():
     )
 
     controller_spawner_effort = TimerAction(
-        period=30.0,
+        period=15.0,
         actions=[
             Node(
                 package="controller_manager",
@@ -386,15 +439,20 @@ def generate_launch_description():
         declare_robot_name,
         declare_ros_control_file,
         declare_world,
+        declare_world_name,
         declare_gui,
         declare_world_init_x,
         declare_world_init_y,
         declare_world_init_z,
         declare_world_init_heading,
         declare_publish_map_to_odom_tf,
+        declare_sim_partition,
 
         # Gazebo + robot spawn
-        ign_gazebo,
+        ign_partition,
+        gz_partition,
+        ign_gazebo_gui,
+        ign_gazebo_headless,
         robot_state_publisher,
         gazebo_spawn_robot,
         gazebo_bridge,
@@ -402,13 +460,12 @@ def generate_launch_description():
 
         # CHAMP locomotion stack
         quadruped_controller_node,
-        state_estimator_node,
 
         # Odometry / TF
-        base_to_footprint_ekf,
         footprint_to_odom_ekf,
-        map_to_odom_tf,
         base_footprint_to_base_link_tf,
+        lidar_stabilized_tf,
+        map_to_odom_tf,
 
         # Controller lifecycle
         controller_spawner_js,

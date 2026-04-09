@@ -1,0 +1,45 @@
+distortion_corrector:
+  ros__parameters:
+    input_topic: /lidar/points
+    output_topic: /lidar/points_undistorted
+    odom_topic: /odom
+    imu_topic: /imu/data
+
+    # Mirrors the Autoware-style integration: twist-based correction with IMU
+    # angular rates for full 3D deskew on a pitching/rolling body.
+    use_twist: true
+    use_imu: true
+    use_3d_distortion_correction: true
+
+    # Static mount rotation [roll, pitch, yaw] from body frame (base_link) to
+    # sensor frame (lidar_link).  The Unitree L1 LiDAR on the Go2 is mounted
+    # upside-down, giving Rx(π).  This rotation is applied to odom/IMU
+    # velocities so that the deskew operates correctly in the sensor frame.
+    sensor_mount_rpy: [3.14159265358979, 0.0, 0.0]
+
+    # Unitree L1 nominal rotation frequency is 10 Hz -> 0.1 s per revolution.
+    scan_period: 0.1
+
+    # If the cloud exposes a relative-time field, prefer it. Otherwise fall back
+    # to azimuth-based timing over one revolution.
+    timestamp_field_name: ""
+    timestamp_field_candidates: ["time_stamp", "timestamp", "time", "t"]
+    timestamp_unit: auto
+    fallback_mode: azimuth
+    azimuth_direction: cw  # Flipped from ccw due to Rx(π) upside-down mount rotation affecting arctan2(y,x)
+
+    # During startup, publish raw clouds rather than dropping data while waiting
+    # for the first synchronized odom/IMU samples.
+    passthrough_on_missing_state: true
+    state_timeout_sec: 0.25
+
+    # Keep the deskew stage real-time. If processing falls behind, drop stale
+    # clouds instead of feeding old data into SLAM, costmaps, and safety nodes.
+    drop_stale_clouds: true
+    max_input_delay_sec: 0.25
+
+    # Preserve the original cloud timestamp so that downstream TF lookups
+    # (pointcloud_to_laserscan, SLAM, costmap) project the scan from the
+    # correct robot pose at acquisition time.  Using "now" caused 13–20 ms
+    # timestamp shifts that misaligned scans in SLAM, producing a smeared map.
+    output_stamp_mode: input

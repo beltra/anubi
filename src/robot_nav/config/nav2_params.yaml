@@ -7,8 +7,8 @@
 #
 # ASSUMPTIONS:
 #   A-NAV-1: Robot is configured as holonomic in DWB with constrained lateral motion.
-#   A-NAV-2: LiDAR PointCloud2 on /lidar/points (lidar_link frame) used for costmaps.
-#            LaserScan on /scan (lidar_link frame) used by slam_toolbox.
+#   A-NAV-2: Deskewed LiDAR PointCloud2 on /lidar/points_undistorted is used for costmaps.
+#            LaserScan on /scan (lidar_stabilized frame) is used by slam_toolbox.
 #   A-NAV-3: map → odom is published by slam_toolbox (not AMCL).
 #             AMCL section below is kept for reference but excluded from lifecycle.
 #   A-NAV-4: Nav2 Humble publishes geometry_msgs/Twist on /cmd_vel.
@@ -26,7 +26,7 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 # amcl — Adaptive Monte Carlo Localisation
 # Used when navigating on a pre-built map.  Disabled when using SLAM-only mode.
-# TODO(localization): Tune alpha, laser, and initial pose params for Go2 IMU motion.
+# Localization tuning backlog: tune alpha, laser, and initial pose params for Go2 IMU motion.
 # ═══════════════════════════════════════════════════════════════════════════════
 amcl:
   ros__parameters:
@@ -53,7 +53,7 @@ amcl:
     odom_frame_id: "odom"
     pf_err: 0.05
     pf_z: 0.99
-    recovery_alpha_fast: 0.0
+    recovery_alpha_fast: 0.0  # KLD recovery disabled — slam_toolbox owns localisation, AMCL is reference only
     recovery_alpha_slow: 0.0
     resample_interval: 1
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
@@ -90,8 +90,7 @@ map_saver:
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # planner_server
-# Uses NavFn (Dijkstra) for reliable global path planning in grid maps.
-# TODO(tuning): Switch to SmacPlannerHybrid for kinodynamic-aware planning.
+# Uses SmacPlannerLattice for reliable global path planning in grid maps.
 # ═══════════════════════════════════════════════════════════════════════════════
 planner_server:
   ros__parameters:
@@ -100,23 +99,45 @@ planner_server:
     planner_plugins: ["GridBased"]
 
     GridBased:
-      plugin: "nav2_navfn_planner/NavfnPlanner"
-      tolerance: 0.5
-      use_astar: false
+      plugin: "nav2_smac_planner/SmacPlannerLattice"
+      tolerance: 0.25
       allow_unknown: true
+      max_iterations: 1000000
+      max_on_approach_iterations: 1000
+      max_planning_time: 5.0
+      analytic_expansion_ratio: 3.5
+      analytic_expansion_max_length: 3.0
+      reverse_penalty: 2.0        # Go2 can walk backward but forward is preferred
+      change_penalty: 0.05        # low: direction changes are cheap for legged robots
+      non_straight_penalty: 1.05  # very low: diagonal travel is fine
+      # Increase obstacle-cost sensitivity so global plans stay farther from walls.
+      cost_penalty: 3.0
+      rotation_penalty: 5.0       # moderate: rotation costs energy but is not forbidden
+      retrospective_penalty: 0.025
+      lattice_filepath: "./lattice_omni_5.json"        
+      lookup_table_size: 20.0
+      cache_obstacle_heuristic: false
+      allow_reverse_expansion: false
+      smooth_path: true
+      smoother:
+        max_iterations: 1000
+        w_smooth: 0.3
+        w_data: 0.2
+        tolerance: 1.0e-10
+        do_refinement: true
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# smoother_server
-# ═══════════════════════════════════════════════════════════════════════════════
-smoother_server:
-  ros__parameters:
-    use_sim_time: true
-    smoother_plugins: ["simple_smoother"]
-    simple_smoother:
-      plugin: "nav2_smoother::SimpleSmoother"
-      tolerance: 1.0e-10
-      max_its: 1000
-      do_refinement: true
+# # ═══════════════════════════════════════════════════════════════════════════════
+# # smoother_server
+# # ═══════════════════════════════════════════════════════════════════════════════
+# smoother_server:
+#   ros__parameters:
+#     use_sim_time: true
+#     smoother_plugins: ["simple_smoother"]
+#     simple_smoother:
+#       plugin: "nav2_smoother::SimpleSmoother"
+#       tolerance: 1.0e-10
+#       max_its: 1000
+#       do_refinement: true
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # controller_server
@@ -125,7 +146,7 @@ smoother_server:
 controller_server:
   ros__parameters:
     use_sim_time: true
-    controller_frequency: 20.0
+    controller_frequency: 15.0
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
@@ -148,136 +169,133 @@ controller_server:
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
       debug_trajectory_details: false
+      # Go2 can command lateral velocity; keep moderate lateral limits for stability.
+      holonomic: true
       # DWB does not define a separate footprint polygon here; it inherits
       # collision geometry from the active local/global costmap footprint.
 
-      # Velocity limits (Go2 physically constrained safe nav defaults)
-      min_vel_x: -0.3
-      min_vel_y: -0.3
-      max_vel_x: 1.0
-      max_vel_y: 0.3
-      min_vel_theta: -1.5
-      max_vel_theta: 1.5
+      # Velocity limits — matched to gait.yaml and go2_params.yaml limits
+      min_vel_x: 0.0
+      min_vel_y: -0.4
+      max_vel_x: 1.5
+      max_vel_y: 0.4
+      min_vel_theta: 0.0
+      max_vel_theta: 1.2   # matches gait.yaml max_angular_velocity_z
       min_speed_xy: 0.0
-      max_speed_xy: 1.0
+      max_speed_xy: 1.5
       min_speed_theta: 0.05
 
       # Acceleration limits
-      acc_lim_x: 0.5
-      acc_lim_y: 0.3
-      acc_lim_theta: 1.2
+      acc_lim_x: 0.7
+      acc_lim_y: 0.5
+      acc_lim_theta: 1.0
       decel_lim_x: -1.0
-      decel_lim_y: -0.5
-      decel_lim_theta: -2.0
+      decel_lim_y: -0.7
+      decel_lim_theta: -1.5
 
-      # Sampling
-      vx_samples: 20
-      vy_samples: 10
-      vtheta_samples: 20
-      sim_time: 1.7
+      # Sampling — extra vy samples for richer holonomic coverage
+      vx_samples: 14
+      vy_samples: 8
+      vtheta_samples: 14
+      sim_time: 1.1
       linear_granularity: 0.05
       angular_granularity: 0.025
 
-      transform_tolerance: 0.2
+      transform_tolerance: 0.5
       xy_goal_tolerance: 0.25
-      trans_stopped_velocity: 0.05  # was 0.25 (50% of max_vel_x) — caused RotateToGoal to trigger while still moving
+      trans_stopped_velocity: 0.05
       short_circuit_trajectory_evaluation: true
       stateful: true
 
       # DWB critics
-      critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign",
+      critics: ["RotateToGoal", "Oscillation", "ObstacleFootprint", "GoalAlign",
                 "PathAlign", "PathDist", "GoalDist"]
 
-      BaseObstacle.scale: 0.2    # prioritize obstacle clearance with higher cruise speed
-      PathAlign.scale: 32.0
+      # Raise near-obstacle penalty to better match collision monitor safety envelope.
+      ObstacleFootprint.scale: 3.0
+      PathAlign.scale: 16.0
       PathAlign.forward_point_distance: 0.1
-      GoalAlign.scale: 24.0
+      GoalAlign.scale: 12.0
       GoalAlign.forward_point_distance: 0.1
-      PathDist.scale: 32.0
-      GoalDist.scale: 24.0
-      RotateToGoal.scale: 16.0   # was 32.0 — equal to PathDist/PathAlign, caused trajectory deadlock near goal
+      PathDist.scale: 20.0
+      GoalDist.scale: 14.0
+      RotateToGoal.scale: 12.0
       RotateToGoal.slowing_factor: 5.0
-      RotateToGoal.lookahead_time: -1.0
+      RotateToGoal.lookahead_time: -1.0  # -1.0 = auto-compute from current speed
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # local_costmap
-# Uses 2-D /scan for SLAM-aligned obstacle data plus 3-D cloud voxel marking
-# for safer near-field obstacle handling.
+# Uses STVL for rolling 3-D obstacle handling from the LiDAR point cloud.
 # ═══════════════════════════════════════════════════════════════════════════════
 local_costmap:
   local_costmap:
     ros__parameters:
       use_sim_time: true
       global_frame: odom
-      robot_base_frame: base_footprint
+      robot_base_frame: "base_footprint"
       rolling_window: true
-      width:  4
-      height: 4
+      width:  20
+      height: 20
       resolution: 0.05
-      update_frequency:  15.0
+      update_frequency:  10.0
       publish_frequency: 5.0
       transform_tolerance: 0.3
+      qos_overrides:
+        /lidar/points_undistorted:
+          subscription:
+            reliability: best_effort
+            durability: volatile
 
-      # Robot footprint including legs at nominal standing stance.
-      # Source: Unitree Go2 official dimensions 700 mm × 310 mm (standing).
-      #   X: ±0.350 m — full length fore/aft including leg reach
-      #   Y: ±0.155 m — full width including hip abduction to foot contact
-      # The URDF trunk collision box (440 × 120 mm) represents the torso only.
-      # This footprint correctly represents the full swept area.
-      # circumscribed_radius = sqrt(0.350² + 0.155²) = 0.383 m
-      footprint: "[ [-0.35, -0.155], [-0.35, 0.155], [0.35, 0.155], [0.35, -0.155] ]"
-      footprint_padding: 0.01
+      # Industrial safety footprint: physical 0.70 x 0.31 m standing envelope
+      # with 50 mm extra margin on each side.
+      footprint: "[ [-0.40, -0.205], [-0.40, 0.205], [0.40, 0.205], [0.40, -0.205] ]"
+      footprint_padding: 0.03
 
-      plugins: ["voxel_layer", "obstacle_layer", "inflation_layer"]
+      plugins: ["stvl_layer", "inflation_layer"]
 
-      voxel_layer:
-        plugin: "nav2_costmap_2d::VoxelLayer"
+      stvl_layer:
+        plugin: "spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer"
         enabled: true
-        publish_voxel_map: true
-        footprint_clearing_enabled: true
-        origin_z: 0.0
-        z_resolution: 0.05
-        z_voxels: 16
-        min_obstacle_height: 0.05
-        max_obstacle_height: 2.0
+        voxel_decay: 2.0          # shorter retention reduces gait-induced ghost voxels while remaining conservative
+        decay_model: 0            # 0 = linear decay
+        voxel_size: 0.05
+        track_unknown_space: false
         unknown_threshold: 15
         mark_threshold: 0
+        update_footprint_enabled: true
         combination_method: 1
-        observation_sources: cloud  # dynamic_projection  # <-- uncomment when tracker is ready
-        cloud:
-          topic: /lidar/points
-          data_type: "PointCloud2"
-          clearing: true
+        origin_z: 0.0
+        publish_voxel_map: true
+        transform_tolerance: 0.5
+        mapping_mode: false
+        map_save_duration: 60.0
+        observation_sources: lidar_mark
+        lidar_mark:
+          data_type: PointCloud2
+          topic: /lidar/points_undistorted
           marking: true
-          min_obstacle_height: 0.05
-          max_obstacle_height: 2.0
-          obstacle_min_range: 0.05
-          obstacle_max_range: 4.0
-          raytrace_min_range: 0.05
-          raytrace_max_range: 4.5
+          clearing: true
+          obstacle_range: 8.0
+          raytrace_range: 10.0
+          min_obstacle_height: 0.20
+          max_obstacle_height: 2.3
+          expected_update_rate: 0.0      # 0.0 = accept updates at any rate (LiDAR publishes at 10 Hz)
+          observation_persistence: 0.0   # 0.0 = discard raw observations immediately; voxel_decay handles temporal filtering
           inf_is_valid: false
-          expected_update_rate: 10.0
-
-      obstacle_layer:
-        plugin: "nav2_costmap_2d::ObstacleLayer"
-        enabled: true
-        footprint_clearing_enabled: true
-        observation_sources: scan
-        scan:
-          topic: /scan
-          data_type: "LaserScan"
-          obstacle_max_range:  10.0       # [m] mark obstacles up to this range
-          obstacle_min_range:   0.15
-          raytrace_max_range:  12.0       # [m] clear free space up to this range
-          raytrace_min_range:   0.15
-          clearing: true
-          marking: true
-          inf_is_valid: true
+          filter: "voxel"
+          voxel_min_points: 1
+          clear_after_reading: true
+          sensor_origin_frame: lidar_link  # explicit: match URDF link name (l1_lidar macro, prefix="")
+          max_z: 2.5    # STVL voxel volume upper bound (m above lidar_link origin; covers standing humans)
+          min_z: 0.0    # clamp below-sensor voxels to suppress floor returns during body pitch
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.58
+        # Wider + softer inflation gradient keeps local trajectories farther from obstacles.
+        cost_scaling_factor: 2.8
+        inflation_radius: 0.65
+        inflate_unknown: false
+        inflate_around_unknown: false
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # global_costmap
@@ -291,32 +309,31 @@ global_costmap:
       use_sim_time: true
       global_frame: map
       robot_base_frame: base_footprint
+      # FIX(agent3): set rolling_window: true for SLAM mode (static_layer removed from plugins).
+      # For localization mode, set false and restore static_layer plugin.
       rolling_window: true
       width: 30
       height: 30
       resolution: 0.05
-      update_frequency: 1.0
-      publish_frequency: 1.0
+      update_frequency: 2.0
+      publish_frequency: 2.0
       transform_tolerance: 0.5
-      track_unknown_space: true
+      track_unknown_space: false
+      qos_overrides:
+        /lidar/points_undistorted:
+          subscription:
+            reliability: best_effort
+            durability: volatile
 
-      # Robot footprint including legs at nominal standing stance.
-      # Source: Unitree Go2 official dimensions 700 mm × 310 mm (standing).
-      #   X: ±0.350 m — full length fore/aft including leg reach
-      #   Y: ±0.155 m — full width including hip abduction to foot contact
-      # The URDF trunk collision box (440 × 120 mm) represents the torso only.
-      # This footprint correctly represents the full swept area.
-      # circumscribed_radius = sqrt(0.350² + 0.155²) = 0.383 m
-      footprint: "[ [-0.35, -0.155], [-0.35, 0.155], [0.35, 0.155], [0.35, -0.155] ]"
-      footprint_padding: 0.01
+      footprint: "[ [-0.40, -0.205], [-0.40, 0.205], [0.40, 0.205], [0.40, -0.205] ]"
+      footprint_padding: 0.03
 
-      # For SLAM-only (no pre-built map): remove static_layer from this list
-      plugins: ["static_layer", "voxel_layer", "obstacle_layer", "inflation_layer"]
-
-      static_layer:
-        plugin: "nav2_costmap_2d::StaticLayer"
-        map_subscribe_transient_local: true
-        enabled: true
+      # FIX(agent3): SLAM mode — rolling_window: true is set above; static_layer removed here
+      # because Nav2 Humble ignores the static layer when rolling_window: true, causing a
+      # silent conflict. For localization mode (pre-built map + AMCL), set rolling_window: false
+      # and restore: plugins: ["static_layer", "voxel_layer", "obstacle_layer", "inflation_layer"]
+      # and re-add the static_layer block below.
+      plugins: ["voxel_layer", "inflation_layer"]
 
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
@@ -326,45 +343,33 @@ global_costmap:
         origin_z: 0.0
         z_resolution: 0.05
         z_voxels: 16
-        min_obstacle_height: 0.05
-        max_obstacle_height: 2.0
+        min_obstacle_height: 0.20
+        max_obstacle_height: 2.3
         unknown_threshold: 15
         mark_threshold: 0
         combination_method: 1
-        observation_sources: cloud  # dynamic_projection  # <-- uncomment when tracker is ready
+        observation_sources: cloud
         cloud:
-          topic: /lidar/points
+          topic: /lidar/points_undistorted
           data_type: "PointCloud2"
           clearing: true
           marking: true
-          min_obstacle_height: 0.05
-          max_obstacle_height: 2.0
-          obstacle_min_range: 0.05
-          obstacle_max_range: 6.0
+          min_obstacle_height: 0.20
+          max_obstacle_height: 2.5
+          obstacle_min_range: 0.15
+          obstacle_max_range: 8.0
           raytrace_min_range: 0.05
-          raytrace_max_range: 6.5
+          raytrace_max_range: 10.0
           inf_is_valid: false
-          expected_update_rate: 5.0
-
-      obstacle_layer:
-        plugin: "nav2_costmap_2d::ObstacleLayer"
-        enabled: true
-        observation_sources: scan
-        scan:
-          topic: /scan
-          data_type: "LaserScan"
-          obstacle_max_range:  10.0
-          obstacle_min_range:   0.05
-          raytrace_max_range:  12.0
-          raytrace_min_range:   0.0
-          clearing: true
-          marking: true
-          inf_is_valid: true
+          expected_update_rate: 10.0
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 2.0
-        inflation_radius: 0.68
+        # Keep global path generation consistent with local clearance preference.
+        cost_scaling_factor: 2.8
+        inflation_radius: 0.7
+        inflate_unknown: false
+        inflate_around_unknown: false
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # bt_navigator
@@ -451,9 +456,9 @@ behavior_server:
     robot_base_frame: base_footprint
     transform_tolerance: 0.1
     simulate_ahead_time: 2.0
-    max_rotational_vel: 1.5
-    min_rotational_vel: 0.05
-    rotational_acc_lim: 1.2
+    max_rotational_vel: 1.2   # matches gait.yaml max_angular_velocity_z
+    min_rotational_vel: 0.02
+    rotational_acc_lim: 1.0
     costmap_topic: local_costmap/costmap_raw
     footprint_topic: local_costmap/published_footprint
     cycle_frequency: 10.0
@@ -493,10 +498,11 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: false
     feedback: "OPEN_LOOP"
-    max_velocity: [1.0, 0.3, 1.5]
-    min_velocity: [-0.3, -0.3, -1.5]
-    max_accel: [0.5, 0.3, 1.2]
-    max_decel: [-1.0, -0.5, -2.0]
+    # All limits kept consistent with DWB and gait.yaml [vx, vy, wz]
+    max_velocity: [1.5, 0.4, 1.2]
+    min_velocity: [0.0, -0.4, -1.2]
+    max_accel: [0.7, 0.5, 1.0]
+    max_decel: [-1.0, -0.7, -1.5]
     odom_topic: "odom"
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.01]

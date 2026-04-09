@@ -5,6 +5,14 @@ Optional robot_localization EKF launch for odometry fusion.
 This launch is not included by default in go2_bringup/robot_sim bringups.
 Use it explicitly when raw odometry, IMU, and optional lidar odometry topics
 are available and TF ownership is configured to avoid duplicates.
+
+# FIX(agent3): REAL-ROBOT ONLY WARNING — do NOT include this launch alongside
+# sim_champ.launch.py. sim_champ.launch.py already spawns its own EKF node
+# (footprint_to_odom_ekf) that publishes /odom and the odom→base_footprint TF.
+# Launching ekf.launch.py at the same time would create two competing /odom
+# publishers and two odom→base_footprint TF broadcasters, causing TF conflicts
+# and unpredictable odometry in Nav2.
+# This file is intended for real-robot bringup only (go2_hw_bridge + raw odom).
 """
 
 import os

@@ -26,16 +26,25 @@ def generate_launch_description():
 
     go2_params = os.path.join(go2_bringup_share,    "config", "go2_params.yaml")
     urdf_file  = os.path.join(go2_description_share,"urdf",   "go2.urdf.xacro")
+    lidar_x = "0.28945"
+    lidar_y = "0.0"
+    lidar_z = "0.233175"  # standing_height + lidar_z from go2_description
 
     args = [
         DeclareLaunchArgument("use_sim_time", default_value="false"),
+        DeclareLaunchArgument(
+            "cmd_vel_topic",
+            default_value="/cmd_vel_collision_free",
+            description="Command topic consumed by go2_hw_bridge. Keep the safety path by default.",
+        ),
     ]
 
     use_sim_time = LaunchConfiguration("use_sim_time")
+    cmd_vel_topic = LaunchConfiguration("cmd_vel_topic")
 
-    robot_description = Command(
-        ["xacro ", urdf_file, " use_gazebo:=", use_sim_time]
-    )
+    # FIX(agent5): Removed "use_gazebo:=" arg — go2_description URDF no longer
+    # accepts use_gazebo; all Gazebo content lives in go2_sim only.
+    robot_description = Command(["xacro ", urdf_file])
 
     nodes = [
         Node(
@@ -53,7 +62,19 @@ def generate_launch_description():
             executable="go2_hw_bridge",
             name="go2_hw_bridge",
             output="screen",
-            parameters=[go2_params, {"use_sim_time": use_sim_time}],
+            parameters=[go2_params, {"use_sim_time": use_sim_time, "cmd_vel_topic": cmd_vel_topic}],
+        ),
+        Node(
+            package="tf2_ros",
+            executable="static_transform_publisher",
+            name="base_footprint_to_lidar_stabilized_tf",
+            output="screen",
+            parameters=[{"use_sim_time": use_sim_time}],
+            arguments=[
+                "--x", lidar_x, "--y", lidar_y, "--z", lidar_z,
+                "--roll", "0", "--pitch", "0", "--yaw", "0",
+                "--frame-id", "base_footprint", "--child-frame-id", "lidar_stabilized",
+            ],
         ),
     ]
 

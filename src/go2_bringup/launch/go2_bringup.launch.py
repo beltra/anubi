@@ -22,6 +22,16 @@ slam_params     : str    Override slam_toolbox params file
 slam_mode       : str    'mapping' or 'localization' (default: 'mapping')
 use_safety      : bool   Enable velocity_limiter safety gate (default: false)
                          When true: go2_hw_bridge reads /cmd_vel_safe instead of /cmd_vel.
+
+LiDAR topic contract (real robot)
+----------------------------------
+# FIX(agent5): Documented real-robot LiDAR topic requirement.
+# The Go2 internal ROS 2 bridge publishes raw point cloud on /utlidar/cloud.
+# A republisher node that remaps /utlidar/cloud → /lidar/points MUST be
+# launched before starting the navigation stack, as nav2_params.yaml and
+# slam.launch.py expect PointCloud2 data on /lidar/points (frame: lidar_link).
+# Example one-liner (run before this launch):
+#   ros2 run topic_tools relay /utlidar/cloud /lidar/points
 """
 
 import os
@@ -48,9 +58,18 @@ def generate_launch_description():
     default_slam    = os.path.join(robot_nav_share,      "config", "slam_toolbox_params.yaml")
     urdf_file       = os.path.join(go2_description_share,"urdf",   "go2.urdf.xacro")
     rviz_config     = os.path.join(robot_nav_share,      "rviz",   "nav2.rviz")
+    lidar_x         = "0.28945"
+    lidar_y         = "0.0"
+    lidar_z         = "0.233175"  # standing_height + lidar_z from go2_description
 
     # ── Arguments ─────────────────────────────────────────────────────────
     args = [
+        DeclareLaunchArgument(
+            "use_stvl",
+            default_value="true",
+            description="Use SpatioTemporalVoxelLayer for 3D obstacle avoidance"
+                        " in the local costmap. Set false to revert to 2D obstacle layer.",
+        ),
         DeclareLaunchArgument("use_sim_time", default_value="false"),
         DeclareLaunchArgument("map",          default_value="",
                               description="slam_toolbox map file (.posegraph) for"
@@ -67,24 +86,24 @@ def generate_launch_description():
     ]
 
     use_sim_time = LaunchConfiguration("use_sim_time")
+    use_stvl     = LaunchConfiguration("use_stvl")
     map_path     = LaunchConfiguration("map")
     robot_name   = LaunchConfiguration("robot_name")
     rviz         = LaunchConfiguration("rviz")
-    params_file  = LaunchConfiguration("params_file")
     slam_params  = LaunchConfiguration("slam_params")
     slam_mode    = LaunchConfiguration("slam_mode")
     use_safety   = LaunchConfiguration("use_safety")
 
-    # When use_safety=true, go2_hw_bridge reads /cmd_vel_safe (velocity_limiter output).
-    # Otherwise it reads /cmd_vel directly from Nav2.
+    # Collision Monitor always sits in the command path for industrial safety.
+    # When use_safety=true, velocity_limiter adds a watchdog / estop gate after it.
     hw_bridge_cmd_topic = PythonExpression(
-        ["'/cmd_vel_safe' if '", use_safety, "' == 'true' else '/cmd_vel'"]
+        ["'/cmd_vel_safe' if '", use_safety, "' == 'true' else '/cmd_vel_collision_free'"]
     )
 
     # ── 1. robot_state_publisher ──────────────────────────────────────────
-    robot_description = Command(
-        ["xacro ", urdf_file, " use_gazebo:=", use_sim_time]
-    )
+    # FIX(agent5): Removed "use_gazebo:=" arg — go2_description URDF no longer
+    # accepts use_gazebo; all Gazebo content lives in go2_sim only.
+    robot_description = Command(["xacro ", urdf_file])
     robot_state_publisher = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
@@ -109,6 +128,18 @@ def generate_launch_description():
             "cmd_vel_topic": hw_bridge_cmd_topic,
         }],
     )
+    lidar_stabilized_tf = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="base_footprint_to_lidar_stabilized_tf",
+        output="screen",
+        parameters=[{"use_sim_time": use_sim_time}],
+        arguments=[
+            "--x", lidar_x, "--y", lidar_y, "--z", lidar_z,
+            "--roll", "0", "--pitch", "0", "--yaw", "0",
+            "--frame-id", "base_footprint", "--child-frame-id", "lidar_stabilized",
+        ],
+    )
 
     # ── 3. Safety gate (optional) ─────────────────────────────────────────
     # velocity_limiter sits between Nav2 /cmd_vel and go2_hw_bridge.
@@ -117,7 +148,11 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(robot_safety_share, "launch", "safety.launch.py")
         ),
-        launch_arguments={"use_sim_time": use_sim_time}.items(),
+        launch_arguments={
+            "use_sim_time": use_sim_time,
+            "cmd_vel_in": "/cmd_vel_collision_free",
+            "cmd_vel_out": "/cmd_vel_safe",
+        }.items(),
         condition=IfCondition(use_safety),
     )
 
@@ -141,8 +176,9 @@ def generate_launch_description():
         ),
         launch_arguments={
             "use_sim_time": use_sim_time,
-            "params_file":  params_file,
             "namespace":    robot_name,
+            "use_stvl":     use_stvl,
+            "params_file":  LaunchConfiguration("params_file"),
         }.items(),
     )
 
@@ -160,6 +196,7 @@ def generate_launch_description():
     return LaunchDescription(args + [
         robot_state_publisher,
         go2_hw_bridge,
+        lidar_stabilized_tf,
         safety,
         slam,
         nav2,

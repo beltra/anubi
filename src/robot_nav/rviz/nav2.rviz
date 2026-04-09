@@ -88,6 +88,8 @@ Visualization Manager:
           Value: true
         base_link:
           Value: true
+        lidar_stabilized:
+          Value: true
         lidar_link:
           Value: true
       Marker Scale: 0.5
@@ -176,7 +178,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Best Effort
-        Value: /lidar/points
+        Value: /lidar/points_undistorted
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
@@ -306,7 +308,7 @@ Visualization Manager:
       Name: Current View
       Near Clip Distance: 0.009999999776482582
       Scale: 56.4
-      Target Frame: base_link
+      Target Frame: base_footprint
       Value: TopDownOrtho (rviz_default_plugins)
       X: 0
       Y: 0

@@ -1,0 +1,42 @@
+<!--
+  Industrial-safety recovery tree.
+  It never clears an entire costmap; only a 1 m window around the robot.
+-->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="6" name="NavigateRecovery">
+      <PipelineSequence name="NavigateWithReplanning">
+        <RateController hz="1.0">
+          <RecoveryNode number_of_retries="1" name="ComputePathToPose">
+            <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+            <ClearCostmapAroundRobot
+              name="ClearLocalCostmap-PlanContext"
+              service_name="local_costmap/clear_around_local_costmap"
+              reset_distance="1.0"/>
+          </RecoveryNode>
+        </RateController>
+        <RecoveryNode number_of_retries="1" name="FollowPath">
+          <FollowPath path="{path}" controller_id="FollowPath"/>
+          <ClearCostmapAroundRobot
+            name="ClearLocalCostmap-ControlContext"
+            service_name="local_costmap/clear_around_local_costmap"
+            reset_distance="1.0"/>
+        </RecoveryNode>
+      </PipelineSequence>
+      <ReactiveFallback name="RecoveryFallback">
+        <GoalUpdated/>
+        <RoundRobin name="RecoveryActions">
+          <Sequence name="ClearingActions">
+            <ClearCostmapAroundRobot
+              name="ClearLocalCostmap-Subtree"
+              service_name="local_costmap/clear_around_local_costmap"
+              reset_distance="1.0"/>
+          </Sequence>
+          <Spin spin_dist="1.57"/>
+          <Wait wait_duration="5"/>
+          <BackUp backup_dist="0.15" backup_speed="0.03"/>
+        </RoundRobin>
+      </ReactiveFallback>
+    </RecoveryNode>
+  </BehaviorTree>
+</root>

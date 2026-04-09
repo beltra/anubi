@@ -1,43 +1,45 @@
 # scan_from_cloud.yaml
 # Parameters for pointcloud_to_laserscan_node.
-# Converts /lidar/points (3D PointCloud2) to /scan (2D LaserScan)
-# for slam_toolbox.
+# Converts /lidar/points_undistorted (3D PointCloud2) to /scan (2D LaserScan)
+# for slam_toolbox and 2D obstacle layers.
 #
 # The Unitree L1 LiDAR spans 360° horizontal and 90° vertical FOV.
 # We extract a horizontal slice around the LiDAR's equatorial plane to produce
 # a representative 2D laser scan.
 #
 # ASSUMPTIONS:
-#   A-SCAN-1: lidar_link frame is oriented with +X forward, +Y left, +Z up.
-#   A-SCAN-2: min_height/max_height are relative to the lidar_link frame origin.
-#             A wider slice is used in simulation to ensure enough valid returns
-#             for slam_toolbox map building.
+#   A-SCAN-1: lidar_stabilized is a gravity-leveled frame co-located with the
+#             nominal LiDAR origin and aligned with robot yaw only.
+#   A-SCAN-2: min_height/max_height are relative to the stabilized LiDAR origin.
+#             The slice is centred on the horizontal plane of lidar_stabilized.
 #   A-SCAN-3: LiDAR min range is 0.05 m.
 
 pointcloud_to_laserscan:
   ros__parameters:
     # Output frame for the LaserScan.
-    # Must be a frame that slam_toolbox can look up relative to base_footprint.
-    target_frame: lidar_link       # Assumption A-SCAN-1
+    # Use a leveled frame co-located with the lidar so scan extraction does not
+    # depend on the robot's standing height or body pitch/roll.
+    # slam_toolbox can transform this frame to base_footprint through TF.
+    target_frame: lidar_stabilized
 
-    transform_tolerance: 0.05      # [s] TF lookup timeout
+    transform_tolerance: 0.3       # [s] TF lookup timeout for cloud->scan projection
 
-    # Height filter (relative to target_frame origin) — Assumption A-SCAN-2
-    # Use a wider slice to preserve obstacle returns in simulation.
-    # A too-thin slice can produce all-inf scans (no valid beams), which
-    # prevents slam_toolbox from initializing the map.
-    min_height: -0.06              # [m]
-    max_height:  0.06              # [m]
+    # Height filter relative to lidar_stabilized.
+    # A slightly wider band improves scan density in sparse indoor scenes while
+    # still rejecting the floor, which sits roughly 0.23 m below the sensor.
+    min_height: -0.1
+    max_height: 0.1
 
     # Angular scan parameters
     angle_min: -3.14159265         # [rad] -180°
     angle_max:  3.14159265         # [rad] +180°
-    # Match the simulated horizontal sampling (360 points / revolution).
-    angle_increment: 0.01745329    # [rad] 1.0°
+    # Use finer bins than the raw 1 degree setting so sparse walls/corners are
+    # less likely to disappear during PointCloud2 -> LaserScan rasterization.
+    angle_increment: 0.00872665    # [rad] 0.5°
 
     scan_time: 0.1                 # [s] 10 Hz
-    range_min: 0.05                # [m]  Unitree L1 minimum range
-    range_max: 30.0                # [m]  Unitree L1 practical maximum range
+    range_min: 0.15                # [m]  reject near-body clutter
+    range_max: 25.0                # [m]  slightly wider indoor mapping range without going overly noisy
 
-    use_inf: true                  # Publish inf for out-of-range points (not NaN)
+    use_inf: true                   # Preserve free-space rays for scan-based SLAM
     inf_epsilon: 1.0               # [m] inf offset
