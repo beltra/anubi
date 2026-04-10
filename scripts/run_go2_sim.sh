@@ -7,6 +7,7 @@ WORLD_PATH=""
 GUI="true"
 RVIZ="true"
 USE_STVL="true"
+NAV_PROFILE="default_safe"
 NAV_DELAY_SEC="20.0"
 
 usage() {
@@ -20,6 +21,7 @@ Options:
   --no-gui             Start Gazebo without GUI
   --no-rviz            Start without RViz
   --no-stvl            Disable SpatioTemporalVoxelLayer in Nav2 local costmap
+  --nav-profile <id>   Nav2 profile: default_safe | narrow_gap_1p0m
   --nav-delay <sec>    Delay before Nav2 stack starts (default: 20.0)
   -h, --help           Show this help
 
@@ -59,6 +61,11 @@ while [[ $# -gt 0 ]]; do
       USE_STVL="false"
       shift
       ;;
+    --nav-profile)
+      [[ $# -ge 2 ]] || { echo "Missing value for --nav-profile" >&2; usage; exit 1; }
+      NAV_PROFILE="$2"
+      shift 2
+      ;;
     --nav-delay)
       [[ $# -ge 2 ]] || { echo "Missing value for --nav-delay" >&2; usage; exit 1; }
       NAV_DELAY_SEC="$2"
@@ -75,6 +82,11 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "$NAV_PROFILE" != "default_safe" && "$NAV_PROFILE" != "narrow_gap_1p0m" ]]; then
+  echo "Invalid --nav-profile: $NAV_PROFILE (expected default_safe or narrow_gap_1p0m)" >&2
+  exit 1
+fi
 
 if [[ "$MODE" == "localization" ]]; then
   if [[ -z "$MAP_PATH" ]]; then
@@ -99,6 +111,7 @@ CMD=(
   gui:="$GUI"
   use_rviz:="$RVIZ"
   use_stvl:="$USE_STVL"
+  nav_profile:="$NAV_PROFILE"
   nav_delay_sec:="$NAV_DELAY_SEC"
 )
 

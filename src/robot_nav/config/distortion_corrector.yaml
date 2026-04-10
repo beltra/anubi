@@ -43,3 +43,28 @@ distortion_corrector:
     # correct robot pose at acquisition time.  Using "now" caused 13–20 ms
     # timestamp shifts that misaligned scans in SLAM, producing a smeared map.
     output_stamp_mode: input
+
+    # ── Gravity alignment ─────────────────────────────────────────────────
+    # Rotate all deskewed points by R_body(roll, pitch, 0) extracted from the
+    # IMU orientation quaternion.  Outputs the cloud in `gravity_align_frame`
+    # (lidar_stabilized) so STVL sees floor returns consistently at world-z ≈ 0
+    # regardless of trunk tilt or TF lag.  Requires imu_stabilized_tf.py to be
+    # running so the lidar_stabilized TF is available.
+    gravity_align: true
+    gravity_align_frame: lidar_stabilized
+
+    # ── Floor filter ──────────────────────────────────────────────────────
+    # Drop deskewed points whose estimated world-frame z is below min_world_z.
+    # Uses the IMU orientation quaternion to account for trunk pitch/roll so
+    # floor sweeps during gait are rejected before reaching the STVL costmap.
+    # The threshold (0.12 m) sits slightly above STVL min_obstacle_height
+    # (0.10 m) to absorb any small approximation error in the static base_z.
+    filter_floor: true
+    min_world_z: 0.12
+    # LiDAR position in base_link frame [m] (from go2_description URDF,
+    # l1_lidar joint: xyz="0.28945 0 -0.056825", rpy="π 0 0")
+    sensor_x_in_base: 0.28945
+    sensor_y_in_base: 0.0
+    sensor_z_in_base: -0.056825
+    # Nominal standing height of base_link above ground [m].
+    base_z_nominal: 0.28

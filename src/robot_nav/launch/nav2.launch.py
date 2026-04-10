@@ -10,6 +10,7 @@ Arguments
 ---------
 use_sim_time : bool   (default: false)
 params_file  : str    Path to Nav2 YAML params (default: robot_nav default)
+nav_profile  : str    Predefined Nav2 profile (default_safe|narrow_gap_1p0m)
 namespace    : str    Robot namespace prefix (default: '')
 """
 
@@ -32,6 +33,9 @@ def generate_launch_description():
     nav2_bringup_share = get_package_share_directory("nav2_bringup")
 
     default_nav2_params_stvl = os.path.join(robot_nav_share, "config", "nav2_params.yaml")
+    default_nav2_params_stvl_narrow = os.path.join(
+        robot_nav_share, "config", "nav2_params_narrow_gap_1p0m.yaml"
+    )
     default_nav2_params_2d = os.path.join(robot_nav_share, "config", "nav2_params_2d.yaml")
     default_collision_monitor_params = os.path.join(
         robot_nav_share, "config", "collision_monitor_params.yaml"
@@ -59,17 +63,30 @@ def generate_launch_description():
         default_value=default_nav2_params_stvl,
         description="Default STVL Nav2 params YAML",
     )
+    declare_nav2_params_stvl_narrow = DeclareLaunchArgument(
+        "nav2_params_stvl_narrow",
+        default_value=default_nav2_params_stvl_narrow,
+        description="STVL narrow-gap Nav2 params YAML (target 1.0 m passages)",
+    )
     declare_nav2_params = DeclareLaunchArgument(
         "nav2_params",
         default_value=default_nav2_params_2d,
         description="Fallback 2D Nav2 params YAML",
     )
+    declare_nav_profile = DeclareLaunchArgument(
+        "nav_profile",
+        default_value="default_safe",
+        description="Navigation profile: default_safe or narrow_gap_1p0m",
+    )
     declare_params_file = DeclareLaunchArgument(
         "params_file",
         default_value=PythonExpression([
-            '"', LaunchConfiguration("nav2_params_stvl"), '"',
+            '"', LaunchConfiguration("nav2_params_stvl_narrow"), '"',
+            ' if ("true" == "', LaunchConfiguration("use_stvl"),
+            '" and "narrow_gap_1p0m" == "', LaunchConfiguration("nav_profile"), '")',
+            ' else ("', LaunchConfiguration("nav2_params_stvl"), '"',
             ' if "true" == "', LaunchConfiguration("use_stvl"), '"',
-            ' else "', LaunchConfiguration("nav2_params"), '"',
+            ' else "', LaunchConfiguration("nav2_params"), '")',
         ]),
         description="Full path to Nav2 params YAML",
     )
@@ -159,7 +176,9 @@ def generate_launch_description():
         declare_use_stvl,
         declare_use_sim_time,
         declare_nav2_params_stvl,
+        declare_nav2_params_stvl_narrow,
         declare_nav2_params,
+        declare_nav_profile,
         declare_params_file,
         declare_namespace,
         declare_collision_monitor_params,

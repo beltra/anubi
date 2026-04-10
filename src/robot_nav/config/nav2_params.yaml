@@ -146,13 +146,14 @@ planner_server:
 controller_server:
   ros__parameters:
     use_sim_time: true
-    controller_frequency: 15.0
+    controller_frequency: 20.0
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
     failure_tolerance: 0.5      # was 0.3 (6 cycles) — too short; 0.5 s = 10 cycles before recovery
     progress_checker_plugin: "progress_checker"
     goal_checker_plugins: ["general_goal_checker"]
+    # controller_plugins: ["FollowPath", "FollowPathDWB"]
     controller_plugins: ["FollowPath"]
 
     progress_checker:
@@ -161,67 +162,175 @@ controller_server:
       movement_time_allowance: 15.0
 
     general_goal_checker:
-      stateful: true
+      # Keep checking XY while aligning yaw to prevent orbiting around the goal.
+      stateful: false
       plugin: "nav2_controller::SimpleGoalChecker"
       xy_goal_tolerance:  0.25
-      yaw_goal_tolerance: 0.25
+      yaw_goal_tolerance: 0.35
 
     FollowPath:
-      plugin: "dwb_core::DWBLocalPlanner"
-      debug_trajectory_details: false
-      # Go2 can command lateral velocity; keep moderate lateral limits for stability.
-      holonomic: true
-      # DWB does not define a separate footprint polygon here; it inherits
-      # collision geometry from the active local/global costmap footprint.
-
-      # Velocity limits — matched to gait.yaml and go2_params.yaml limits
-      min_vel_x: 0.0
-      min_vel_y: -0.4
-      max_vel_x: 1.5
-      max_vel_y: 0.4
-      min_vel_theta: 0.0
-      max_vel_theta: 1.2   # matches gait.yaml max_angular_velocity_z
-      min_speed_xy: 0.0
-      max_speed_xy: 1.5
-      min_speed_theta: 0.05
-
-      # Acceleration limits
-      acc_lim_x: 0.7
-      acc_lim_y: 0.5
-      acc_lim_theta: 1.0
-      decel_lim_x: -1.0
-      decel_lim_y: -0.7
-      decel_lim_theta: -1.5
-
-      # Sampling — extra vy samples for richer holonomic coverage
-      vx_samples: 14
-      vy_samples: 8
-      vtheta_samples: 14
-      sim_time: 1.1
-      linear_granularity: 0.05
-      angular_granularity: 0.025
-
+      plugin: "nav2_mppi_controller::MPPIController"
+      motion_model: "Omni"
       transform_tolerance: 0.5
-      xy_goal_tolerance: 0.25
-      trans_stopped_velocity: 0.05
-      short_circuit_trajectory_evaluation: true
-      stateful: true
+      prune_distance: 1.7
 
-      # DWB critics
-      critics: ["RotateToGoal", "Oscillation", "ObstacleFootprint", "GoalAlign",
-                "PathAlign", "PathDist", "GoalDist"]
+      # MPPI rollout horizon stays close to the previous DWB horizon (1.2 s).
+      time_steps: 24
+      model_dt: 0.05
+      batch_size: 1200
+      iteration_count: 1
+      retry_attempt_limit: 1
+      temperature: 0.3
+      gamma: 0.015
+      reset_period: 1.0
+      regenerate_noises: false
+      visualize: false
 
-      # Raise near-obstacle penalty to better match collision monitor safety envelope.
-      ObstacleFootprint.scale: 3.0
-      PathAlign.scale: 16.0
-      PathAlign.forward_point_distance: 0.1
-      GoalAlign.scale: 12.0
-      GoalAlign.forward_point_distance: 0.1
-      PathDist.scale: 20.0
-      GoalDist.scale: 14.0
-      RotateToGoal.scale: 12.0
-      RotateToGoal.slowing_factor: 5.0
-      RotateToGoal.lookahead_time: -1.0  # -1.0 = auto-compute from current speed
+      # Velocity and acceleration envelopes match the maintained Go2 stack.
+      vx_max: 1.5
+      vx_min: 0.0
+      vy_max: 0.4
+      wz_max: 1.2
+      ax_max: 0.7
+      ax_min: -1.0
+      ay_max: 0.5
+      ay_min: -0.7
+      az_max: 1.0
+      vx_std: 0.2
+      vy_std: 0.15
+      wz_std: 0.3
+
+      # Keep path tracking goal-aware, obstacle-aware, and biased against yaw-only twirling.
+      critics: ["ConstraintCritic", "ObstaclesCritic", "GoalCritic", "GoalAngleCritic",
+                "PathAlignCritic", "PathFollowCritic", "PathAngleCritic",
+                "TwirlingCritic", "VelocityDeadbandCritic"]
+
+      ConstraintCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 4.0
+
+      ObstaclesCritic:
+        enabled: true
+        cost_power: 1
+        repulsion_weight: 1.7
+        critical_weight: 20.0
+        collision_cost: 1000000.0
+        collision_margin_distance: 0.10
+        near_goal_distance: 0.35
+        consider_footprint: true
+        inflation_radius: 0.65
+        cost_scaling_factor: 2.8
+
+      GoalCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        threshold_to_consider: 1.2
+
+      GoalAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 2.0
+        threshold_to_consider: 0.20
+
+      PathAlignCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 12.0
+        max_path_occupancy_ratio: 0.07
+        trajectory_point_step: 4
+        threshold_to_consider: 0.6
+        offset_from_furthest: 10
+        use_path_orientations: true
+
+      PathFollowCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 6.0
+        offset_from_furthest: 5
+        threshold_to_consider: 1.2
+
+      PathAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 2.0
+        offset_from_furthest: 4
+        threshold_to_consider: 0.5
+        max_angle_to_furthest: 0.9
+        forward_preference: false
+
+      TwirlingCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 4.0
+
+      VelocityDeadbandCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 35.0
+        deadband_velocities: [0.02, 0.02, 0.01]
+
+      TrajectoryVisualizer:
+        trajectory_step: 5
+        time_step: 3
+
+    # FollowPathDWB:
+    #   plugin: "dwb_core::DWBLocalPlanner"
+    #   debug_trajectory_details: false
+    #   # Go2 can command lateral velocity; keep moderate lateral limits for stability.
+    #   holonomic: true
+    #   # DWB does not define a separate footprint polygon here; it inherits
+    #   # collision geometry from the active local/global costmap footprint.
+
+    #   # Velocity limits — matched to gait.yaml and go2_params.yaml limits
+    #   min_vel_x: 0.0
+    #   min_vel_y: -0.4
+    #   max_vel_x: 1.5
+    #   max_vel_y: 0.4
+    #   min_vel_theta: 0.0
+    #   max_vel_theta: 1.2   # matches gait.yaml max_angular_velocity_z
+    #   min_speed_xy: 0.0
+    #   max_speed_xy: 1.5
+    #   min_speed_theta: 0.05
+
+    #   # Acceleration limits
+    #   acc_lim_x: 0.7
+    #   acc_lim_y: 0.5
+    #   acc_lim_theta: 1.0
+    #   decel_lim_x: -1.0
+    #   decel_lim_y: -0.7
+    #   decel_lim_theta: -1.5
+
+    #   # Sampling — extra vy samples for richer holonomic coverage
+    #   vx_samples: 14
+    #   vy_samples: 8
+    #   vtheta_samples: 14
+    #   sim_time: 1.1
+    #   linear_granularity: 0.05
+    #   angular_granularity: 0.025
+
+    #   transform_tolerance: 0.5
+    #   xy_goal_tolerance: 0.25
+    #   trans_stopped_velocity: 0.05
+    #   short_circuit_trajectory_evaluation: true
+    #   stateful: true
+
+    #   # DWB critics
+    #   critics: ["RotateToGoal", "Oscillation", "ObstacleFootprint", "GoalAlign",
+    #             "PathAlign", "PathDist", "GoalDist"]
+
+    #   # Raise near-obstacle penalty to better match collision monitor safety envelope.
+    #   ObstacleFootprint.scale: 3.0
+    #   PathAlign.scale: 16.0
+    #   PathAlign.forward_point_distance: 0.1
+    #   GoalAlign.scale: 12.0
+    #   GoalAlign.forward_point_distance: 0.1
+    #   PathDist.scale: 20.0
+    #   GoalDist.scale: 14.0
+    #   RotateToGoal.scale: 12.0
+    #   RotateToGoal.slowing_factor: 5.0
+    #   RotateToGoal.lookahead_time: -1.0  # -1.0 = auto-compute from current speed
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # local_costmap
@@ -246,9 +355,9 @@ local_costmap:
             reliability: best_effort
             durability: volatile
 
-      # Industrial safety footprint: physical 0.70 x 0.31 m standing envelope
-      # with 50 mm extra margin on each side.
-      footprint: "[ [-0.40, -0.205], [-0.40, 0.205], [0.40, 0.205], [0.40, -0.205] ]"
+      # Physical standing envelope: 0.70 m length (±0.35) × 0.31 m width (±0.155).
+      # Footprint polygon represents actual robot extents when standing.
+      footprint: "[ [-0.35, -0.155], [-0.35, 0.155], [0.35, 0.155], [0.35, -0.155] ]"
       footprint_padding: 0.03
 
       plugins: ["stvl_layer", "inflation_layer"]
@@ -256,7 +365,7 @@ local_costmap:
       stvl_layer:
         plugin: "spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer"
         enabled: true
-        voxel_decay: 2.0          # shorter retention reduces gait-induced ghost voxels while remaining conservative
+        voxel_decay: 0.5          # fast ghost clearing — ≈1 gait cycle instead of 4
         decay_model: 0            # 0 = linear decay
         voxel_size: 0.05
         track_unknown_space: false
@@ -266,7 +375,7 @@ local_costmap:
         combination_method: 1
         origin_z: 0.0
         publish_voxel_map: true
-        transform_tolerance: 0.5
+        transform_tolerance: 0.1  # tighter TF lookup avoids using stale trunk pose
         mapping_mode: false
         map_save_duration: 60.0
         observation_sources: lidar_mark
@@ -277,17 +386,19 @@ local_costmap:
           clearing: true
           obstacle_range: 8.0
           raytrace_range: 10.0
-          min_obstacle_height: 0.20
+          # Lower threshold to keep short obstacles (pallets, low boxes) visible.
+          min_obstacle_height: 0.10
           max_obstacle_height: 2.3
           expected_update_rate: 0.0      # 0.0 = accept updates at any rate (LiDAR publishes at 10 Hz)
           observation_persistence: 0.0   # 0.0 = discard raw observations immediately; voxel_decay handles temporal filtering
           inf_is_valid: false
           filter: "voxel"
-          voxel_min_points: 1
+          voxel_min_points: 2       # require 2 hits before marking — rejects single-point ghost returns
           clear_after_reading: true
-          sensor_origin_frame: lidar_link  # explicit: match URDF link name (l1_lidar macro, prefix="")
+          sensor_origin_frame: lidar_stabilized  # gravity-levelled frame; imu_stabilized_tf tracks physical sensor position
           max_z: 2.5    # STVL voxel volume upper bound (m above lidar_link origin; covers standing humans)
-          min_z: 0.0    # clamp below-sensor voxels to suppress floor returns during body pitch
+          # Allow a small below-sensor band to detect low obstacles without opening full floor returns.
+          min_z: -0.10
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
@@ -325,7 +436,7 @@ global_costmap:
             reliability: best_effort
             durability: volatile
 
-      footprint: "[ [-0.40, -0.205], [-0.40, 0.205], [0.40, 0.205], [0.40, -0.205] ]"
+      footprint: "[ [-0.35, -0.155], [-0.35, 0.155], [0.35, 0.155], [0.35, -0.155] ]"
       footprint_padding: 0.03
 
       # FIX(agent3): SLAM mode — rolling_window: true is set above; static_layer removed here
@@ -343,7 +454,7 @@ global_costmap:
         origin_z: 0.0
         z_resolution: 0.05
         z_voxels: 16
-        min_obstacle_height: 0.20
+        min_obstacle_height: 0.10
         max_obstacle_height: 2.3
         unknown_threshold: 15
         mark_threshold: 0
@@ -354,7 +465,7 @@ global_costmap:
           data_type: "PointCloud2"
           clearing: true
           marking: true
-          min_obstacle_height: 0.20
+          min_obstacle_height: 0.10
           max_obstacle_height: 2.5
           obstacle_min_range: 0.15
           obstacle_max_range: 8.0
@@ -367,7 +478,7 @@ global_costmap:
         plugin: "nav2_costmap_2d::InflationLayer"
         # Keep global path generation consistent with local clearance preference.
         cost_scaling_factor: 2.8
-        inflation_radius: 0.7
+        inflation_radius: 0.65
         inflate_unknown: false
         inflate_around_unknown: false
 
@@ -505,7 +616,7 @@ velocity_smoother:
     max_decel: [-1.0, -0.7, -1.5]
     odom_topic: "odom"
     odom_duration: 0.1
-    deadband_velocity: [0.0, 0.0, 0.01]
+    deadband_velocity: [0.02, 0.02, 0.01]
     velocity_timeout: 1.0
 
 # ═══════════════════════════════════════════════════════════════════════════════

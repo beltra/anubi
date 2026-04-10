@@ -224,7 +224,7 @@ local_costmap:
             reliability: best_effort
             durability: volatile
 
-      footprint: "[ [-0.40, -0.205], [-0.40, 0.205], [0.40, 0.205], [0.40, -0.205] ]"
+      footprint: "[ [-0.35, -0.155], [-0.35, 0.155], [0.35, 0.155], [0.35, -0.155] ]"
       footprint_padding: 0.0
 
       plugins: ["stvl_layer", "inflation_layer"]
@@ -232,7 +232,7 @@ local_costmap:
       stvl_layer:
         plugin: "spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer"
         enabled: true
-        voxel_decay: 20.0         # retain hazards through short occlusions in industrial aisles
+        voxel_decay: 0.5          # fast ghost clearing — ≈1 gait cycle instead of many
         decay_model: 0            # 0 = linear decay
         voxel_size: 0.05
         track_unknown_space: true
@@ -242,7 +242,7 @@ local_costmap:
         combination_method: 1
         origin_z: 0.0
         publish_voxel_map: false
-        transform_tolerance: 0.5
+        transform_tolerance: 0.1  # tighter TF lookup avoids using stale trunk pose
         mapping_mode: false
         map_save_duration: 60.0
         observation_sources: lidar_mark
@@ -259,9 +259,9 @@ local_costmap:
           observation_persistence: 0.0   # 0.0 = discard raw observations immediately; voxel_decay handles temporal filtering
           inf_is_valid: false
           filter: "voxel"
-          voxel_min_points: 1
+          voxel_min_points: 2       # require 2 hits before marking — rejects single-point ghost returns
           clear_after_reading: true
-          sensor_origin_frame: lidar_link  # explicit: match URDF link name (l1_lidar macro, prefix="")
+          sensor_origin_frame: lidar_stabilized  # gravity-levelled frame; imu_stabilized_tf tracks physical sensor position
           max_z: 2.5    # STVL voxel volume upper bound (m above lidar_link origin; covers standing humans)
           min_z: 0.0    # STVL voxel volume lower bound (ground plane, no below-ground voxels)
 
@@ -300,7 +300,7 @@ global_costmap:
             reliability: best_effort
             durability: volatile
 
-      footprint: "[ [-0.40, -0.205], [-0.40, 0.205], [0.40, 0.205], [0.40, -0.205] ]"
+      footprint: "[ [-0.35, -0.155], [-0.35, 0.155], [0.35, 0.155], [0.35, -0.155] ]"
       footprint_padding: 0.0
 
       # FIX(agent3): SLAM mode — rolling_window: true is set above; static_layer removed here

@@ -16,7 +16,7 @@ collision_monitor:
     # INDUSTRIAL SAFETY: treat unmapped / unknown costmap cells as occupied so
     # that the monitor never assumes a gap is passable when the costmap source
     # is active (e.g. after a recovery clear or in an unseen region).
-    treat_unknown_as_obstacle: false
+    treat_unknown_as_obstacle: true
 
     # Explicit QoS keeps the LiDAR bridge and collision monitor on BEST_EFFORT.
     qos_overrides:
@@ -29,9 +29,9 @@ collision_monitor:
 
     ApproachZone:
       type: "circle"
-      radius: 2.0
+      radius: 1.0
       action_type: "slowdown"
-      slowdown_ratio: 0.85
+      slowdown_ratio: 0.9
       max_points: 0
       visualize: True
       polygon_pub_topic: "/collision_monitor/approach_zone"
@@ -39,7 +39,7 @@ collision_monitor:
 
     SlowZone:
       type: "circle"
-      radius: 1.0
+      radius: 0.6
       action_type: "slowdown"
       slowdown_ratio: 0.6
       max_points: 0
@@ -49,7 +49,7 @@ collision_monitor:
 
     StopZone:
       type: "circle"
-      radius: 0.48
+      radius: 0.25
       action_type: "stop"
       max_points: 0
       visualize: True

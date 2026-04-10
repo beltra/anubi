@@ -52,6 +52,11 @@ def generate_launch_description():
             description="Use SpatioTemporalVoxelLayer for 3D obstacle avoidance"
                         " in the local costmap. Set false to revert to 2D obstacle layer.",
         ),
+        DeclareLaunchArgument(
+            "nav_profile",
+            default_value="default_safe",
+            description="Nav2 profile: default_safe or narrow_gap_1p0m",
+        ),
         DeclareLaunchArgument("use_sim_time", default_value="true"),
         DeclareLaunchArgument("world", default_value=default_world),
         DeclareLaunchArgument(
@@ -88,6 +93,7 @@ def generate_launch_description():
     start_nav = LaunchConfiguration("start_nav")
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_stvl = LaunchConfiguration("use_stvl")
+    nav_profile = LaunchConfiguration("nav_profile")
 
     champ_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -118,6 +124,12 @@ def generate_launch_description():
             "use_sim_time": use_sim_time,
             "input_topic": "/lidar/points",
             "output_topic": "/lidar/points_undistorted",
+            # Gravity-align the filtered cloud to the lidar_stabilized frame so
+            # the simulation STVL sees the same gravity-levelled representation as
+            # the real-robot distortion_corrector pipeline.  Requires
+            # imu_stabilized_tf.py to be running (launched via sim_champ.launch.py).
+            "gravity_align": True,
+            "gravity_align_frame": "lidar_stabilized",
         }],
         condition=IfCondition(start_nav),
     )
@@ -160,6 +172,7 @@ def generate_launch_description():
         launch_arguments={
             "use_sim_time": use_sim_time,
             "use_stvl": use_stvl,
+            "nav_profile": nav_profile,
         }.items(),
     )
 
