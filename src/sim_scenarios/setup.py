@@ -25,6 +25,7 @@ setup(
         'console_scripts': [
             'scenario_manager = sim_scenarios.scenario_manager_node:main',
             'spawn_obstacle = sim_scenarios.spawn_obstacle:main',
+            'benchmark_mppi = sim_scenarios.benchmark_mppi:main',
         ],
     },
 )

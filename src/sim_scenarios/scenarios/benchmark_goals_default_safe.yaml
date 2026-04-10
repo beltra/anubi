@@ -1,0 +1,30 @@
+# Benchmark goal manifest for MPPI default_safe profile.
+# Scenario loading/reset is handled externally; this file defines goal sequences.
+scenarios:
+  - name: narrow_corridor
+    start_pose: {x: 0.0, y: -5.0, yaw: 1.57}
+    goals:
+      - name: corridor_exit
+        x: 0.0
+        y: 5.0
+        yaw: 1.57
+
+  - name: crowded_room
+    start_pose: {x: 0.0, y: 0.0, yaw: 0.0}
+    goals:
+      - name: ne_corner
+        x: 8.0
+        y: 5.0
+        yaw: 0.0
+      - name: nw_corner
+        x: -8.0
+        y: 5.0
+        yaw: 3.14
+      - name: se_corner
+        x: 8.0
+        y: -5.0
+        yaw: 0.0
+      - name: sw_corner
+        x: -8.0
+        y: -5.0
+        yaw: 3.14
