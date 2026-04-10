@@ -5,6 +5,7 @@ find_package(ament_cmake REQUIRED)
 
 install(PROGRAMS
   scripts/distortion_corrector.py
+  scripts/imu_stabilized_tf.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

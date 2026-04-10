@@ -71,6 +71,31 @@ class DistortionCorrector(Node):
         # Bypass mode: republish the input cloud unchanged.  Use in simulation
         # where Gazebo produces instantaneous snapshots with no scan distortion.
         self.declare_parameter("bypass", False)
+        # Gravity alignment: rotate all deskewed points by the current body
+        # roll+pitch so they are expressed in the gravity-levelled `lidar_stabilized`
+        # frame (P_stab = R_body @ P_lidar).  When enabled, also changes the output
+        # cloud's frame_id to gravity_align_frame.  This completely decouples the
+        # costmap from trunk dynamics: floor returns stay at world-z ≈ 0 regardless
+        # of TF lag or gait-induced LiDAR sway.
+        # Requires imu_stabilized_tf.py to be running so the TF for the output frame
+        # is available to downstream consumers (STVL, pointcloud_to_laserscan).
+        self.declare_parameter("gravity_align", False)
+        self.declare_parameter("gravity_align_frame", "lidar_stabilized")
+        # Floor filter: drop points whose estimated world-frame z is below
+        # min_world_z using the IMU orientation quaternion.  This prevents
+        # trunk-pitch-induced floor returns from reaching the STVL costmap as
+        # ghost obstacles.  Mirrors the logic in cloud_self_filter.py.
+        self.declare_parameter("filter_floor", False)
+        self.declare_parameter("min_world_z", 0.12)
+        # Sensor position in base_link frame (Rx(π) mount: lidar_z is negative
+        # because the URDF joint places the sensor below the body origin).
+        self.declare_parameter("sensor_x_in_base", 0.28945)
+        self.declare_parameter("sensor_y_in_base", 0.0)
+        self.declare_parameter("sensor_z_in_base", -0.056825)
+        # Nominal height of base_link above the ground plane.  Used when the
+        # robot pose is not available from TF.  Varies slightly during gait
+        # but 0.28 m is a good steady-state estimate for the Go2.
+        self.declare_parameter("base_z_nominal", 0.28)
 
         self._input_topic = str(self.get_parameter("input_topic").value)
         self._output_topic = str(self.get_parameter("output_topic").value)
@@ -95,6 +120,14 @@ class DistortionCorrector(Node):
         self._max_input_delay_sec = float(self.get_parameter("max_input_delay_sec").value)
         self._output_stamp_mode = str(self.get_parameter("output_stamp_mode").value).lower()
         self._bypass = bool(self.get_parameter("bypass").value)
+        self._gravity_align = bool(self.get_parameter("gravity_align").value)
+        self._gravity_align_frame = str(self.get_parameter("gravity_align_frame").value)
+        self._filter_floor = bool(self.get_parameter("filter_floor").value)
+        self._min_world_z = float(self.get_parameter("min_world_z").value)
+        self._sensor_x_in_base = float(self.get_parameter("sensor_x_in_base").value)
+        self._sensor_y_in_base = float(self.get_parameter("sensor_y_in_base").value)
+        self._sensor_z_in_base = float(self.get_parameter("sensor_z_in_base").value)
+        self._base_z_nominal = float(self.get_parameter("base_z_nominal").value)
 
         # Pre-compute the static rotation from body frame to sensor frame.
         mount_rpy = list(self.get_parameter("sensor_mount_rpy").value)
@@ -126,7 +159,12 @@ class DistortionCorrector(Node):
             f"{self._input_topic} -> {self._output_topic} "
             f"(imu={str(self._use_imu).lower()}, "
             f"3d={str(self._use_3d).lower()}, fallback={self._fallback_mode}, "
-            f"stamp={self._output_stamp_mode})"
+            f"stamp={self._output_stamp_mode}, "
+            f"gravity_align={str(self._gravity_align).lower()}"
+            + (f"→{self._gravity_align_frame}" if self._gravity_align else "")
+            + f", floor_filter={str(self._filter_floor).lower()}"
+            + (f"(min_z={self._min_world_z:.2f}m)" if self._filter_floor else "")
+            + ")"
         )
 
     def _imu_cb(self, msg: Imu) -> None:
@@ -384,6 +422,67 @@ class DistortionCorrector(Node):
         cy = np.where(finite_mask, (y + dy).astype(np.float32), raw["y"])
         cz = np.where(finite_mask, (z + dz).astype(np.float32), raw["z"])
 
+        # ── IMU floor gate ────────────────────────────────────────────────
+        # Estimate world-frame z for each (deskewed) point using the IMU
+        # orientation quaternion and NaN-out returns that are below min_world_z.
+        # This prevents trunk-pitch-induced floor sweeps from reaching the STVL
+        # costmap as ghost obstacles.
+        #
+        # Must run BEFORE gravity alignment so cx/cy/cz are still in the sensor
+        # (lidar_link) frame where the Rx(π) mount correction is valid:
+        #   x_b =  cx + sensor_x_in_base
+        #   y_b = -cy + sensor_y_in_base   (Rx(π) negates y)
+        #   z_b = -cz + sensor_z_in_base   (Rx(π) negates z)
+        # Then world z ≈ R_body_z_row · [x_b, y_b, z_b] + base_z_nominal
+        if self._filter_floor and imu_msg is not None:
+            q = imu_msg.orientation
+            # Third row of R (body → world) from unit quaternion:
+            # R[2] = [2(xz − yw),  2(yz + xw),  1 − 2(x² + y²)]
+            R_z0 = 2.0 * (q.x * q.z - q.y * q.w)
+            R_z1 = 2.0 * (q.y * q.z + q.x * q.w)
+            R_z2 = 1.0 - 2.0 * (q.x * q.x + q.y * q.y)
+
+            x_b = cx + self._sensor_x_in_base
+            y_b = -cy + self._sensor_y_in_base
+            z_b = -cz + self._sensor_z_in_base
+            world_z = R_z0 * x_b + R_z1 * y_b + R_z2 * z_b + self._base_z_nominal
+
+            floor_mask = finite_mask & (world_z < self._min_world_z)
+            nan32 = np.float32(math.nan)
+            cx = np.where(floor_mask, nan32, cx)
+            cy = np.where(floor_mask, nan32, cy)
+            cz = np.where(floor_mask, nan32, cz)
+
+        # ── Gravity alignment ─────────────────────────────────────────────
+        # Rotate all deskewed points from lidar_link to the gravity-levelled
+        # lidar_stabilized frame:
+        #   P_stab = R_body @ R_mount @ P_lidar_link
+        # R_mount (the static sensor mount rotation, Rx(π) for the Go2 L1 LiDAR)
+        # converts sensor-frame coordinates to base_link-frame coordinates.
+        # R_body (roll+pitch, no yaw) then gravity-aligns to world orientation.
+        # Without R_mount the y-axis is not flipped, producing a mirrored map.
+        gravity_aligned = False
+        if self._gravity_align and imu_msg is not None:
+            q = imu_msg.orientation
+            sinr_cosp = 2.0 * (q.w * q.x + q.y * q.z)
+            cosr_cosp = 1.0 - 2.0 * (q.x * q.x + q.y * q.y)
+            roll = math.atan2(sinr_cosp, cosr_cosp)
+            sinp = 2.0 * (q.w * q.y - q.z * q.x)
+            pitch = math.asin(max(-1.0, min(1.0, sinp)))
+            R_body = _rotation_from_rpy(roll, pitch, 0.0)
+
+            # self._R_mount is pre-computed from sensor_mount_rpy (Rx(π) for Go2).
+            # NaN points (from floor filter or raw invalids) propagate through
+            # matrix multiply as NaN and are preserved by np.where.
+            pts = self._R_mount @ np.stack([cx.astype(np.float64),
+                                             cy.astype(np.float64),
+                                             cz.astype(np.float64)], axis=0)  # 3 × N
+            pts_stab = R_body @ pts
+            cx = np.where(finite_mask, pts_stab[0].astype(np.float32), cx)
+            cy = np.where(finite_mask, pts_stab[1].astype(np.float32), cy)
+            cz = np.where(finite_mask, pts_stab[2].astype(np.float32), cz)
+            gravity_aligned = True
+
         # ── Write corrected data back ─────────────────────────────────────
         out_data = bytearray(msg.data)
         out_arr = np.frombuffer(out_data, dtype=dt_struct)
@@ -396,6 +495,8 @@ class DistortionCorrector(Node):
         out_msg.header = msg.header
         if self._output_stamp_mode == "now":
             out_msg.header.stamp = self.get_clock().now().to_msg()
+        if gravity_aligned:
+            out_msg.header.frame_id = self._gravity_align_frame
         out_msg.height = msg.height
         out_msg.width = msg.width
         out_msg.fields = msg.fields
@@ -403,7 +504,8 @@ class DistortionCorrector(Node):
         out_msg.point_step = msg.point_step
         out_msg.row_step = msg.row_step
         out_msg.data = bytes(out_data)
-        out_msg.is_dense = msg.is_dense
+        # is_dense = False when floor filtering may have introduced NaN points.
+        out_msg.is_dense = msg.is_dense and not self._filter_floor
         self._publisher.publish(out_msg)
 
 

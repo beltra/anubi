@@ -65,16 +65,20 @@ def generate_launch_description():
             parameters=[go2_params, {"use_sim_time": use_sim_time, "cmd_vel_topic": cmd_vel_topic}],
         ),
         Node(
-            package="tf2_ros",
-            executable="static_transform_publisher",
-            name="base_footprint_to_lidar_stabilized_tf",
+            package="robot_nav",
+            executable="imu_stabilized_tf.py",
+            name="imu_stabilized_tf",
             output="screen",
-            parameters=[{"use_sim_time": use_sim_time}],
-            arguments=[
-                "--x", lidar_x, "--y", lidar_y, "--z", lidar_z,
-                "--roll", "0", "--pitch", "0", "--yaw", "0",
-                "--frame-id", "base_footprint", "--child-frame-id", "lidar_stabilized",
-            ],
+            parameters=[{
+                "use_sim_time":    use_sim_time,
+                "imu_topic":       "/imu/data",
+                "parent_frame":    "base_footprint",
+                "child_frame":     "lidar_stabilized",
+                "lidar_x_in_base":  0.28945,   # from go2_description/urdf/go2.urdf.xacro
+                "lidar_y_in_base":  0.0,
+                "lidar_z_in_base": -0.046825,
+                "standing_height":  0.28,
+            }],
         ),
     ]
 

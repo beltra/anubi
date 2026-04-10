@@ -240,15 +240,20 @@ def generate_launch_description():
         ],
     )
     lidar_stabilized_tf = Node(
-        package="tf2_ros",
-        name="base_footprint_to_lidar_stabilized_tf",
-        executable="static_transform_publisher",
-        parameters=[{"use_sim_time": use_sim_time}],
-        arguments=[
-            "--x", str(lidar_x_m), "--y", str(lidar_y_m), "--z", str(lidar_z_m),
-            "--roll", "0", "--pitch", "0", "--yaw", "0",
-            "--frame-id", "base_footprint", "--child-frame-id", "lidar_stabilized",
-        ],
+        package="robot_nav",
+        executable="imu_stabilized_tf.py",
+        name="imu_stabilized_tf",
+        output="screen",
+        parameters=[{
+            "use_sim_time":    use_sim_time,
+            "imu_topic":       "/imu/data",
+            "parent_frame":    "base_footprint",
+            "child_frame":     "lidar_stabilized",
+            "lidar_x_in_base":  lidar_x_m,        # 0.28945 from go2.urdf.xacro
+            "lidar_y_in_base":  lidar_y_m,         # 0.0
+            "lidar_z_in_base": -0.056825,           # lidar_z in base_link from go2_sim.urdf.xacro
+            "standing_height":  standing_height_m,  # 0.28
+        }],
     )
 
     # Static transform: map → odom (identity; nav stack expects this until SLAM publishes)
