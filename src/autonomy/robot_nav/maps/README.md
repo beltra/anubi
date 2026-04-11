@@ -16,7 +16,7 @@ Store pre-built slam_toolbox pose-graph files here.
    ```bash
    ros2 service call /slam_toolbox/serialize_map \
        slam_toolbox/srv/SerializePoseGraph \
-       "{filename: '/ws/anubi/src/robot_nav/maps/my_map'}"
+      "{filename: '/ws/anubi/src/autonomy/robot_nav/maps/my_map'}"
    ```
    This creates `my_map.data` and `my_map.posegraph` in this directory.
 
@@ -25,7 +25,7 @@ Store pre-built slam_toolbox pose-graph files here.
 ```bash
 ros2 launch go2_bringup go2_bringup.launch.py \
     slam_mode:=localization \
-    map:=/ws/anubi/src/robot_nav/maps/my_map
+   map:=/ws/anubi/src/autonomy/robot_nav/maps/my_map
 ```
 
 ## Map file format

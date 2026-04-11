@@ -10,26 +10,35 @@ Everything is self-contained: no upstream workspace needs to be sourced at runti
 
 ```
 src/
-├── unitree_api/              # Unitree Go2 API request/response messages
-├── unitree_go/               # Go2 hardware messages (SportModeState, LowState, …)
-├── go2_description/          # URDF/xacro: body + sensor frames
-├── robot_common_interfaces/  # Shared message types and robot adapter contract
-├── go2_bringup/              # Go2 hardware adapter (go2_hw_bridge) + launch files
-├── robot_nav/                # Robot-agnostic Nav2 + slam_toolbox config/launch
-├── robot_safety/             # Safety-stop placeholder
-├── sensor_models/            # Reusable Gazebo sensor xacro macros (L1 LiDAR)
-├── go2_sim/                  # Go2 Gazebo simulation URDF (planar_move + L1 LiDAR + IMU)
-├── sim_worlds/               # World files + SDF obstacle models
-├── sim_scenarios/            # Runtime obstacle spawn/remove CLI + scenario manager
-├── d1_sim/                   # AgiBot D1 Ultra simulation stub (TODO(agibot))
-├── robot_sim/                # Simulation bringup launch (sim_bringup.launch.py)
-└── champ/                    # CHAMP quadruped locomotion library (third-party, vendored)
+├── platform/
+│   ├── go2_bringup/          # Go2 hardware adapter (go2_hw_bridge) + launch files
+│   └── go2_description/      # URDF/xacro: body + sensor frames
+├── core_interfaces/
+│   ├── robot_common_interfaces/  # Shared message types and robot adapter contract
+│   ├── unitree_api/              # Unitree Go2 API request/response messages
+│   └── unitree_go/               # Go2 hardware messages (SportModeState, LowState, ...)
+├── autonomy/
+│   ├── robot_nav/            # Robot-agnostic Nav2 + slam_toolbox config/launch
+│   ├── robot_lio/            # Robot-agnostic LIO hooks (/lidar/imu, /lidar_odom)
+│   ├── robot_safety/         # Safety-stop placeholder
+│   └── robot_sim/            # Simulation bringup launch (sim_bringup.launch.py)
+├── simulation/
+│   ├── go2_sim/              # Go2 Gazebo simulation URDF (planar_move + L1 LiDAR + IMU)
+│   ├── d1_sim/               # AgiBot D1 Ultra simulation stub (TODO(agibot))
+│   ├── sensor_models/        # Reusable Gazebo sensor xacro macros (L1 LiDAR)
+│   ├── sim_worlds/           # World files + SDF obstacle models
+│   └── sim_scenarios/        # Runtime obstacle spawn/remove CLI + scenario manager
+└── vendors/
+    ├── champ/                # CHAMP quadruped locomotion library (third-party, vendored)
+    ├── champ_base/
+    ├── champ_msgs/
+    └── direct_lidar_inertial_odometry/
 ```
 
 ### TF tree (full chain)
 
 ```
-map  ──(slam_toolbox)──►  odom  ──(go2_hw_bridge)──►  base_footprint
+map  ──(slam_toolbox)──►  odom  ──(EKF)──►  base_footprint
                                                              └─(URDF)─►  base_link
                                                                               ├──►  lidar_link
                                                                               └──►  imu_link
@@ -41,9 +50,12 @@ map  ──(slam_toolbox)──►  odom  ──(go2_hw_bridge)──►  base_f
 Go2 hardware
   │
   ├── /sportmodestate  [SportModeState, ~50 Hz]
-  │       └──►  go2_hw_bridge  ──►  /odom + TF(odom→base_footprint)
+  │       └──►  go2_hw_bridge  ──►  /odom_raw
+  │                                └──► EKF  ──►  /odom + TF(odom→base_footprint)
   │
   └── /lidar/points  [PointCloud2]
+      ├──►  robot_lio  ──► /lidar/imu + /lidar_odom (optional)
+      │
           ├──►  pointcloud_to_laserscan  ──►  /scan
           │         └──►  slam_toolbox  ──►  /map + TF(map→odom)
           └──►  Nav2 costmaps (obstacle layer, direct PointCloud2)
@@ -126,13 +138,13 @@ You can use these wrappers instead of typing long `ros2 launch` commands:
 /ws/anubi/scripts/run_go2_sim.sh
 
 # Simulation (localization mode)
-/ws/anubi/scripts/run_go2_sim.sh localization --map /ws/anubi/src/robot_nav/maps/my_map
+/ws/anubi/scripts/run_go2_sim.sh localization --map /ws/anubi/src/autonomy/robot_nav/maps/my_map
 
 # Real robot (mapping mode, with LiDAR relay /utlidar/cloud -> /lidar/points)
 /ws/anubi/scripts/run_go2_real.sh
 
 # Real robot (localization mode + safety gate)
-/ws/anubi/scripts/run_go2_real.sh localization --map /ws/anubi/src/robot_nav/maps/my_map --use-safety
+/ws/anubi/scripts/run_go2_real.sh localization --map /ws/anubi/src/autonomy/robot_nav/maps/my_map --use-safety
 ```
 
 Script options:
@@ -163,7 +175,7 @@ ros2 launch go2_bringup go2_bringup.launch.py slam_mode:=mapping
 # Drive the robot around manually to build the map, then save it:
 ros2 service call /slam_toolbox/serialize_map \
     slam_toolbox/srv/SerializePoseGraph \
-    "{filename: '/ws/anubi/src/robot_nav/maps/my_map'}"
+    "{filename: '/ws/anubi/src/autonomy/robot_nav/maps/my_map'}"
 ```
 
 ### Step 3 — Navigate with a saved map
@@ -171,7 +183,7 @@ ros2 service call /slam_toolbox/serialize_map \
 ```bash
 ros2 launch go2_bringup go2_bringup.launch.py \
     slam_mode:=localization \
-    map:=/ws/anubi/src/robot_nav/maps/my_map
+    map:=/ws/anubi/src/autonomy/robot_nav/maps/my_map
 ```
 
 ### Step 4 — Send a goal in RViz
@@ -219,7 +231,7 @@ ros2 launch robot_sim sim_bringup.launch.py
 ros2 launch robot_sim sim_bringup.launch.py \
     world:=$(ros2 pkg prefix sim_worlds)/share/sim_worlds/worlds/warehouse.world \
     slam_mode:=localization \
-    map:=/ws/anubi/src/robot_nav/maps/my_map \
+    map:=/ws/anubi/src/autonomy/robot_nav/maps/my_map \
     gui:=false
 ```
 
@@ -243,7 +255,7 @@ ros2 run sim_scenarios scenario_manager \
 ### Known simulation limits
 
 - Gazebo Fortress + CHAMP is the maintained simulation path.
-- AgiBot D1 Ultra sim (`d1_sim/`) is a stub — chassis dimensions are placeholders.
+- AgiBot D1 Ultra sim (`simulation/d1_sim/`) is a stub — chassis dimensions are placeholders.
 
 ---
 
@@ -263,7 +275,7 @@ ros2 run sim_scenarios scenario_manager \
 
 ## TODO Markers in Code
 
-- `TODO(agibot)` — changes for AgiBot D1 Ultra porting (implement `d1_sim/urdf/d1_sim.urdf.xacro` and `agibot_d1_bringup`)
+- `TODO(agibot)` — changes for AgiBot D1 Ultra porting (implement `simulation/d1_sim/urdf/d1_sim.urdf.xacro` and `agibot_d1_bringup`)
 - `TODO(sim)` — Gazebo plugin stubs remaining in `go2_description/urdf/go2.urdf.xacro` (hardware URDF); the simulation itself is fully working via `go2_sim/`
 - `TODO(safety)` — `tilt_monitor` node (IMU-based fall detection); `velocity_limiter` is already implemented
 - `TODO(localization)` — where to wire in map-based localization improvements

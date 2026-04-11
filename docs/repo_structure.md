@@ -4,16 +4,19 @@ This repository is organized as a modular ROS 2 workspace focused on Gazebo Fort
 
 ## Core layers
 
-- `src/go2_sim`: maintained Go2 simulation model and launch integration for Fortress.
-- `src/d1_sim`: D1 simulation stub kept as a template for future implementation.
-- `src/sensor_models`: reusable sensor xacro macros shared across robot simulation packages.
-- `src/sim_worlds`: Fortress world files and reusable SDF obstacle models.
-- `src/sim_scenarios`: runtime scenario and obstacle management utilities.
-- `src/robot_sim`: top-level simulation bringup orchestration (sim + SLAM + Nav2 + RViz).
-- `src/robot_nav`: robot-agnostic navigation and localization configuration.
-- `src/robot_safety`: watchdog and velocity safety controls.
-- `src/robot_common_interfaces`: shared message and interface contracts.
-- `src/go2_bringup` and `src/go2_description`: real-robot bridge and hardware-aligned Go2 description.
+- `src/platform/go2_bringup` and `src/platform/go2_description`: real-robot bridge and hardware-aligned Go2 description.
+- `src/core_interfaces/robot_common_interfaces`: shared message and interface contracts.
+- `src/core_interfaces/unitree_api`, `src/core_interfaces/unitree_go`: Unitree API/state contracts.
+- `src/autonomy/robot_sim`: top-level simulation bringup orchestration (sim + SLAM + Nav2 + RViz).
+- `src/autonomy/robot_nav`: robot-agnostic navigation and localization configuration.
+- `src/autonomy/robot_safety`: watchdog and velocity safety controls.
+- `src/autonomy/robot_lio`: robot-agnostic LIO integration hooks.
+- `src/simulation/go2_sim`: maintained Go2 simulation model and launch integration for Fortress.
+- `src/simulation/d1_sim`: D1 simulation stub kept as a template for future implementation.
+- `src/simulation/sensor_models`: reusable sensor xacro macros shared across robot simulation packages.
+- `src/simulation/sim_worlds`: Fortress world files and reusable SDF obstacle models.
+- `src/simulation/sim_scenarios`: runtime scenario and obstacle management utilities.
+- `src/vendors/*`: vendored third-party dependencies.
 
 ## Current simulation contract
 

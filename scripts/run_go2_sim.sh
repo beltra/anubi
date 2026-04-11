@@ -9,6 +9,7 @@ RVIZ="true"
 USE_STVL="true"
 NAV_PROFILE="default_safe"
 NAV_DELAY_SEC="20.0"
+USE_LIO="false"
 
 usage() {
   cat <<'EOF'
@@ -21,14 +22,15 @@ Options:
   --no-gui             Start Gazebo without GUI
   --no-rviz            Start without RViz
   --no-stvl            Disable SpatioTemporalVoxelLayer in Nav2 local costmap
+  --use-lio            Enable optional LIO backend (/lidar_odom)
   --nav-profile <id>   Nav2 profile: default_safe | narrow_gap_1p0m
   --nav-delay <sec>    Delay before Nav2 stack starts (default: 20.0)
   -h, --help           Show this help
 
 Examples:
   run_go2_sim.sh
-  run_go2_sim.sh mapping --world /ws/anubi/src/sim_worlds/worlds/warehouse.world
-  run_go2_sim.sh localization --map /ws/anubi/src/robot_nav/maps/my_map
+  run_go2_sim.sh mapping --world /ws/anubi/src/simulation/sim_worlds/worlds/warehouse.world
+  run_go2_sim.sh localization --map /ws/anubi/src/autonomy/robot_nav/maps/my_map
 EOF
 }
 
@@ -59,6 +61,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --no-stvl)
       USE_STVL="false"
+      shift
+      ;;
+    --use-lio)
+      USE_LIO="true"
       shift
       ;;
     --nav-profile)
@@ -111,6 +117,7 @@ CMD=(
   gui:="$GUI"
   use_rviz:="$RVIZ"
   use_stvl:="$USE_STVL"
+  use_lio:="$USE_LIO"
   nav_profile:="$NAV_PROFILE"
   nav_delay_sec:="$NAV_DELAY_SEC"
 )

@@ -44,7 +44,7 @@ ros2 launch robot_sim sim_bringup.launch.py
 ros2 launch robot_sim sim_bringup.launch.py \
     world:=$(ros2 pkg prefix sim_worlds)/share/sim_worlds/worlds/warehouse.world \
     slam_mode:=localization \
-    map:=/ws/anubi/src/robot_nav/maps/my_map \
+    map:=/ws/anubi/src/autonomy/robot_nav/maps/my_map \
     gui:=false
 
 # Nav2-only restart entry point is not provided in the current tree.
@@ -88,7 +88,7 @@ ros2 run sim_scenarios scenario_manager \
 ## Known Limitations
 
 - Fortress + CHAMP is the maintained simulation path.
-- AgiBot D1 Ultra model (`d1_sim/`) is a stub — chassis dimensions are placeholders.
-  Launch with `robot:=d1` is supported once `d1_sim/urdf/d1_sim.urdf.xacro` is completed.
+- AgiBot D1 Ultra model (`simulation/d1_sim/`) is a stub — chassis dimensions are placeholders.
+    Launch with `robot:=d1` is supported once `simulation/d1_sim/urdf/d1_sim.urdf.xacro` is completed.
 - `config/sim_params.yaml` is intentionally empty — `use_sim_time=true` is set via
   launch argument, and no per-node simulation overrides are needed.

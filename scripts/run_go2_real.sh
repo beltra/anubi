@@ -6,10 +6,10 @@ MAP_PATH=""
 RVIZ="true"
 USE_SAFETY="false"
 USE_STVL="true"
+USE_LIO="false"
 ROBOT_NAME=""
-LIDAR_IN_TOPIC="/utlidar/cloud"
-START_LIDAR_RELAY="true"
-RELAY_PID=""
+LIDAR_POINTS_IN_TOPIC="/utlidar/cloud"
+LIDAR_IMU_IN_TOPIC="/unilidar/imu"
 
 usage() {
   cat <<'EOF'
@@ -20,27 +20,21 @@ Options:
   --map <path>               Path to slam_toolbox map (.posegraph), required in localization mode
   --no-rviz                  Start without RViz
   --use-safety               Enable safety gate (velocity_limiter)
+  --use-lio                  Enable optional LIO backend (/lidar_odom)
   --no-stvl                  Disable SpatioTemporalVoxelLayer in Nav2 local costmap
   --robot-name <name>        Optional Nav2 namespace
-  --lidar-in-topic <topic>   Input pointcloud topic for relay to /lidar/points (default: /utlidar/cloud)
-  --skip-lidar-relay         Do not start topic relay (use only if /lidar/points already exists)
+  --lidar-points-in-topic <topic>
+                              Raw pointcloud topic relayed to /lidar/points (default: /utlidar/cloud)
+  --lidar-imu-in-topic <topic>
+                              Raw LiDAR IMU topic relayed to /lidar/imu (default: /unilidar/imu)
   -h, --help                 Show this help
 
 Examples:
   run_go2_real.sh
   run_go2_real.sh mapping --use-safety
-  run_go2_real.sh localization --map /ws/anubi/src/robot_nav/maps/my_map --use-safety
+  run_go2_real.sh localization --map /ws/anubi/src/autonomy/robot_nav/maps/my_map --use-safety
 EOF
 }
-
-cleanup() {
-  if [[ -n "$RELAY_PID" ]] && kill -0 "$RELAY_PID" 2>/dev/null; then
-    kill "$RELAY_PID" 2>/dev/null || true
-    wait "$RELAY_PID" 2>/dev/null || true
-  fi
-}
-
-trap cleanup EXIT INT TERM
 
 if [[ "${1:-}" == "mapping" || "${1:-}" == "localization" ]]; then
   MODE="$1"
@@ -62,6 +56,10 @@ while [[ $# -gt 0 ]]; do
       USE_SAFETY="true"
       shift
       ;;
+    --use-lio)
+      USE_LIO="true"
+      shift
+      ;;
     --no-stvl)
       USE_STVL="false"
       shift
@@ -71,14 +69,15 @@ while [[ $# -gt 0 ]]; do
       ROBOT_NAME="$2"
       shift 2
       ;;
-    --lidar-in-topic)
-      [[ $# -ge 2 ]] || { echo "Missing value for --lidar-in-topic" >&2; usage; exit 1; }
-      LIDAR_IN_TOPIC="$2"
+    --lidar-points-in-topic)
+      [[ $# -ge 2 ]] || { echo "Missing value for --lidar-points-in-topic" >&2; usage; exit 1; }
+      LIDAR_POINTS_IN_TOPIC="$2"
       shift 2
       ;;
-    --skip-lidar-relay)
-      START_LIDAR_RELAY="false"
-      shift
+    --lidar-imu-in-topic)
+      [[ $# -ge 2 ]] || { echo "Missing value for --lidar-imu-in-topic" >&2; usage; exit 1; }
+      LIDAR_IMU_IN_TOPIC="$2"
+      shift 2
       ;;
     -h|--help)
       usage
@@ -109,23 +108,15 @@ source /opt/ros/humble/setup.bash
 source /ws/anubi/install/setup.bash
 set -u
 
-if [[ "$START_LIDAR_RELAY" == "true" ]]; then
-  echo "Starting LiDAR relay: ${LIDAR_IN_TOPIC} -> /lidar/points"
-  ros2 run topic_tools relay "$LIDAR_IN_TOPIC" /lidar/points >/tmp/go2_lidar_relay.log 2>&1 &
-  RELAY_PID=$!
-  sleep 1
-  if ! kill -0 "$RELAY_PID" 2>/dev/null; then
-    echo "Failed to start LiDAR relay. Check /tmp/go2_lidar_relay.log" >&2
-    exit 1
-  fi
-fi
-
 CMD=(
   ros2 launch go2_bringup go2_bringup.launch.py
   slam_mode:="$MODE"
   rviz:="$RVIZ"
   use_safety:="$USE_SAFETY"
   use_stvl:="$USE_STVL"
+  use_lio:="$USE_LIO"
+  lidar_points_input_topic:="$LIDAR_POINTS_IN_TOPIC"
+  lidar_imu_input_topic:="$LIDAR_IMU_IN_TOPIC"
 )
 
 if [[ -n "$MAP_PATH" ]]; then

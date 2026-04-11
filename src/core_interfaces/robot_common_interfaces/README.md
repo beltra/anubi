@@ -61,5 +61,5 @@ Contains: battery state, estop flag, motion mode, hw_ok flag.
 5. Publish `RobotStatus` on `/robot_status`.
 6. No changes required in `robot_nav` or `robot_common_interfaces`.
 
-See `go2_bringup/src/go2_hw_bridge.cpp` and the `TODO(agibot)` markers for the
+See `src/platform/go2_bringup/src/go2_hw_bridge.cpp` and the `TODO(agibot)` markers for the
 exact locations that change per robot.
