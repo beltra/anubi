@@ -1,0 +1,51 @@
+# dlio_params.yaml
+# Parameters consumed by direct_lidar_inertial_odometry (feature/ros2).
+#
+# Frame strategy:
+#   - frames/odom matches Nav2 EKF world frame (odom), while frames/baselink
+#     uses base_link so sensor extrinsics remain rigid and physically correct.
+#   - frames/lidar and frames/imu use private DLIO-only names (dlio_lidar_link,
+#     dlio_imu_link) so that DLIO's extrinsic TF edges never collide with the
+#     URDF-owned lidar_link / lidar_imu_link frames.
+#   - DLIO TF publication is disabled here; EKF is the single odom->base TF owner.
+
+/**:
+  ros__parameters:
+    use_sim_time: false
+    publish_tf: false
+
+    frames/odom: odom
+    frames/baselink: base_link
+    frames/lidar: dlio_lidar_link
+    frames/imu: dlio_imu_link
+
+    # LIO behavior defaults (conservative)
+    adaptive: true
+    pointcloud/deskew: true
+    pointcloud/voxelize: true
+
+    odom/computeTimeOffset: true
+    odom/imu/approximateGravity: false
+    odom/imu/calibration/gyro: true
+    odom/imu/calibration/accel: true
+    odom/imu/calibration/time: 3.0
+    odom/imu/bufferSize: 5000
+
+    # base_link -> lidar_link (dlio_lidar_link) in base_link frame.
+    # Translation from URDF: [0.28945, 0.0, -0.046825]
+    # Rotation: URDF rpy (pi, -pi/12, 0) expressed as row-major rotation matrix
+    #           R = Ry(-pi/12) * Rx(pi) = [[0.96593,0,0.25882],[0,-1,0],[0.25882,0,-0.96593]]
+    extrinsics/baselink2lidar/t: [0.28945, 0.0, -0.046825]
+    extrinsics/baselink2lidar/R: [ 0.96593,  0.0,  0.25882,
+                                   0.0,     -1.0,  0.0,
+                                   0.25882,  0.0, -0.96593]
+
+    # base_link -> lidar_imu_link (dlio_imu_link) in base_link frame.
+    # = lidar position in base_link + R_base_to_lidar * imu_in_lidar
+    # imu_in_lidar: [-0.007698, -0.014655, 0.00667] (Unitree UniLidar SDK offset)
+    # Rotated: [-0.00571, 0.014655, -0.008435]
+    # Final: [0.28945-0.00571, 0.0+0.014655, -0.046825-0.008435] = [0.283739, 0.014655, -0.055260]
+    extrinsics/baselink2imu/t: [0.283739, 0.014655, -0.055260]
+    extrinsics/baselink2imu/R: [ 0.96593,  0.0,  0.25882,
+                                  0.0,     -1.0,  0.0,
+                                  0.25882,  0.0, -0.96593]

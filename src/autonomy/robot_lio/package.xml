@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>robot_lio</name>
+  <version>0.1.0</version>
+  <description>
+    Robot-agnostic LIO integration hooks.
+
+    Provides a canonical sensor and odometry contract:
+      - /lidar/points
+      - /lidar/imu
+      - /lidar_odom
+
+    This package does not own map->odom or odom->base TF by default.
+    LIO backend execution is optional and disabled by default.
+  </description>
+  <maintainer email="todo@example.com">Maintainer</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>topic_tools</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>direct_lidar_inertial_odometry</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
