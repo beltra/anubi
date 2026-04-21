@@ -24,6 +24,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.descriptions import ParameterFile
+from launch_ros.parameter_descriptions import ParameterValue
 from nav2_common.launch import RewrittenYaml
 
 
@@ -124,12 +125,7 @@ def generate_launch_description():
         convert_types=True,
     )
     configured_collision_monitor_params = ParameterFile(
-        RewrittenYaml(
-            source_file=collision_monitor_params_file,
-            root_key=namespace,
-            param_rewrites={"use_sim_time": use_sim_time},
-            convert_types=True,
-        ),
+        collision_monitor_params_file,
         allow_substs=True,
     )
     remappings = [("/tf", "tf"), ("/tf_static", "tf_static")]
@@ -153,7 +149,10 @@ def generate_launch_description():
         executable="collision_monitor",
         name="collision_monitor",
         output="screen",
-        parameters=[configured_collision_monitor_params],
+        parameters=[
+            configured_collision_monitor_params,
+            {"use_sim_time": ParameterValue(use_sim_time, value_type=bool)},
+        ],
         remappings=remappings,
     )
     collision_monitor_lifecycle = Node(

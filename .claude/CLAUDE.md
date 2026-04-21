@@ -1,66 +1,46 @@
-# ROS2 Modular Workspace Project
+# AGENTS.md
 
-This project is a modular ROS 2 workspace (Humble + Gazebo Fortress) organized by package responsibility.
-Guidance in `.claude` should default to package-first patterns already used in this repository.
+## Scope and Source of Truth
+- This is a ROS 2 Humble + Gazebo Fortress `colcon` workspace rooted at `/ws/anubi`.
+- Trust executable wiring first: launch files in `src/**/launch/*.launch.py`, then helper scripts in `scripts/*.sh`.
+- Topic/TF contract authority is `docs/topic_map.md` (kept current and explicitly marked authoritative).
 
-## Available Skills
+## Package Boundaries (important)
+- `src/platform/`: robot-specific adapters (`go2_bringup`, `go2_description`).
+- `src/autonomy/`: robot-agnostic autonomy (`robot_nav`, `robot_sim`, `robot_safety`, `robot_lio`).
+- `src/core_interfaces/`: shared msgs/contracts (`robot_common_interfaces`, `unitree_*`).
+- `src/simulation/`: sim assets and runtime scenario tools.
+- `src/vendors/`: vendored third-party packages; avoid incidental edits.
 
-The following skills are available in `.claude/skills`:
+## Canonical Run Paths
+- Sim stack: `scripts/run_go2_sim.sh` (default `mapping`; supports `localization --map ...`).
+- Real robot stack: `scripts/run_go2_real.sh` (default `mapping`; supports `--use-safety`, `--use-lio`, custom LiDAR input topics).
+- Manual sim entrypoint: `ros2 launch robot_sim sim_bringup.launch.py`.
+- Manual hardware entrypoint: `ros2 launch go2_bringup go2_bringup.launch.py`.
 
-| Skill Name              | Description                   | Key Components                                                                      |
-| ----------------------- | ----------------------------- | ----------------------------------------------------------------------------------- |
-| **ros2_node_creation**  | Create ROS2 nodes             | Node templates, QoS guidance, Python/C++ patterns                                  |
-| **ros2_launch_config**  | Modular launch files          | Composition, `IncludeLaunchDescription`, parameter management                       |
-| **ros2_service_action** | Services and actions          | Server/client patterns (use when pub/sub is not enough)                            |
-| **ros2_messaging**      | Pub/Sub patterns              | Topic/QoS best practices, synchronization patterns                                  |
-| **ros2_testing**        | Testing strategy              | Unit/integration/E2E patterns (adopt incrementally; current repo is integration-led) |
-| **ros2_lifecycle**      | Managed nodes                 | Lifecycle patterns for advanced stateful nodes                                      |
-| **ros2_transforms**     | TF2 management                | TF2 usage and transform hygiene                                                     |
-| **ros2_diagnostics**    | Health monitoring             | `diagnostic_updater` patterns (optional in this repo)                              |
-| **ros2_bag**            | Data recording                | rosbag2 CLI/programmatic workflows                                                  |
+## Build/Test Commands (exact)
+- Source ROS first, then build:
+  - `source /opt/ros/humble/setup.bash`
+  - `colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo`
+  - `source install/setup.bash`
+- Focused build: `colcon build --packages-select <pkg>` or `--packages-up-to <pkg>`.
+- Tests: `colcon test` then `colcon test-result --all`.
 
-## Project Structure
+## High-Signal Runtime Contracts
+- Nav command path is `Nav2 /cmd_vel -> collision_monitor -> /cmd_vel_collision_free`.
+- If `use_safety:=true`, `velocity_limiter` gates `/cmd_vel_collision_free -> /cmd_vel_safe`; `go2_hw_bridge` switches to `/cmd_vel_safe`.
+- If EKF fusion is enabled (default in `go2_bringup.launch.py`), `go2_hw_bridge` publishes `/odom_raw` and EKF owns `/odom` + `odom->base_footprint` TF.
+- Real-robot canonical LiDAR inputs default to `/utlidar/cloud` and `/unilidar/imu`, relayed by `robot_lio` to `/lidar/points` and `/lidar/imu`.
 
-### Source Packages (`src/`)
+## Launch/Process Maintenance Rule
+- If you add/change launch-started nodes/processes, update `scripts/kill_ros_nodes.sh` in the same change so cleanup remains complete.
 
-- **`src/platform/`**: Robot/platform-specific packages.
-	- `go2_bringup`, `go2_description`
-- **`src/core_interfaces/`**: Shared interface and message contracts.
-	- `robot_common_interfaces`, `unitree_api`, `unitree_go`
-- **`src/simulation/`**: Simulation assets and utilities.
-	- `d1_sim`, `go2_sim`, `sensor_models`, `sim_scenarios`, `sim_worlds`
-- **`src/autonomy/`**: Robot-agnostic autonomy stack packages.
-	- `robot_lio`, `robot_nav`, `robot_safety`, `robot_sim`
-- **`src/vendors/`**: Vendored external dependencies.
-	- `champ`, `champ_base`, `champ_msgs`, `direct_lidar_inertial_odometry`
+## Gotchas Agents Commonly Miss
+- ROS setup scripts are not nounset-safe; repo scripts use `set +u` while sourcing (`run_go2_sim.sh`, `run_go2_real.sh`, `run_mppi_suite.sh`). Preserve this pattern in new scripts.
+- `run_go2_sim.sh` kills stale ROS/Gazebo processes by default; use `--no-clean` to keep existing sessions.
+- Sim Nav2 startup is intentionally delayed in `sim_bringup.launch.py` (`nav_delay_sec`, then Nav2 10s after SLAM) to avoid bad initial mapping from spawn/stand-up transients.
+- `nav2.launch.py` chooses params by `use_stvl` + `nav_profile` (`default_safe` or `narrow_gap_1p0m`); do not hardcode a different params file without updating this selection logic.
 
-### Workspace Support Directories
-
-- **`docs/`**: Project architecture, repo structure, and topic contracts.
-- **`scripts/`**: Utility scripts for sim/real bringup and batch runs.
-- **`build/`, `install/`, `log/`**: Generated by `colcon`.
-
-## Development Guidelines
-
-- Prefer package-local, simple ROS2 node patterns unless complexity justifies advanced abstractions.
-- Use skills as guidance, but adapt examples to the current package layout.
-- Keep robot-facing contracts aligned with docs (`docs/topic_map.md`, `docs/PROJECT_SPECS.md`).
-
-## Agent Maintenance Rule
-
-- When you add or change any ROS2 launch node/process (new `Node(...)`, changed `executable`, or new included launch), update `scripts/kill_ros_nodes.sh` in the same change so cleanup remains complete.
-- Treat `scripts/kill_ros_nodes.sh` as part of launch/runtime contract maintenance, not optional follow-up.
-
-## Getting Started
-
-To use a skill, read its file in `.claude/skills/<skill_name>/SKILL.md` and adapt templates to the target package.
-
-## Common Commands
-
-For the full command reference, see `.claude/commands/ros2.md`.
-
-### Quick Reference
-
-- **Build**: `colcon build --symlink-install`
-- **Test**: `colcon test`
-- **Source**: `source install/setup.bash`
+## Minimal Validation Before Hand-off
+- Build only affected packages.
+- For launch/topic/TF/safety changes, run one relevant smoke launch (`run_go2_sim.sh` or `run_go2_real.sh`) and verify impacted topics/TF against `docs/topic_map.md`.

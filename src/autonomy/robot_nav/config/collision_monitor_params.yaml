@@ -1,65 +1,54 @@
 collision_monitor:
   ros__parameters:
-    # Placeholder so nav2.launch.py can rewrite this to true in simulation.
     use_sim_time: true
     enabled: True
     base_frame_id: "base_footprint"
     odom_frame_id: "odom"
     cmd_vel_in_topic: "/cmd_vel"
     cmd_vel_out_topic: "/cmd_vel_collision_free"
-    state_topic: "/collision_monitor_state"
     transform_tolerance: 0.2
     source_timeout: 0.5
     base_shift_correction: True
     stop_pub_timeout: 2.0
-    enable_stamped_cmd_vel: false
-    # INDUSTRIAL SAFETY: treat unmapped / unknown costmap cells as occupied so
-    # that the monitor never assumes a gap is passable when the costmap source
-    # is active (e.g. after a recovery clear or in an unseen region).
-    treat_unknown_as_obstacle: true
 
-    # Explicit QoS keeps the LiDAR bridge and collision monitor on BEST_EFFORT.
-    qos_overrides:
-      /lidar/points_undistorted:
-        subscription:
-          reliability: best_effort
-          durability: volatile
+    # Go2 has a rectangular standing envelope (about 0.70 m x 0.31 m), so
+    # polygon zones fit this quadruped better than circular shells indoors.
+    # Humble uses max_points semantics: action triggers when points_inside > max_points.
+    polygons: ["CautionZone", "SlowZone", "StopZone"]
 
-    polygons: ["ApproachZone", "SlowZone", "StopZone"]
-
-    ApproachZone:
-      type: "circle"
-      radius: 1.0
+    CautionZone:
+      type: "polygon"
+      points: [0.78, 0.42, 0.78, -0.42, -0.62, -0.42, -0.62, 0.42]
       action_type: "slowdown"
-      slowdown_ratio: 0.95
-      max_points: 0
+      slowdown_ratio: 0.90
+      max_points: 5
       visualize: True
-      polygon_pub_topic: "/collision_monitor/approach_zone"
+      polygon_pub_topic: "/collision_monitor/caution_zone"
       enabled: True
 
     SlowZone:
-      type: "circle"
-      radius: 0.25
+      type: "polygon"
+      points: [0.60, 0.32, 0.60, -0.32, -0.48, -0.32, -0.48, 0.32]
       action_type: "slowdown"
-      slowdown_ratio: 0.2
-      max_points: 0
+      slowdown_ratio: 0.70
+      max_points: 3
       visualize: True
       polygon_pub_topic: "/collision_monitor/slow_zone"
       enabled: True
 
     StopZone:
-      type: "circle"
-      radius: 0.1
+      type: "polygon"
+      points: [0.47, 0.24, 0.47, -0.24, -0.38, -0.24, -0.38, 0.24]
       action_type: "stop"
-      max_points: 0
+      max_points: 2
       visualize: True
       polygon_pub_topic: "/collision_monitor/stop_zone"
       enabled: True
 
-    # NOTE: Nav2 Humble collision_monitor only supports pointcloud/scan/range sources.
-    # The "costmap" source type is Iron+ only - do not add it here.
     observation_sources: ["pointcloud"]
     pointcloud:
       type: "pointcloud"
       topic: "/lidar/points_undistorted"
+      min_height: 0.08
+      max_height: 2.3
       enabled: True

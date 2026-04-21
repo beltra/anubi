@@ -9,7 +9,8 @@ fi
 # Collect ROS-related processes and avoid killing this script shell.
 self=$$
 parent=$PPID
-workspace_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Repository root (script lives in <repo>/scripts).
+workspace_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 declare -a pids=()
 
