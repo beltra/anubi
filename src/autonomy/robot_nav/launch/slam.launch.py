@@ -3,16 +3,15 @@ slam.launch.py
 2D SLAM pipeline using slam_toolbox (LGPL-2.1).
 
 Starts:
-  1. distortion_corrector     — deskews /lidar/points into /lidar/points_undistorted
-  2. pointcloud_to_laserscan  — converts /lidar/points_undistorted to /scan (LaserScan)
-  3. slam_toolbox             — async 2D SLAM; mapping or localisation mode
+  1. distortion_corrector     - deskews /lidar/points into /lidar/points_undistorted
+  2. pointcloud_to_laserscan  - converts /lidar/points_undistorted to /scan (LaserScan)
+  3. slam_toolbox             - async 2D SLAM; mapping or localization mode
   4. map_saver + lifecycle_manager_localization
-                               keeps Nav2's localization lifecycle panel active
-                               and provides map saving services
+                               keeps Nav2's localization lifecycle panel active.
 
 Arguments
 ---------
-use_sim_time                : bool   (default: true)
+use_sim_time                : bool   (default: false)
 slam_params                 : str    Path to slam_toolbox YAML params file
 scan_params                 : str    Path to pointcloud_to_laserscan YAML params file
 distortion_params           : str    Path to distortion_corrector YAML params file
@@ -21,21 +20,6 @@ map                         : str    For localization mode: path to .posegraph f
 autostart                   : bool   Autostart localization lifecycle manager (default: true)
 bypass_distortion_corrector : bool   Skip deskew when an upstream stage already
                                       publishes /lidar/points_undistorted
-
-SLAM choice rationale
----------------------
-slam_toolbox (licence: LGPL-2.1) was chosen for:
-  - Native Nav2 integration (directly maintained alongside Nav2)
-  - Supports both online mapping and localization-only modes
-  - Async mode handles variable scan rates without blocking Nav2
-  - Loop closure for long-session reliability
-  - Map serialization (save/load .posegraph files)
-  - LGPL-2.1 is compatible with industrial deployments using dynamic linking
-    (the standard in ROS 2 / colcon workspaces)
-
-Alternative evaluated:
-  - cartographer (Apache-2.0): more permissive licence but less actively maintained
-    for ROS 2 Humble; complex configuration; no localization-only mode without cartographer_grpc
 """
 
 import os
@@ -111,10 +95,7 @@ def generate_launch_description():
     is_mapping       = PythonExpression(["'", slam_mode, "' == 'mapping'"])
     is_localization  = PythonExpression(["'", slam_mode, "' == 'localization'"])
 
-    # ── 1. distortion_corrector ───────────────────────────────────────────
-    # Deskews the 3D LiDAR cloud using /odom twist and optional /imu/data
-    # angular rates. This keeps body pitch/roll during motion from projecting
-    # the floor into the obstacle pipeline.
+    # 1) distortion_corrector
     distortion_corrector = Node(
         package="robot_nav",
         executable="distortion_corrector.py",
@@ -127,10 +108,7 @@ def generate_launch_description():
         condition=UnlessCondition(bypass_distortion_corrector),
     )
 
-    # ── 2. pointcloud_to_laserscan ────────────────────────────────────────
-    # Converts the undistorted 3D UniLidar PointCloud2 to a 2D LaserScan
-    # required by slam_toolbox and by Nav2 obstacle layers that use /scan.
-    # A horizontal slice is extracted around z=0 relative to lidar_stabilized.
+    # 2) pointcloud_to_laserscan
     pointcloud_to_laserscan = Node(
         package="pointcloud_to_laserscan",
         executable="pointcloud_to_laserscan_node",
@@ -146,7 +124,7 @@ def generate_launch_description():
         ],
     )
 
-    # ── 3a. slam_toolbox — async mapping mode ─────────────────────────────
+    # 3a) slam_toolbox mapping mode
     slam_mapping = Node(
         package="slam_toolbox",
         executable="async_slam_toolbox_node",
@@ -159,7 +137,7 @@ def generate_launch_description():
         condition=IfCondition(is_mapping),
     )
 
-    # ── 3b. slam_toolbox — localisation mode (no mapping) ─────────────────
+    # 3b) slam_toolbox localization mode
     # Used after a map has been saved with:
     #   ros2 service call /slam_toolbox/serialize_map
     #   slam_toolbox/srv/SerializePoseGraph "{filename: '/path/to/map'}"
@@ -178,10 +156,7 @@ def generate_launch_description():
         condition=IfCondition(is_localization),
     )
 
-    # ── 4. map_saver + localization lifecycle manager ─────────────────────
-    # Nav2 RViz plugin expects a localization lifecycle manager. Even when
-    # SLAM provides map->odom (without AMCL), running map_saver under
-    # lifecycle_manager_localization keeps the localization stack state active.
+    # 4) map_saver + localization lifecycle manager
     map_saver = Node(
         package="nav2_map_server",
         executable="map_saver_server",
@@ -204,8 +179,7 @@ def generate_launch_description():
         parameters=[{
             "use_sim_time": use_sim_time,
             "autostart": autostart,
-            # slam_toolbox async/localization nodes are not managed as Nav2 lifecycle
-            # nodes in this launch, so keep the manager scoped to map_saver only.
+            # Keep this manager scoped to map_saver only.
             "node_names": ["map_saver"],
         }],
     )

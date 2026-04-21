@@ -4,7 +4,7 @@ Master entry point for the Go2 autonomy stack.
 
 Starts (in order):
   1. robot_state_publisher  (URDF + static TF from joints)
-  2. go2_hw_bridge          (SportModeState → odom/TF,  cmd_vel → Sport API)
+  2. go2_hw_bridge          (SportModeState -> odom/TF,  cmd_vel -> Sport API)
   3. velocity_limiter       (optional safety gate; enabled by use_safety:=true)
   4. slam.launch.py         (pointcloud_to_laserscan + slam_toolbox)
   5. nav2.launch.py         (full Nav2 navigation stack)
@@ -25,25 +25,22 @@ use_safety      : bool   Enable velocity_limiter safety gate (default: false)
 
 LiDAR topic contract (real robot)
 ----------------------------------
-# FIX(agent5): Documented real-robot LiDAR topic requirement.
-# The Go2 internal ROS 2 bridge publishes raw point cloud on /utlidar/cloud.
-# A republisher node that remaps /utlidar/cloud → /lidar/points MUST be
-# launched before starting the navigation stack, as nav2_params.yaml and
-# slam.launch.py expect PointCloud2 data on /lidar/points (frame: lidar_link).
-# Example one-liner (run before this launch):
-#   ros2 run topic_tools relay /utlidar/cloud /lidar/points
+The Go2 internal ROS 2 bridge publishes raw point cloud on /utlidar/cloud.
+robot_lio (included from go2_bringup) relays it to /lidar/points and provides
+the distortion_corrector pipeline that publishes /lidar/points_undistorted.
 """
 
 import os
 
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -58,11 +55,8 @@ def generate_launch_description():
     default_slam    = os.path.join(robot_nav_share,      "config", "slam_toolbox_params.yaml")
     urdf_file       = os.path.join(go2_description_share,"urdf",   "go2.urdf.xacro")
     rviz_config     = os.path.join(robot_nav_share,      "rviz",   "nav2.rviz")
-    lidar_x         = "0.28945"
-    lidar_y         = "0.0"
-    lidar_z         = "0.233175"  # standing_height + lidar_z from go2_description
 
-    # ── Arguments ─────────────────────────────────────────────────────────
+    # Arguments
     args = [
         DeclareLaunchArgument(
             "use_stvl",
@@ -80,6 +74,14 @@ def generate_launch_description():
         DeclareLaunchArgument("slam_params",  default_value=default_slam),
         DeclareLaunchArgument("slam_mode",    default_value="mapping",
                               description="'mapping' or 'localization'"),
+        DeclareLaunchArgument("use_ekf_fusion", default_value="true",
+                      description="Use EKF to fuse /odom_raw and publish /odom"),
+        DeclareLaunchArgument("use_lio", default_value="false",
+                      description="Enable optional LIO odometry backend"),
+        DeclareLaunchArgument("lidar_points_input_topic", default_value="/utlidar/cloud",
+                      description="Raw LiDAR pointcloud input topic for canonical relay"),
+        DeclareLaunchArgument("lidar_imu_input_topic", default_value="/unilidar/imu",
+                      description="Raw LiDAR IMU input topic for canonical relay"),
         DeclareLaunchArgument("use_safety",   default_value="false",
                               description="Enable velocity_limiter safety gate; "
                                           "go2_hw_bridge will read /cmd_vel_safe"),
@@ -92,6 +94,10 @@ def generate_launch_description():
     rviz         = LaunchConfiguration("rviz")
     slam_params  = LaunchConfiguration("slam_params")
     slam_mode    = LaunchConfiguration("slam_mode")
+    use_ekf_fusion = LaunchConfiguration("use_ekf_fusion")
+    use_lio = LaunchConfiguration("use_lio")
+    lidar_points_input_topic = LaunchConfiguration("lidar_points_input_topic")
+    lidar_imu_input_topic = LaunchConfiguration("lidar_imu_input_topic")
     use_safety   = LaunchConfiguration("use_safety")
 
     # Collision Monitor always sits in the command path for industrial safety.
@@ -100,10 +106,8 @@ def generate_launch_description():
         ["'/cmd_vel_safe' if '", use_safety, "' == 'true' else '/cmd_vel_collision_free'"]
     )
 
-    # ── 1. robot_state_publisher ──────────────────────────────────────────
-    # FIX(agent5): Removed "use_gazebo:=" arg — go2_description URDF no longer
-    # accepts use_gazebo; all Gazebo content lives in go2_sim only.
-    robot_description = Command(["xacro ", urdf_file])
+    # 1. robot_state_publisher
+    robot_description = ParameterValue(Command(["xacro ", urdf_file]), value_type=str)
     robot_state_publisher = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
@@ -115,9 +119,9 @@ def generate_launch_description():
         ],
     )
 
-    # ── 2. go2_hw_bridge ──────────────────────────────────────────────────
-    # Converts SportModeState → odom + TF(odom→base_footprint)
-    # Converts cmd_vel → /api/sport/request
+    # 2. go2_hw_bridge
+    # Converts SportModeState -> odom + TF(odom->base_footprint)
+    # Converts cmd_vel -> /api/sport/request
     go2_hw_bridge = Node(
         package="go2_bringup",
         executable="go2_hw_bridge",
@@ -126,6 +130,10 @@ def generate_launch_description():
         parameters=[go2_params, {
             "use_sim_time":  use_sim_time,
             "cmd_vel_topic": hw_bridge_cmd_topic,
+            "publish_tf": PythonExpression(["'false' if '", use_ekf_fusion, "' == 'true' else 'true'"]),
+            # Without EKF, the bridge must publish on /odom so SLAM/Nav2 see odometry.
+            # With EKF enabled, keep /odom_raw so the EKF can consume it and publish /odom.
+            "odom_topic": PythonExpression(["'/odom_raw' if '", use_ekf_fusion, "' == 'true' else '/odom'"]),
         }],
     )
     lidar_stabilized_tf = Node(
@@ -145,7 +153,7 @@ def generate_launch_description():
         }],
     )
 
-    # ── 3. Safety gate (optional) ─────────────────────────────────────────
+    # 3. Safety gate (optional)
     # velocity_limiter sits between Nav2 /cmd_vel and go2_hw_bridge.
     # Only launched when use_safety:=true.
     safety = IncludeLaunchDescription(
@@ -160,7 +168,58 @@ def generate_launch_description():
         condition=IfCondition(use_safety),
     )
 
-    # ── 4. SLAM (slam_toolbox + pointcloud_to_laserscan) ──────────────────
+    # 3b. Optional odometry fusion (default ON)
+    ekf = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(robot_nav_share, "launch", "ekf.launch.py")
+        ),
+        launch_arguments={
+            "use_sim_time": use_sim_time,
+            "output_odom_topic": "/odom",
+        }.items(),
+        condition=IfCondition(use_ekf_fusion),
+    )
+
+    # 3c. Canonical LIO sensor contract + optional backend
+    def maybe_include_lio(context):
+        use_lio_enabled = use_lio.perform(context).lower() == "true"
+        try:
+            robot_lio_share = get_package_share_directory("robot_lio")
+        except PackageNotFoundError:
+            if use_lio_enabled:
+                raise RuntimeError(
+                    "use_lio:=true but package 'robot_lio' was not found in the workspace/install."
+                )
+            return [
+                LogInfo(
+                    msg=(
+                        "package 'robot_lio' not found; skipping internal LiDAR relay/LIO include."
+                    )
+                )
+            ]
+
+        return [
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(robot_lio_share, "launch", "lio.launch.py")
+                ),
+                launch_arguments={
+                    "use_sim_time": use_sim_time,
+                    "use_lio": use_lio,
+                    "start_lidar_points_relay": "true",
+                    "start_lidar_imu_relay": "true",
+                    "lidar_points_input_topic": lidar_points_input_topic,
+                    "lidar_imu_input_topic": lidar_imu_input_topic,
+                    # lidar_link->lidar_imu_link is defined in go2.urdf.xacro and
+                    # published by robot_state_publisher - do not duplicate it.
+                    "publish_lidar_imu_tf": "false",
+                }.items(),
+            )
+        ]
+
+    lio = OpaqueFunction(function=maybe_include_lio)
+
+    # 4. SLAM (slam_toolbox + pointcloud_to_laserscan)
     slam = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(robot_nav_share, "launch", "slam.launch.py")
@@ -173,7 +232,7 @@ def generate_launch_description():
         }.items(),
     )
 
-    # ── 5. Nav2 ───────────────────────────────────────────────────────────
+    # 5. Nav2
     nav2 = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(robot_nav_share, "launch", "nav2.launch.py")
@@ -186,7 +245,7 @@ def generate_launch_description():
         }.items(),
     )
 
-    # ── 6. RViz2 ─────────────────────────────────────────────────────────
+    # 6. RViz2
     rviz2 = Node(
         package="rviz2",
         executable="rviz2",
@@ -202,6 +261,8 @@ def generate_launch_description():
         go2_hw_bridge,
         lidar_stabilized_tf,
         safety,
+        ekf,
+        lio,
         slam,
         nav2,
         rviz2,

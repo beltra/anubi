@@ -25,10 +25,10 @@ publisher of map->odom.
 
 import os
 
-from ament_index_python.packages import get_package_share_directory
+from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction, TimerAction
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
@@ -72,6 +72,15 @@ def generate_launch_description():
         DeclareLaunchArgument("world_init_z", default_value="0.375"),
         DeclareLaunchArgument("world_init_heading", default_value="0.0"),
         DeclareLaunchArgument("publish_map_to_odom_tf", default_value="false"),
+        DeclareLaunchArgument("use_lio", default_value="false"),
+        DeclareLaunchArgument(
+            "lio_start_before_nav_sec",
+            default_value="4.0",
+            description=(
+                "Start DLIO this many seconds before nav_delay_sec. This keeps "
+                "LIO after CHAMP startup while still starting before the nav stack."
+            ),
+        ),
         DeclareLaunchArgument("start_nav", default_value="true"),
         DeclareLaunchArgument(
             "nav_delay_sec",
@@ -94,6 +103,7 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_stvl = LaunchConfiguration("use_stvl")
     nav_profile = LaunchConfiguration("nav_profile")
+    use_lio = LaunchConfiguration("use_lio")
 
     champ_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -101,6 +111,7 @@ def generate_launch_description():
         ),
         launch_arguments={
             "use_sim_time": use_sim_time,
+            "use_lio": use_lio,
             "rviz": "false",
             "robot_name": LaunchConfiguration("robot_name"),
             "ros_control_file": LaunchConfiguration("ros_control_file"),
@@ -115,8 +126,58 @@ def generate_launch_description():
         }.items(),
     )
 
+    def maybe_include_lio(context):
+        if use_lio.perform(context).lower() != "true":
+            return []
+
+        nav_delay_sec = float(LaunchConfiguration("nav_delay_sec").perform(context))
+        lio_start_before_nav_sec = float(
+            LaunchConfiguration("lio_start_before_nav_sec").perform(context)
+        )
+        lio_start_delay_sec = max(0.0, nav_delay_sec - lio_start_before_nav_sec)
+
+        try:
+            robot_lio_share = get_package_share_directory("robot_lio")
+        except PackageNotFoundError:
+            raise RuntimeError(
+                "use_lio:=true but package 'robot_lio' was not found in the workspace/install."
+            )
+
+        dlio_sim_params = os.path.join(robot_lio_share, "config", "dlio_params_sim.yaml")
+
+        return [
+            TimerAction(
+                period=lio_start_delay_sec,
+                actions=[
+                    IncludeLaunchDescription(
+                        PythonLaunchDescriptionSource(
+                            os.path.join(robot_lio_share, "launch", "lio.launch.py")
+                        ),
+                        launch_arguments={
+                            "use_sim_time": use_sim_time,
+                            "use_lio": use_lio,
+                            "start_lidar_points_relay": "false",
+                            # Simulation already publishes /lidar/imu from lidar_imu_link.
+                            "start_lidar_imu_relay": "false",
+                            "publish_lidar_imu_tf": "false",
+                            # Simulation uses a different LiDAR mount rotation from the
+                            # hardware URDF; DLIO must consume matching extrinsics.
+                            "dlio_params_file": dlio_sim_params,
+                        }.items(),
+                    )
+                ],
+            )
+        ]
+
+    lio = OpaqueFunction(function=maybe_include_lio)
+
+    # Self-body filter — simulation only.
+    # The real Unitree L1 has a hardware minimum range of 0.8 m. The Go2's body
+    # and legs are always within ~0.4 m of the sensor, so hardware prevents
+    # self-body returns entirely. Gazebo uses range_min=0.1 m for simulation
+    # stability, so body returns appear and must be removed in software.
     nav_cloud_filter = Node(
-        package="robot_sim",
+        package="robot_nav",
         executable="cloud_self_filter.py",
         name="nav_cloud_filter",
         output="screen",
@@ -124,10 +185,11 @@ def generate_launch_description():
             "use_sim_time": use_sim_time,
             "input_topic": "/lidar/points",
             "output_topic": "/lidar/points_undistorted",
-            # Gravity-align the filtered cloud to the lidar_stabilized frame so
-            # the simulation STVL sees the same gravity-levelled representation as
-            # the real-robot distortion_corrector pipeline.  Requires
-            # imu_stabilized_tf.py to be running (launched via sim_champ.launch.py).
+            # Sim sensor is mounted right-side-up (rpy=0,-0.262,0) to work
+            # around a Fortress gpu_lidar rendering bug that drops most rays
+            # when the parent link has Rx(π) roll.  The real L1 uses
+            # sensor_mount_rpy=[π,-0.262,0] (see distortion_corrector.yaml).
+            "sensor_mount_rpy": [0.0, -0.26179938779915, 0.0],
             "gravity_align": True,
             "gravity_align_frame": "lidar_stabilized",
         }],
@@ -135,7 +197,7 @@ def generate_launch_description():
     )
 
     debug_cloud_filter = Node(
-        package="robot_sim",
+        package="robot_nav",
         executable="cloud_self_filter.py",
         name="cloud_self_filter_debug",
         output="screen",
@@ -202,6 +264,7 @@ def generate_launch_description():
 
     return LaunchDescription(args + [
         champ_sim,
+        lio,
         nav_cloud_filter,
         debug_cloud_filter,
         start_nav_stack,

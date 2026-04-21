@@ -13,9 +13,9 @@ go2_hw_bridge:
     cmd_vel_topic:   "/cmd_vel"
     # Sport API request topic consumed by the Go2 onboard controller
     sport_req_topic: "/api/sport/request"
-    # Odometry topic published by go2_hw_bridge.
-    # Keep as "/odom" for current stack; switch to "/odom_raw" when EKF fusion is enabled.
-    odom_topic: "/odom"
+    # Raw body odometry topic published by go2_hw_bridge.
+    # EKF fusion remaps this to the canonical /odom topic.
+    odom_topic: "/odom_raw"
     imu_topic: "/imu/data"
 
     # TF frame names — must match slam_toolbox and nav2_params.yaml
@@ -23,9 +23,8 @@ go2_hw_bridge:
     base_frame: "base_footprint"
     base_link_frame: "base_link"
     imu_frame: "imu_link"
-    # When false, go2_hw_bridge publishes Odometry only (no odom->base TF).
-    # Set false when robot_localization owns odom->base TF publication.
-    publish_tf: true
+    # go2_bringup.launch.py now defaults to EKF ownership of odom->base TF.
+    publish_tf: false
     publish_body_tf: true
     standing_height: 0.28
 

@@ -45,6 +45,7 @@
   <exec_depend>go2_description</exec_depend>
   <exec_depend>robot_safety</exec_depend>
   <exec_depend>robot_nav</exec_depend>
+  <exec_depend>robot_lio</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>joint_state_publisher</exec_depend>
   <exec_depend>xacro</exec_depend>

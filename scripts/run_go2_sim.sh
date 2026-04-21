@@ -10,6 +10,7 @@ USE_STVL="true"
 NAV_PROFILE="default_safe"
 NAV_DELAY_SEC="20.0"
 USE_LIO="false"
+CLEAN_EXISTING="true"
 
 usage() {
   cat <<'EOF'
@@ -23,6 +24,7 @@ Options:
   --no-rviz            Start without RViz
   --no-stvl            Disable SpatioTemporalVoxelLayer in Nav2 local costmap
   --use-lio            Enable optional LIO backend (/lidar_odom)
+  --no-clean           Do not clean pre-existing ROS/Gazebo processes before launch
   --nav-profile <id>   Nav2 profile: default_safe | narrow_gap_1p0m
   --nav-delay <sec>    Delay before Nav2 stack starts (default: 20.0)
   -h, --help           Show this help
@@ -67,6 +69,10 @@ while [[ $# -gt 0 ]]; do
       USE_LIO="true"
       shift
       ;;
+    --no-clean)
+      CLEAN_EXISTING="false"
+      shift
+      ;;
     --nav-profile)
       [[ $# -ge 2 ]] || { echo "Missing value for --nav-profile" >&2; usage; exit 1; }
       NAV_PROFILE="$2"
@@ -103,6 +109,11 @@ if [[ "$MODE" == "localization" ]]; then
     echo "Map not found: $MAP_PATH (also checked ${MAP_PATH}.posegraph)." >&2
     exit 1
   fi
+fi
+
+if [[ "$CLEAN_EXISTING" == "true" ]]; then
+  echo "Cleaning stale ROS/Gazebo processes before launch..."
+  bash "$(cd "$(dirname "$0")" && pwd)/kill_ros_nodes.sh" || true
 fi
 
 # ROS setup scripts are not fully nounset-safe; source them with +u.

@@ -3,8 +3,8 @@ nav2.launch.py
 Robot-agnostic Nav2 launch file.
 
 Starts the Nav2 navigation nodes via nav2_bringup.
-Localisation (map→odom) is provided by slam_toolbox, started separately via slam.launch.py.
-Odometry (odom→base_footprint) is provided by go2_hw_bridge (or equivalent adapter).
+Localization (map->odom) is provided by slam_toolbox, started separately via slam.launch.py.
+Odometry (odom->base_footprint) is provided by the robot adapter.
 
 Arguments
 ---------
@@ -111,8 +111,7 @@ def generate_launch_description():
     collision_monitor_params_file = LaunchConfiguration("collision_monitor_params")
     lattice_filepath = LaunchConfiguration("lattice_filepath")
 
-    # Ensure SmacPlannerLattice always receives an absolute lattice file path.
-    # Relative paths are resolved against process CWD and can fail at runtime.
+    # SmacPlannerLattice expects an absolute lattice file path.
     configured_params = RewrittenYaml(
         source_file=params_file,
         root_key=namespace,
@@ -135,10 +134,8 @@ def generate_launch_description():
     )
     remappings = [("/tf", "tf"), ("/tf_static", "tf_static")]
 
-    # Delegate to nav2_bringup for standard node composition and lifecycle management.
-    # slam=false: slam_toolbox is started separately via slam.launch.py.
-    # map is not passed: map_server is not in the lifecycle node list (slam_toolbox
-    # provides /map directly).
+    # Delegate node composition and lifecycle handling to nav2_bringup.
+    # slam_toolbox is started separately via slam.launch.py.
     nav2_bringup = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(nav2_bringup_share, "launch", "navigation_launch.py")

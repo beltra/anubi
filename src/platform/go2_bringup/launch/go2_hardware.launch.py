@@ -17,6 +17,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -26,9 +27,6 @@ def generate_launch_description():
 
     go2_params = os.path.join(go2_bringup_share,    "config", "go2_params.yaml")
     urdf_file  = os.path.join(go2_description_share,"urdf",   "go2.urdf.xacro")
-    lidar_x = "0.28945"
-    lidar_y = "0.0"
-    lidar_z = "0.233175"  # standing_height + lidar_z from go2_description
 
     args = [
         DeclareLaunchArgument("use_sim_time", default_value="false"),
@@ -42,9 +40,7 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration("use_sim_time")
     cmd_vel_topic = LaunchConfiguration("cmd_vel_topic")
 
-    # FIX(agent5): Removed "use_gazebo:=" arg — go2_description URDF no longer
-    # accepts use_gazebo; all Gazebo content lives in go2_sim only.
-    robot_description = Command(["xacro ", urdf_file])
+    robot_description = ParameterValue(Command(["xacro ", urdf_file]), value_type=str)
 
     nodes = [
         Node(
@@ -62,7 +58,11 @@ def generate_launch_description():
             executable="go2_hw_bridge",
             name="go2_hw_bridge",
             output="screen",
-            parameters=[go2_params, {"use_sim_time": use_sim_time, "cmd_vel_topic": cmd_vel_topic}],
+            parameters=[go2_params, {
+                "use_sim_time": use_sim_time,
+                "cmd_vel_topic": cmd_vel_topic,
+                "publish_tf": True,
+            }],
         ),
         Node(
             package="robot_nav",

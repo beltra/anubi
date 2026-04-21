@@ -1,5 +1,5 @@
 # slam_toolbox_params.yaml
-# Configuration for slam_toolbox async SLAM (mapping and localisation modes).
+# Configuration for slam_toolbox async SLAM (mapping and localization modes).
 #
 # Licence: slam_toolbox is LGPL-2.1, compatible with industrial projects
 # using dynamic linking (standard in ROS 2 / colcon).
@@ -10,15 +10,14 @@
 # ASSUMPTIONS:
 #   A-SLAM-1: The /scan topic is a 2D LaserScan produced by pointcloud_to_laserscan
 #             from the UniLidar's 3D PointCloud2.
-#   A-SLAM-2: The TF tree provides odom → base_footprint (from go2_hw_bridge)
+#   A-SLAM-2: The TF tree provides odom -> base_footprint (from go2_hw_bridge)
 #             before slam_toolbox starts.
-#   A-SLAM-3: The LiDAR range is configured to the Unitree L1 spec (0.05 m to 30 m).
+#   A-SLAM-3: The LiDAR range passed to SLAM is 0.15 m to 25 m.
 #   A-SLAM-4: Environment is primarily indoor / structured (office, warehouse).
 #             Loop closure parameters are tuned for corridors and rooms.
 
 slam_toolbox:
   ros__parameters:
-    # ── Solver ──────────────────────────────────────────────────────────
     solver_plugin: solver_plugins::CeresSolver
     ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
     ceres_preconditioner: SCHUR_JACOBI
@@ -26,19 +25,16 @@ slam_toolbox:
     ceres_dogleg_type: TRADITIONAL_DOGLEG
     ceres_loss_function: None
 
-    # ── Frames ──────────────────────────────────────────────────────────
     odom_frame:  odom
     map_frame:   map
     base_frame:  base_footprint   # must match go2_hw_bridge base_frame param
     scan_topic:  /scan
 
-    # ── Map persistence ──────────────────────────────────────────────────
     # Use ros2 service to serialize/load maps at runtime.
     # Serialised format: .posegraph + .data files
     use_map_saver: true
-    mode: mapping                 # ignored at runtime — mode is selected by executable (slam.launch.py)
+    mode: mapping                 # ignored at runtime - mode is selected by executable (slam.launch.py)
 
-    # ── Motion thresholds (minimum travel before processing a new scan) ──
     # Assumption A-SLAM-4: indoor, relatively slow robot
     # Sparse indoor scenes are more stable when scans are integrated a bit more
     # conservatively. This reduces graph churn from near-duplicate scans.
@@ -46,16 +42,13 @@ slam_toolbox:
     minimum_travel_heading: 0.15   # [rad]
     minimum_time_interval:  0.25   # [s]
 
-    # ── Scan matching ────────────────────────────────────────────────────
     use_scan_matching:   true
     use_scan_barycenter: true
 
-    # ── Map parameters ───────────────────────────────────────────────────
     resolution: 0.05          # [m/cell] 5 cm grid
     max_laser_range: 25.0
     min_laser_range: 0.15
 
-    # ── Loop closure ────────────────────────────────────────────────────
     # Keeps the map consistent over long mapping sessions.
     do_loop_closing: true
     loop_match_minimum_chain_size: 10   # minimum scans in chain to consider loop
@@ -63,32 +56,26 @@ slam_toolbox:
     loop_match_minimum_response_coarse: 0.35
     loop_match_minimum_response_fine:   0.45
 
-    # ── Scan buffer ──────────────────────────────────────────────────────
     scan_buffer_size: 20
     scan_buffer_maximum_scan_distance: 10.0  # [m]
     scan_queue_size: 50
     throttle_scans: 1
 
-    # ── Correlation search ───────────────────────────────────────────────
     link_match_minimum_response_fine:   0.1
     link_scan_maximum_distance:         1.5   # [m]
     loop_search_maximum_distance:       3.0   # [m]
 
-    # ── Correlative scan matcher ─────────────────────────────────────────
     correlation_search_space_dimension: 0.5
     correlation_search_space_resolution: 0.01
     correlation_search_space_smear_deviation: 0.1
 
-    # ── Loop closure scan matcher ────────────────────────────────────────
     loop_search_space_dimension: 8.0
     loop_search_space_resolution: 0.05
     loop_search_space_smear_deviation: 0.03
 
-    # ── Distance variance penalty ────────────────────────────────────────
     distance_variance_penalty: 0.5
     angle_variance_penalty:    1.0
 
-    # ── Fine search parameters ───────────────────────────────────────────
     fine_search_angle_offset:     0.00349
     coarse_search_angle_offset:   0.349
     coarse_angle_resolution:      0.0349
@@ -96,7 +83,6 @@ slam_toolbox:
     minimum_distance_penalty:     0.5
     use_response_expansion:       true
 
-    # ── TF ───────────────────────────────────────────────────────────────
     transform_publish_period:     0.02   # [s] publish TF at 50 Hz
     transform_timeout:            0.5    # [s] TF lookup timeout for scan processing
     tf_buffer_duration:          30.0    # [s] keep TF history for this long

@@ -31,6 +31,7 @@
   <exec_depend>sensor_msgs_py</exec_depend>
   <exec_depend>rviz2</exec_depend>
   <exec_depend>robot_nav</exec_depend>
+  <exec_depend>robot_lio</exec_depend>
   <exec_depend>go2_sim</exec_depend>
   <exec_depend>d1_sim</exec_depend>
   <exec_depend>sim_worlds</exec_depend>

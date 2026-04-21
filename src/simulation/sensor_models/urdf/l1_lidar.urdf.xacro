@@ -4,18 +4,18 @@
   Reusable sensor macros for the Unitree L1 LiDAR sensor.
 
   Macro provided:
-    1. l1_lidar          — Gazebo Fortress (Ignition Gazebo 6, ROS 2 Humble)
+    1. l1_lidar          - Gazebo Fortress (Ignition Gazebo 6, ROS 2 Humble)
 
-  ─────────────────────────────────────────────────────────────────────────────
+  =============================================================================
   MACRO: l1_lidar  (Fortress / Ignition Gazebo 6)
-  ─────────────────────────────────────────────────────────────────────────────
+  =============================================================================
   Unitree L1 device specifications (from Unitree datasheet):
-    - Scan lines (vertical channels): 18 (simulation uses 32 for fidelity)
-    - Vertical FOV: 90° hemispherical
-    - Horizontal FOV: 360°
+    - Scan lines (vertical channels): 18 (simulation uses 36 for fidelity)
+    - Vertical FOV: 90 deg hemispherical
+    - Horizontal FOV: 360 deg
     - Rotation frequency (typical): 10 Hz
-    - Range: 0.8 m – 30 m
-    - Simulation noise σ: 0.008 m
+    - Range: 0.8 m - 30 m
+    - Simulation noise sigma: 0.008 m
 
   Usage:
     <xacro:include filename="$(find sensor_models)/urdf/l1_lidar.urdf.xacro"/>
@@ -24,27 +24,27 @@
     </xacro:l1_lidar>
 
   Parameters:
-    parent  — URDF link to attach the lidar link to (required)
-    prefix  — string prepended to all generated link/joint/sensor names (may be "")
+    parent  - URDF link to attach the lidar link to (required)
+    prefix  - string prepended to all generated link/joint/sensor names (may be "")
 
   Block parameter:
-    *origin — <origin xyz="..." rpy="..."/> child element (required)
+    *origin - <origin xyz="..." rpy="..."/> child element (required)
 
   The macro creates:
     - Link:  ${prefix}lidar_link  (named for nav stack compatibility: scan_from_cloud.yaml
              expects target_frame: lidar_link; with prefix="" this yields "lidar_link")
-    - Joint: ${prefix}lidar_l1_joint  (fixed, parent→child, origin from block)
+    - Joint: ${prefix}lidar_l1_joint  (fixed, parent->child, origin from block)
     - Gazebo gpu_lidar sensor on ${prefix}lidar_link
       Gazebo topics:
-        /unilidar/cloud        (LaserScan — unused by nav stack)
+        /unilidar/cloud        (LaserScan - unused by nav stack)
         /unilidar/cloud/points (PointCloudPacked, bridged to ROS /lidar/points via remapping)
 
 -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-  <!-- ═══════════════════════════════════════════════════════════════════════
+  <!-- =======================================================================
        FORTRESS MACRO  (ignition-gazebo-sensors-system handles the sensor)
-       ═══════════════════════════════════════════════════════════════════════ -->
+       ======================================================================= -->
   <xacro:macro name="l1_lidar" params="
       parent
       prefix
@@ -53,7 +53,15 @@
       *origin">
 
     <link name="${prefix}lidar_link">
-      <!-- No visual geometry in sim: prevents GPU LiDAR self-occlusion at the sensor origin. -->
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <cylinder radius="0.04" length="0.02"/>
+        </geometry>
+        <material name="lidar_black">
+          <color rgba="0.05 0.05 0.05 1.0"/>
+        </material>
+      </visual>
       <inertial>
         <mass value="0.5"/>
         <origin xyz="0 0 0" rpy="0 0 0"/>
@@ -89,19 +97,21 @@
         <lidar>
           <scan>
             <horizontal>
-              <!-- 360° sweep — L1 spec: 360° horizontal FOV -->
+              <!-- 360 deg sweep - L1 spec: 360 deg horizontal FOV -->
               <samples>360</samples>
               <resolution>1</resolution>
               <min_angle>-3.14159265358978</min_angle>
               <max_angle>3.14159265358979</max_angle>
             </horizontal>
             <vertical>
-              <!-- 90° hemisphere in sensor frame; the Go2 mount flips the sensor
-                   so this sweeps toward the floor in the world frame. -->
-              <samples>32</samples>
+              <!-- Sim uses a right-side-up mount (no Rx(pi) roll) to avoid a
+                   Fortress gpu_lidar bug that drops rays under 180-deg roll.
+                   Angles are negated vs. the real sensor so the scan covers
+                   the lower hemisphere as on the real upside-down Go2 mount. -->
+              <samples>36</samples>
               <resolution>1</resolution>
-              <min_angle>0.00</min_angle>
-              <max_angle>1.5</max_angle>
+              <min_angle>-1.5</min_angle>
+              <max_angle>0.1</max_angle>
             </vertical>
           </scan>
           <range>

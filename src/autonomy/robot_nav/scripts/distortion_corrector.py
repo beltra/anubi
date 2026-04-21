@@ -12,29 +12,13 @@ from rclpy.node import Node
 from rclpy.qos import QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import Imu, PointCloud2
 
-
-def _stamp_to_seconds(stamp) -> float:
-    return float(stamp.sec) + float(stamp.nanosec) * 1e-9
-
-
-def _rotation_from_rpy(roll: float, pitch: float, yaw: float) -> np.ndarray:
-    cr = math.cos(roll)
-    sr = math.sin(roll)
-    cp = math.cos(pitch)
-    sp = math.sin(pitch)
-    cy = math.cos(yaw)
-    sy = math.sin(yaw)
-
-    return np.array(
-        [
-            [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
-            [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
-            [-sp, cp * sr, cp * cr],
-        ],
-        dtype=np.float64,
-    )
-
-
+from robot_nav.pointcloud_utils import (
+    build_pc2_dtype,
+    gravity_align_cloud,
+    roll_pitch_from_imu,
+    rotation_from_rpy,
+    stamp_to_sec,
+)
 
 
 class DistortionCorrector(Node):
@@ -52,9 +36,11 @@ class DistortionCorrector(Node):
         self.declare_parameter("use_3d_distortion_correction", True)
         self.declare_parameter("scan_period", 0.1)
         # Static mount rotation from body frame (base_link) to sensor frame
-        # (lidar_link).  For the Unitree Go2 with the L1 LiDAR mounted
-        # upside-down this is Rx(π) = [roll=π, pitch=0, yaw=0].
-        self.declare_parameter("sensor_mount_rpy", [3.14159265358979, 0.0, 0.0])
+        # (lidar_link). For the Unitree Go2 + L1 this is upside-down with
+        # ~15 deg forward pitch. With this RPY convention: R = Ry(-15 deg) * Rx(pi).
+        self.declare_parameter(
+            "sensor_mount_rpy", [3.14159265358979, -0.26179938779915, 0.0]
+        )
         self.declare_parameter("timestamp_field_name", "")
         self.declare_parameter(
             "timestamp_field_candidates",
@@ -62,7 +48,10 @@ class DistortionCorrector(Node):
         )
         self.declare_parameter("timestamp_unit", "auto")
         self.declare_parameter("fallback_mode", "azimuth")
-        self.declare_parameter("azimuth_direction", "ccw")
+        # Default "cw" because the L1 is mounted Rx(pi) upside-down: the upside-down
+        # mount flips arctan2(y,x), reversing the apparent scan rotation direction.
+        # Any robot whose LiDAR is mounted right-side-up should override to "ccw".
+        self.declare_parameter("azimuth_direction", "cw")
         self.declare_parameter("passthrough_on_missing_state", True)
         self.declare_parameter("state_timeout_sec", 0.25)
         self.declare_parameter("drop_stale_clouds", True)
@@ -75,7 +64,7 @@ class DistortionCorrector(Node):
         # roll+pitch so they are expressed in the gravity-levelled `lidar_stabilized`
         # frame (P_stab = R_body @ P_lidar).  When enabled, also changes the output
         # cloud's frame_id to gravity_align_frame.  This completely decouples the
-        # costmap from trunk dynamics: floor returns stay at world-z ≈ 0 regardless
+        # costmap from trunk dynamics: floor returns stay at world-z ~ 0 regardless
         # of TF lag or gait-induced LiDAR sway.
         # Requires imu_stabilized_tf.py to be running so the TF for the output frame
         # is available to downstream consumers (STVL, pointcloud_to_laserscan).
@@ -87,11 +76,11 @@ class DistortionCorrector(Node):
         # ghost obstacles.  Mirrors the logic in cloud_self_filter.py.
         self.declare_parameter("filter_floor", False)
         self.declare_parameter("min_world_z", 0.12)
-        # Sensor position in base_link frame (Rx(π) mount: lidar_z is negative
+        # Sensor position in base_link frame (Rx(pi) mount: lidar_z is negative
         # because the URDF joint places the sensor below the body origin).
         self.declare_parameter("sensor_x_in_base", 0.28945)
         self.declare_parameter("sensor_y_in_base", 0.0)
-        self.declare_parameter("sensor_z_in_base", -0.056825)
+        self.declare_parameter("sensor_z_in_base", -0.046825)
         # Nominal height of base_link above the ground plane.  Used when the
         # robot pose is not available from TF.  Varies slightly during gait
         # but 0.28 m is a good steady-state estimate for the Go2.
@@ -131,7 +120,10 @@ class DistortionCorrector(Node):
 
         # Pre-compute the static rotation from body frame to sensor frame.
         mount_rpy = list(self.get_parameter("sensor_mount_rpy").value)
-        self._R_mount = _rotation_from_rpy(mount_rpy[0], mount_rpy[1], mount_rpy[2])
+        self._R_mount = rotation_from_rpy(mount_rpy[0], mount_rpy[1], mount_rpy[2])
+        # sensor_mount_rpy is base_link -> lidar_link, so lidar_link -> base_link
+        # is the inverse rotation.
+        self._R_mount_inv = self._R_mount.T
 
         self._imu_history: Deque[Imu] = deque(maxlen=400)
         self._odom_history: Deque[Odometry] = deque(maxlen=200)
@@ -161,7 +153,7 @@ class DistortionCorrector(Node):
             f"3d={str(self._use_3d).lower()}, fallback={self._fallback_mode}, "
             f"stamp={self._output_stamp_mode}, "
             f"gravity_align={str(self._gravity_align).lower()}"
-            + (f"→{self._gravity_align_frame}" if self._gravity_align else "")
+            + (f"->{self._gravity_align_frame}" if self._gravity_align else "")
             + f", floor_filter={str(self._filter_floor).lower()}"
             + (f"(min_z={self._min_world_z:.2f}m)" if self._filter_floor else "")
             + ")"
@@ -177,8 +169,8 @@ class DistortionCorrector(Node):
         if not history:
             return None
 
-        best = min(history, key=lambda msg: abs(_stamp_to_seconds(msg.header.stamp) - stamp_sec))
-        best_dt = abs(_stamp_to_seconds(best.header.stamp) - stamp_sec)
+        best = min(history, key=lambda msg: abs(stamp_to_sec(msg.header.stamp) - stamp_sec))
+        best_dt = abs(stamp_to_sec(best.header.stamp) - stamp_sec)
         if best_dt > self._state_timeout_sec:
             return None
         return best
@@ -218,9 +210,16 @@ class DistortionCorrector(Node):
         # Transform velocities from body frame to sensor frame using the
         # static mount rotation.  The point cloud lives in the sensor frame
         # (lidar_link), so the deskew corrections must be in that frame too.
-        # Previous code incorrectly used IMU roll/pitch here instead of the
-        # fixed mount rotation, and never transformed angular velocity.
-        linear_sensor = self._R_mount @ linear_velocity
+        # The linear velocity is taken at the sensor origin, not the body origin.
+        # For a rigid body: v_sensor = v_body + omega x r_body->sensor.
+        # Omitting the lever-arm term (omega x r) causes ~14 mm lateral error per
+        # scan at omega_z = 0.5 rad/s (dominant during yaw turns), which is ~1.8x
+        # the L1 noise floor of 8 mm sigma.
+        r_sensor = np.array(
+            [self._sensor_x_in_base, self._sensor_y_in_base, self._sensor_z_in_base],
+            dtype=np.float64,
+        )
+        linear_sensor = self._R_mount @ (linear_velocity + np.cross(angular_velocity, r_sensor))
         angular_sensor = self._R_mount @ angular_velocity
 
         return linear_sensor, angular_sensor, odom_msg, imu_msg
@@ -313,30 +312,6 @@ class DistortionCorrector(Node):
         self._warned_stale_drop = reason
         self.get_logger().warning(f"Dropping stale cloud: {reason}")
 
-    @staticmethod
-    def _build_dtype(msg: PointCloud2):
-        """Build a numpy structured dtype from the PointCloud2 field descriptors.
-
-        Accounts for padding between fields and at the end of each point so that
-        the dtype itemsize equals msg.point_step.  Without this, np.frombuffer
-        misaligns every point after the first.
-        """
-        _ROS_TO_NP = {1: np.int8, 2: np.uint8, 3: np.int16, 4: np.uint16,
-                      5: np.int32, 6: np.uint32, 7: np.float32, 8: np.float64}
-        _ROS_SIZES = {1: 1, 2: 1, 3: 2, 4: 2, 5: 4, 6: 4, 7: 4, 8: 8}
-        fields = {}
-        for f in msg.fields:
-            np_type = _ROS_TO_NP.get(f.datatype, np.uint8)
-            size = _ROS_SIZES.get(f.datatype, 1)
-            if f.count == 1:
-                fields[f.name] = (np_type, f.offset)
-            else:
-                fields[f.name] = (np_type, (f.count,), f.offset)
-        return np.dtype({"names": list(fields.keys()),
-                         "formats": [v[0] if len(v) == 2 else (v[0], v[1])
-                                     for v in fields.values()],
-                         "offsets": [v[-1] for v in fields.values()],
-                         "itemsize": msg.point_step})
 
     def _cloud_cb(self, msg: PointCloud2) -> None:
         # Bypass mode: republish unchanged (for simulation)
@@ -345,7 +320,7 @@ class DistortionCorrector(Node):
             return
 
         now_sec = self.get_clock().now().nanoseconds * 1e-9
-        cloud_stamp = _stamp_to_seconds(msg.header.stamp)
+        cloud_stamp = stamp_to_sec(msg.header.stamp)
         input_delay_sec = now_sec - cloud_stamp
         if self._drop_stale_clouds and input_delay_sec > self._max_input_delay_sec:
             self._warn_stale_drop_once(
@@ -358,14 +333,14 @@ class DistortionCorrector(Node):
             self._publisher.publish(msg)
             return
 
-        # ── Parse field layout ────────────────────────────────────────────
+        # Parse field layout
         field_names = [f.name for f in msg.fields]
         if "x" not in field_names or "y" not in field_names or "z" not in field_names:
             self._warn_passthrough_once("cloud is missing x/y/z fields")
             self._publisher.publish(msg)
             return
 
-        # ── State lookup ──────────────────────────────────────────────────
+        # State lookup
         linear_velocity, angular_velocity, odom_msg, imu_msg = self._select_state(cloud_stamp)
 
         if self._use_twist and odom_msg is None:
@@ -380,15 +355,15 @@ class DistortionCorrector(Node):
                 self._publisher.publish(msg)
                 return
 
-        # ── Read cloud as numpy structured array (zero-copy view) ─────────
-        dt_struct = self._build_dtype(msg)
+        # Read cloud as numpy structured array (zero-copy view)
+        dt_struct = build_pc2_dtype(msg)
         raw = np.frombuffer(msg.data, dtype=dt_struct)
 
         x = raw["x"].astype(np.float64)
         y = raw["y"].astype(np.float64)
         z = raw["z"].astype(np.float64)
 
-        # ── Compute per-point relative times (vectorised) ─────────────────
+        # Compute per-point relative times (vectorised)
         time_field_index, time_field_name = self._resolve_time_field(msg)
         if time_field_index is not None and time_field_name is not None:
             t_vals = raw[time_field_name].astype(np.float64)
@@ -401,11 +376,11 @@ class DistortionCorrector(Node):
             rel_t = self._relative_times_from_azimuth_np(x, y)
             self._warn_timestamp_mode_once("fallback:azimuth")
 
-        # ── Vectorised deskew ─────────────────────────────────────────────
-        # First-order Rodrigues: R(dt) ≈ I + dt·K  where K = skew(ω).
-        # For typical scan_period=0.1 s and |ω| < 5 rad/s, max θ = 0.5 rad,
-        # sin(θ)/θ ≈ 0.96 — first-order is accurate to ~4%.  This avoids
-        # computing a per-point 3×3 matrix multiply.
+        # Vectorised deskew
+        # First-order Rodrigues: R(dt) ~ I + dt*K  where K = skew(omega).
+        # For typical scan_period=0.1 s and |omega| < 5 rad/s, max theta = 0.5 rad,
+        # sin(theta)/theta ~ 0.96 - first-order is accurate to ~4%.  This avoids
+        # computing a per-point 3x3 matrix multiply.
         wx, wy, wz = angular_velocity
         vx, vy, vz = linear_velocity
 
@@ -422,29 +397,35 @@ class DistortionCorrector(Node):
         cy = np.where(finite_mask, (y + dy).astype(np.float32), raw["y"])
         cz = np.where(finite_mask, (z + dz).astype(np.float32), raw["z"])
 
-        # ── IMU floor gate ────────────────────────────────────────────────
+        # IMU floor gate
         # Estimate world-frame z for each (deskewed) point using the IMU
         # orientation quaternion and NaN-out returns that are below min_world_z.
         # This prevents trunk-pitch-induced floor sweeps from reaching the STVL
         # costmap as ghost obstacles.
         #
         # Must run BEFORE gravity alignment so cx/cy/cz are still in the sensor
-        # (lidar_link) frame where the Rx(π) mount correction is valid:
-        #   x_b =  cx + sensor_x_in_base
-        #   y_b = -cy + sensor_y_in_base   (Rx(π) negates y)
-        #   z_b = -cz + sensor_z_in_base   (Rx(π) negates z)
-        # Then world z ≈ R_body_z_row · [x_b, y_b, z_b] + base_z_nominal
+        # (lidar_link) frame. Convert to base_link with lidar->base static mount
+        # rotation (self._R_mount_inv), then apply the static translation.
+        # Then world z ~ R_body_z_row * [x_b, y_b, z_b] + base_z_nominal
         if self._filter_floor and imu_msg is not None:
             q = imu_msg.orientation
-            # Third row of R (body → world) from unit quaternion:
-            # R[2] = [2(xz − yw),  2(yz + xw),  1 − 2(x² + y²)]
+            # Third row of R (body -> world) from unit quaternion:
+            # R[2] = [2(xz - yw),  2(yz + xw),  1 - 2(x^2 + y^2)]
             R_z0 = 2.0 * (q.x * q.z - q.y * q.w)
             R_z1 = 2.0 * (q.y * q.z + q.x * q.w)
             R_z2 = 1.0 - 2.0 * (q.x * q.x + q.y * q.y)
 
-            x_b = cx + self._sensor_x_in_base
-            y_b = -cy + self._sensor_y_in_base
-            z_b = -cz + self._sensor_z_in_base
+            pts_b = self._R_mount_inv @ np.stack(
+                [
+                    cx.astype(np.float64),
+                    cy.astype(np.float64),
+                    cz.astype(np.float64),
+                ],
+                axis=0,
+            )
+            x_b = pts_b[0] + self._sensor_x_in_base
+            y_b = pts_b[1] + self._sensor_y_in_base
+            z_b = pts_b[2] + self._sensor_z_in_base
             world_z = R_z0 * x_b + R_z1 * y_b + R_z2 * z_b + self._base_z_nominal
 
             floor_mask = finite_mask & (world_z < self._min_world_z)
@@ -453,44 +434,31 @@ class DistortionCorrector(Node):
             cy = np.where(floor_mask, nan32, cy)
             cz = np.where(floor_mask, nan32, cz)
 
-        # ── Gravity alignment ─────────────────────────────────────────────
+        # Gravity alignment
         # Rotate all deskewed points from lidar_link to the gravity-levelled
         # lidar_stabilized frame:
-        #   P_stab = R_body @ R_mount @ P_lidar_link
-        # R_mount (the static sensor mount rotation, Rx(π) for the Go2 L1 LiDAR)
-        # converts sensor-frame coordinates to base_link-frame coordinates.
+        #   P_stab = R_body @ R_mount_inv @ P_lidar_link
+        # R_mount_inv converts sensor-frame coordinates to base_link-frame
+        # coordinates.
         # R_body (roll+pitch, no yaw) then gravity-aligns to world orientation.
         # Without R_mount the y-axis is not flipped, producing a mirrored map.
         gravity_aligned = False
         if self._gravity_align and imu_msg is not None:
-            q = imu_msg.orientation
-            sinr_cosp = 2.0 * (q.w * q.x + q.y * q.z)
-            cosr_cosp = 1.0 - 2.0 * (q.x * q.x + q.y * q.y)
-            roll = math.atan2(sinr_cosp, cosr_cosp)
-            sinp = 2.0 * (q.w * q.y - q.z * q.x)
-            pitch = math.asin(max(-1.0, min(1.0, sinp)))
-            R_body = _rotation_from_rpy(roll, pitch, 0.0)
-
-            # self._R_mount is pre-computed from sensor_mount_rpy (Rx(π) for Go2).
-            # NaN points (from floor filter or raw invalids) propagate through
-            # matrix multiply as NaN and are preserved by np.where.
-            pts = self._R_mount @ np.stack([cx.astype(np.float64),
-                                             cy.astype(np.float64),
-                                             cz.astype(np.float64)], axis=0)  # 3 × N
-            pts_stab = R_body @ pts
-            cx = np.where(finite_mask, pts_stab[0].astype(np.float32), cx)
-            cy = np.where(finite_mask, pts_stab[1].astype(np.float32), cy)
-            cz = np.where(finite_mask, pts_stab[2].astype(np.float32), cz)
+            roll, pitch = roll_pitch_from_imu(imu_msg.orientation)
+            R_body = rotation_from_rpy(roll, pitch, 0.0)
+            cx, cy, cz = gravity_align_cloud(
+                cx, cy, cz, finite_mask, R_body, self._R_mount_inv
+            )
             gravity_aligned = True
 
-        # ── Write corrected data back ─────────────────────────────────────
+        # Write corrected data back
         out_data = bytearray(msg.data)
         out_arr = np.frombuffer(out_data, dtype=dt_struct)
         out_arr["x"] = cx
         out_arr["y"] = cy
         out_arr["z"] = cz
 
-        # ── Publish ───────────────────────────────────────────────────────
+        # Publish
         out_msg = PointCloud2()
         out_msg.header = msg.header
         if self._output_stamp_mode == "now":

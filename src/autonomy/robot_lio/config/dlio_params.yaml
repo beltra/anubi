@@ -15,6 +15,11 @@
     publish_tf: false
 
     frames/odom: odom
+    # WARNING: frames/baselink is base_link (not base_footprint).
+    # DLIO's /lidar_odom odometry message therefore has child_frame_id: base_link.
+    # Nav2 and slam_toolbox expect child_frame_id: base_footprint.
+    # /lidar_odom MUST be consumed by the EKF (ekf.launch.py) and never fed
+    # directly to Nav2 or slam_toolbox, or the frame contract will break silently.
     frames/baselink: base_link
     frames/lidar: dlio_lidar_link
     frames/imu: dlio_imu_link

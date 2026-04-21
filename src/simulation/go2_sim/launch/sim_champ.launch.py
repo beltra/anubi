@@ -8,20 +8,21 @@ Port changes:
   Ignition message namespace only (ignition.msgs.*)
 
 Topic bridge (all required by nav stack):
-  /clock              ignition → ROS   rosgraph_msgs/Clock
-  /imu/data           ignition → ROS   sensor_msgs/Imu
-  /joint_states       ignition → ROS   sensor_msgs/JointState
-  /unilidar/cloud/points ignition → ROS   sensor_msgs/PointCloud2  (remapped to /lidar/points)
-  /model/go2/odometry ignition → ROS   nav_msgs/Odometry (remapped to /odom/raw for EKF)
+  /clock              ignition -> ROS   rosgraph_msgs/Clock
+  /imu/data           ignition -> ROS   sensor_msgs/Imu
+  /lidar/imu          ignition -> ROS   sensor_msgs/Imu
+  /joint_states       ignition -> ROS   sensor_msgs/JointState
+  /unilidar/cloud/points ignition -> ROS   sensor_msgs/PointCloud2  (remapped to /lidar/points)
+  /model/go2/odometry ignition -> ROS   nav_msgs/Odometry (remapped to /odom_raw for EKF)
   /joint_group_effort_controller/joint_trajectory
-                      ROS → ignition   trajectory_msgs/JointTrajectory
+                      ROS -> ignition   trajectory_msgs/JointTrajectory
 
 NOTE: The Ignition /tf topic is intentionally NOT bridged.
-  ignition-gazebo-odometry-publisher-system publishes an odom→base_link transform
+  ignition-gazebo-odometry-publisher-system publishes an odom->base_link transform
   on the Ignition /tf topic by default.  Bridging it would give base_link two
   parents in the ROS TF tree (base_footprint via static TF and odom via the bridge),
   causing a TF cycle that breaks pointcloud_to_laserscan and slam_toolbox lookups.
-  The full TF tree is provided by EKF (odom→base_footprint), static transforms, and RSP.
+  The full TF tree is provided by EKF (odom->base_footprint), static transforms, and RSP.
 
 Usage:
   ros2 launch go2_sim sim_champ.launch.py
@@ -37,6 +38,7 @@ from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
+    OpaqueFunction,
     TimerAction,
     AppendEnvironmentVariable,
     SetEnvironmentVariable,
@@ -49,14 +51,15 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 def generate_launch_description():
     use_sim_time = LaunchConfiguration("use_sim_time")
+    use_lio = LaunchConfiguration("use_lio")
     standing_height_m = 0.28
     lidar_x_m = 0.28945
     lidar_y_m = 0.0
-    lidar_z_m = standing_height_m - 0.046825
+    lidar_z_in_base_m = -0.046825   # lidar_link z in base_link frame (from go2_sim.urdf.xacro)
 
     go2_sim_dir = get_package_share_directory("go2_sim")
 
-    # ── Resource path setup ────────────────────────────────────────────────
+    # Resource path setup
     # Add the package's share directory to the Ignition Gazebo resource path.
     # This allows Gazebo to find meshes via 'model://go2_sim/...' or 'package://go2_sim/...'.
     # We use both IGN_GAZEBO_RESOURCE_PATH (Fortress) and GZ_SIM_RESOURCE_PATH (Harmonic).
@@ -69,7 +72,7 @@ def generate_launch_description():
         value=[os.path.join(go2_sim_dir, "..")]
     )
 
-    # ── Config file paths ──────────────────────────────────────────────────
+    # Config file paths
     joints_config    = os.path.join(go2_sim_dir, "config", "joints.yaml")
     links_config     = os.path.join(go2_sim_dir, "config", "links.yaml")
     gait_config      = os.path.join(go2_sim_dir, "config", "gait.yaml")
@@ -77,7 +80,7 @@ def generate_launch_description():
     urdf_path        = os.path.join(go2_sim_dir, "urdf", "go2_sim.urdf.xacro")
     world_path       = os.path.join(go2_sim_dir, "worlds", "default.sdf")
 
-    # ── Launch arguments ────────────────────────────────────────────────────
+    # Launch arguments
     declare_use_sim_time = DeclareLaunchArgument(
         "use_sim_time", default_value="true",
         description="Use simulation (Gazebo) clock if true",
@@ -85,6 +88,11 @@ def generate_launch_description():
     declare_rviz = DeclareLaunchArgument(
         "rviz", default_value="false",
         description="Launch RViz2 (no config bundled; add -d <config> manually)",
+    )
+    declare_use_lio = DeclareLaunchArgument(
+        "use_lio",
+        default_value="false",
+        description="Enable EKF fusion with optional /lidar_odom input",
     )
     declare_robot_name = DeclareLaunchArgument(
         "robot_name", default_value="go2", description="Robot name in Gazebo"
@@ -144,7 +152,7 @@ def generate_launch_description():
         value=LaunchConfiguration("sim_partition"),
     )
 
-    # ── Robot description (processed at launch time by xacro) ──────────────
+    # Robot description (processed at launch time by xacro)
     robot_description_content = ParameterValue(
         Command([
             "xacro ", urdf_path,
@@ -154,7 +162,7 @@ def generate_launch_description():
     )
     robot_description = {"robot_description": robot_description_content}
 
-    # ── Nodes ──────────────────────────────────────────────────────────────
+    # Nodes
 
     robot_state_publisher = Node(
         package="robot_state_publisher",
@@ -185,13 +193,10 @@ def generate_launch_description():
         remappings=[("/cmd_vel/smooth", "/cmd_vel_safe")],
     )
 
-    # EKF: base_footprint → odom (global odometry, publishes /odom + TF)
-    footprint_to_odom_ekf = Node(
-        package="robot_localization",
-        executable="ekf_node",
-        name="footprint_to_odom_ekf",
-        output="screen",
-        parameters=[
+    # EKF: base_footprint -> odom (global odometry, publishes /odom + TF)
+    # When use_lio:=true, fuse /lidar_odom as odom1 to improve drift behavior.
+    def maybe_create_ekf(context):
+        ekf_params = [
             {"use_sim_time": use_sim_time},
             {"base_link_frame": "base_footprint"},
             {"odom_frame": "odom"},
@@ -199,8 +204,8 @@ def generate_launch_description():
             {"publish_tf": True},
             {"frequency": 50.0},
             {"two_d_mode": True},
-            {"odom0": "/odom/raw"},
-            # In simulation /odom/raw is already world-referenced odometry from
+            {"odom0": "/odom_raw"},
+            # In simulation /odom_raw is already world-referenced odometry from
             # Ignition's odometry publisher. Fuse its planar pose directly so
             # /odom follows the robot's actual motion instead of dead-reckoning
             # only from twist.
@@ -219,15 +224,49 @@ def generate_launch_description():
                              False, False, True,
                              False, False, False]},
             {"imu0_remove_gravitational_acceleration": True},
-        ],
-        remappings=[("odometry/filtered", "odom")],
-    )
+        ]
 
-    # Static transform: base_footprint → base_link
+        if use_lio.perform(context).lower() == "true":
+            ekf_params.extend([
+                {"odom1": "/lidar_odom"},
+                {"odom1_config": [True, True, False,
+                                  False, False, True,
+                                  True, True, False,
+                                  False, False, True,
+                                  False, False, False]},
+                # Fuse DLIO as an absolute pose source; differential mode can
+                # amplify startup instability when calibration is active.
+                {"odom1_differential": False},
+                {"odom1_relative": False},
+                {"odom1_queue_size": 10},
+            ])
+
+        return [
+            Node(
+                package="robot_localization",
+                executable="ekf_node",
+                name="footprint_to_odom_ekf",
+                output="screen",
+                parameters=ekf_params,
+                remappings=[("odometry/filtered", "odom")],
+            )
+        ]
+
+    footprint_to_odom_ekf = OpaqueFunction(function=maybe_create_ekf)
+
+    # Static transform: base_footprint -> base_link
     # The sim URDF (go2_sim.urdf.xacro) has base_link as its root, so Nav2/SLAM need
     # an explicit ground-projection frame bridge. This must preserve the nominal
     # body-center height used everywhere else in the stack; an identity transform
     # incorrectly places lidar_link below the ground plane in the TF tree.
+    #
+    # SIM/REAL ASYMMETRY: On the real Go2, go2_hw_bridge publishes a dynamic
+    # base_footprint->base_link TF that reflects actual IMU roll and pitch from
+    # SportModeState.  Here in simulation we use a fixed z-only static TF
+    # (no roll/pitch component) because CHAMP operates in two_d_mode and the
+    # EKF does not model body tilt.  This means RViz shows the simulated robot
+    # as perfectly level even when climbing ramps; it does not affect Nav2
+    # costmap or SLAM accuracy with gravity-aligned point clouds.
     base_footprint_to_base_link_tf = Node(
         package="tf2_ros",
         name="base_footprint_to_base_link_tf",
@@ -249,14 +288,14 @@ def generate_launch_description():
             "imu_topic":       "/imu/data",
             "parent_frame":    "base_footprint",
             "child_frame":     "lidar_stabilized",
-            "lidar_x_in_base":  lidar_x_m,        # 0.28945 from go2.urdf.xacro
-            "lidar_y_in_base":  lidar_y_m,         # 0.0
-            "lidar_z_in_base": -0.056825,           # lidar_z in base_link from go2_sim.urdf.xacro
-            "standing_height":  standing_height_m,  # 0.28
+            "lidar_x_in_base":  lidar_x_m,           # 0.28945 from go2_sim.urdf.xacro
+            "lidar_y_in_base":  lidar_y_m,           # 0.0
+            "lidar_z_in_base":  lidar_z_in_base_m,   # -0.046825 from go2_sim.urdf.xacro
+            "standing_height":  standing_height_m,   # 0.28
         }],
     )
 
-    # Static transform: map → odom (identity; nav stack expects this until SLAM publishes)
+    # Static transform: map -> odom (identity; nav stack expects this until SLAM publishes)
     map_to_odom_tf = Node(
         package="tf2_ros",
         name="map_to_odom_tf",
@@ -270,7 +309,7 @@ def generate_launch_description():
         ],
     )
 
-    # RViz2 (optional; no bundled config — pass -d <config> via extra_args if needed)
+    # RViz2 (optional; no bundled config - pass -d <config> via extra_args if needed)
     rviz2 = Node(
         package="rviz2",
         executable="rviz2",
@@ -279,7 +318,7 @@ def generate_launch_description():
         parameters=[{"use_sim_time": use_sim_time}],
     )
 
-    # ── Gazebo Fortress (ign gazebo) ────────────────────────────────────────
+    # Gazebo Fortress (ign gazebo)
     pkg_ros_ign_gazebo = get_package_share_directory("ros_ign_gazebo")
 
     ign_gazebo_gui = IncludeLaunchDescription(
@@ -325,22 +364,23 @@ def generate_launch_description():
         ],
     )
 
-    # ── ros_ign_bridge: topic bridges between Ignition and ROS 2 ────────────
+    # ros_ign_bridge: topic bridges between Ignition and ROS 2
     #
     # Bridge direction syntax (Fortress):
-    #   topic@ros_type[ignition_type   — ignition → ROS  (unidirectional)
-    #   topic@ros_type]ignition_type   — ROS → ignition  (unidirectional)
-    #   topic@ros_type@ignition_type   — bidirectional
+    #   topic@ros_type[ignition_type   - ignition -> ROS  (unidirectional)
+    #   topic@ros_type]ignition_type   - ROS -> ignition  (unidirectional)
+    #   topic@ros_type@ignition_type   - bidirectional
     #
     # Message namespace: ignition.msgs.*  (NOT gz.msgs.* which is Harmonic)
     #
     # Required topics for nav stack:
-    #   /joint_states   → robot_state_publisher, CHAMP
-    #   /imu/data       → EKF
-    #   /lidar/points   → voxel_layer, pointcloud_to_laserscan  (bridged from /unilidar/cloud/points)
-    #   /odom/raw       → EKF footprint_to_odom
-    #   /clock          → use_sim_time
-    #   /joint_group_effort_controller/joint_trajectory → effort controller
+    #   /joint_states   -> robot_state_publisher, CHAMP
+    #   /imu/data       -> EKF
+    #   /lidar/imu      -> LIO (LiDAR-integrated IMU)
+    #   /lidar/points   -> voxel_layer, pointcloud_to_laserscan  (bridged from /unilidar/cloud/points)
+    #   /odom_raw       -> EKF footprint_to_odom
+    #   /clock          -> use_sim_time
+    #   /joint_group_effort_controller/joint_trajectory -> effort controller
     #   NOTE: /tf is NOT bridged (see module docstring)
     gazebo_bridge = Node(
         package="ros_ign_bridge",
@@ -349,20 +389,19 @@ def generate_launch_description():
         output="screen",
         parameters=[{"use_sim_time": use_sim_time}],
         arguments=[
-            # ── Ignition → ROS ──────────────────────────────────────────
+            # Ignition -> ROS
             "/clock@rosgraph_msgs/msg/Clock[ignition.msgs.Clock",
             "/imu/data@sensor_msgs/msg/Imu[ignition.msgs.IMU",
-            # NOTE: /tf is intentionally absent — see module docstring for rationale.
+            "/lidar/imu@sensor_msgs/msg/Imu[ignition.msgs.IMU",
+            # NOTE: /tf is intentionally absent - see module docstring for rationale.
             [
                 "/world/",
                 LaunchConfiguration("world_name"),
                 "/model/go2/joint_state@sensor_msgs/msg/JointState[ignition.msgs.Model",
             ],
-            # FIX(agent1): bridge the sensor's native Ignition topic /unilidar/cloud/points;
-            # remapping below redirects it to /lidar/points for the nav stack.
             "/unilidar/cloud/points@sensor_msgs/msg/PointCloud2[ignition.msgs.PointCloudPacked",
             "/model/go2/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry",
-            # ── ROS → Ignition ──────────────────────────────────────────
+            # ROS -> Ignition
             "/joint_group_effort_controller/joint_trajectory"
             "@trajectory_msgs/msg/JointTrajectory]ignition.msgs.JointTrajectory",
         ],
@@ -372,8 +411,7 @@ def generate_launch_description():
                 LaunchConfiguration("world_name"),
                 "/model/go2/joint_state",
             ], "/joint_states"),
-            ("/model/go2/odometry", "/odom/raw"),
-            # FIX(agent1): remap Ignition sensor topic to the ROS nav stack topic name
+            ("/model/go2/odometry", "/odom_raw"),
             ("/unilidar/cloud/points", "/lidar/points"),
         ],
     )
@@ -395,7 +433,7 @@ def generate_launch_description():
         }],
     )
 
-    # ── Controller spawners (delayed to allow Gazebo + ign_ros2_control init) ──
+    # Controller spawners (delayed to allow Gazebo + ign_ros2_control init)
     # controller_manager is brought up by ign_ros2_control-system plugin in the URDF.
     # Delays are empirical: Fortress + ign_ros2_control typically takes 15-20 s from spawn
     # to ready.  The spawner's --controller-manager-timeout 120 provides an additional
@@ -432,7 +470,7 @@ def generate_launch_description():
         ],
     )
 
-    # ── Launch description ─────────────────────────────────────────────────
+    # Launch description
     return LaunchDescription([
         # Resource path environment variables
         ign_resource_path,
@@ -441,6 +479,7 @@ def generate_launch_description():
         # Arguments
         declare_use_sim_time,
         declare_rviz,
+        declare_use_lio,
         declare_robot_name,
         declare_ros_control_file,
         declare_world,

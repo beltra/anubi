@@ -1,7 +1,7 @@
-# Topic Map — Anubi Autonomy Stack
+# Topic Map - Anubi Autonomy Stack
 
-Last updated: 2026-03-29
-Branch: `feature/stvl-local-costmap`
+Last updated: 2026-04-21
+Branch: `feat/lio`
 
 This document is the authoritative reference for all ROS 2 topics in the anubi stack.
 "Sim name" and "HW name" columns are filled only when the two differ.
@@ -12,9 +12,11 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 
 | Topic | Type | Publisher | Consumer(s) | Sim | HW | Notes |
 |-------|------|-----------|-------------|-----|----|-------|
-| `/lidar/points` | `sensor_msgs/PointCloud2` | gazebo_bridge (sim) / Unitree L1 LiDAR (HW) | `pointcloud_to_laserscan`, Nav2 costmap layers | same | same | Frame: `lidar_link`. Rate: 10 Hz. |
-| `/scan` | `sensor_msgs/LaserScan` | `pointcloud_to_laserscan` | `slam_toolbox`, `obstacle_layer` | same | same | Derived from `/lidar/points` horizontal slice (±10 mm around equator). |
-| `/imu/data` | `sensor_msgs/Imu` | gazebo_bridge (sim only) | EKF (`footprint_to_odom_ekf`) | published | absent | SIM-ONLY. HW bridge reads IMU internally from SportModeState; does not republish on a ROS topic. |
+| `/lidar/points` | `sensor_msgs/PointCloud2` | gazebo_bridge (sim) / `robot_lio` relay of `/utlidar/cloud` (HW) | `cloud_self_filter` (sim), `distortion_corrector` (HW), `dlio_odom_node` (opt.) | same | same | Frame: `lidar_link`. Rate: 10 Hz. Raw sensor output - **not consumed directly by Nav2 or SLAM**. |
+| `/lidar/points_undistorted` | `sensor_msgs/PointCloud2` | `cloud_self_filter` (sim) / `distortion_corrector` (HW) | `pointcloud_to_laserscan`, Nav2 STVL costmap | same | same | Frame: `lidar_stabilized`. Gravity-aligned processed cloud. Input to all downstream consumers. |
+| `/scan` | `sensor_msgs/LaserScan` | `pointcloud_to_laserscan` | `slam_toolbox`, `obstacle_layer` | same | same | Derived from `/lidar/points` horizontal slice (+/-10 mm around equator). |
+| `/imu/data` | `sensor_msgs/Imu` | gazebo_bridge (sim) / `go2_hw_bridge` (HW) | EKF (`footprint_to_odom_ekf` in sim, `ekf_filter_node` on HW) | published | published | Body IMU in `imu_link`. Not the LiDAR IMU. |
+| `/lidar/imu` | `sensor_msgs/Imu` | `robot_lio` relay (sim/HW) | optional LIO backend | same | same | Canonical LiDAR-integrated IMU topic for LIO. |
 | `/joint_states` | `sensor_msgs/JointState` | `joint_state_publisher_system` (sim only) | `robot_state_publisher`, CHAMP | published | absent | SIM-ONLY. HW uses Sport Mode API; no joint-level state is published on real robot. |
 
 ---
@@ -23,8 +25,9 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 
 | Topic | Type | Publisher | Consumer(s) | Sim | HW | Notes |
 |-------|------|-----------|-------------|-----|----|-------|
-| `/odom/raw` | `nav_msgs/Odometry` | CHAMP `quadruped_controller` (via Gazebo bridge) | `footprint_to_odom_ekf` | published | absent | SIM-ONLY. CHAMP raw wheel-equivalent odometry before EKF fusion. |
-| `/odom` | `nav_msgs/Odometry` | `footprint_to_odom_ekf` (sim) / `go2_hw_bridge` (HW) | `slam_toolbox`, Nav2 | same | same | frame_id=`odom`, child_frame_id=`base_footprint`. Rate: 50 Hz. |
+| `/odom_raw` | `nav_msgs/Odometry` | CHAMP odom bridge (sim) / `go2_hw_bridge` (HW) | EKF fusion node | same | same | Raw body odometry input to EKF. |
+| `/lidar_odom` | `nav_msgs/Odometry` | optional LIO backend (via `robot_lio`) | EKF fusion node | optional | optional | Disabled by default (`use_lio:=false`). |
+| `/odom` | `nav_msgs/Odometry` | `footprint_to_odom_ekf` (sim) / `ekf_filter_node` (HW) | `slam_toolbox`, Nav2 | same | same | Fused odometry output. frame_id=`odom`, child_frame_id=`base_footprint`. |
 | `/map` | `nav_msgs/OccupancyGrid` | `slam_toolbox` | Nav2 `map_server`, RViz | same | same | Published during mapping mode; used as localization reference in localization mode. |
 
 ---
@@ -33,11 +36,12 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 
 | Transform | Publisher | Sim | HW | Notes |
 |-----------|-----------|-----|----|-------|
-| `map → odom` | `slam_toolbox` | same | same | Published by slam_toolbox during active SLAM. Static identity fallback available via `publish_map_to_odom_tf:=true` launch arg (for testing without SLAM). |
-| `odom → base_footprint` | `footprint_to_odom_ekf` (sim) / `go2_hw_bridge` (HW) | same | same | Different publisher, identical transform semantics. |
-| `base_footprint → base_link` | `static_transform_publisher` (identity, 0 0 0) | same | same | Nav2 planar convention: base_footprint at ground level, base_link at `standing_height` (0.28 m). |
-| `base_link → lidar_link` | URDF / `robot_state_publisher` | same | same | xyz=(0.28945, 0, −0.046825), rpy=(0, 0, 0). |
-| `base_link → imu_link` | URDF / `robot_state_publisher` | same | same | Identity (co-located with base_link). |
+| `map -> odom` | `slam_toolbox` | same | same | Published by slam_toolbox during active SLAM. Static identity fallback available via `publish_map_to_odom_tf:=true` launch arg (for testing without SLAM). |
+| `odom -> base_footprint` | EKF (`footprint_to_odom_ekf` in sim / `ekf_filter_node` on HW) | same | same | EKF owns this TF in both environments. |
+| `base_footprint -> base_link` | `static_transform_publisher` (sim) / `go2_hw_bridge` (HW) | same | same | Sim uses fixed standing-height offset; HW includes body roll/pitch plus standing height. |
+| `base_link -> lidar_link` | URDF / `robot_state_publisher` | same | same | xyz=(0.28945, 0, -0.046825), rpy=(pi, -0.26180, 0). Sensor is mounted **upside-down** with ~15 deg forward pitch. |
+| `base_link -> imu_link` | URDF / `robot_state_publisher` | same | same | Identity (co-located with base_link). |
+| `lidar_link -> lidar_imu_link` | URDF / `robot_state_publisher` (sim) / `robot_lio` static TF (HW) | URDF | robot_lio TF | Unitree UniLidar IMU offset: xyz=(-0.007698, -0.014655, 0.00667). Sim: always in URDF. HW: published by `robot_lio` (always included from `go2_bringup`; absent when using `go2_hardware.launch.py` alone). |
 
 ---
 
@@ -72,7 +76,7 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 
 | Topic | Type | Publisher | Consumer(s) | Notes |
 |-------|------|-----------|-------------|-------|
-| `/joint_group_effort_controller/joint_trajectory` | `trajectory_msgs/JointTrajectory` | CHAMP `quadruped_controller` | `ign_ros2_control` effort controller | CHAMP → ign_ros2_control joint effort command channel. No HW equivalent. |
+| `/joint_group_effort_controller/joint_trajectory` | `trajectory_msgs/JointTrajectory` | CHAMP `quadruped_controller` | `ign_ros2_control` effort controller | CHAMP -> ign_ros2_control joint effort command channel. No HW equivalent. |
 | `/debug/lidar/points_filtered` | `sensor_msgs/PointCloud2` | `cloud_self_filter` (opt-in) | RViz | Debug only. Enabled via `launch_cloud_filter:=true`. Self-filtered view of `/lidar/points`. |
 
 ---
@@ -83,7 +87,7 @@ These follow standard Nav2 Humble topic naming; listed here for completeness.
 
 | Topic | Type | Notes |
 |-------|------|-------|
-| `/goal_pose` | `geometry_msgs/PoseStamped` | Nav2 goal input (RViz → Nav2). |
+| `/goal_pose` | `geometry_msgs/PoseStamped` | Nav2 goal input (RViz -> Nav2). |
 | `/plan` | `nav_msgs/Path` | Global planner output. |
 | `/local_plan` | `nav_msgs/Path` | DWB local planner trajectory. |
 | `/costmap_raw` | `nav2_msgs/Costmap` | Raw costmap for debugging. |

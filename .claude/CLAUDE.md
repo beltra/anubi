@@ -46,6 +46,11 @@ The following skills are available in `.claude/skills`:
 - Use skills as guidance, but adapt examples to the current package layout.
 - Keep robot-facing contracts aligned with docs (`docs/topic_map.md`, `docs/PROJECT_SPECS.md`).
 
+## Agent Maintenance Rule
+
+- When you add or change any ROS2 launch node/process (new `Node(...)`, changed `executable`, or new included launch), update `scripts/kill_ros_nodes.sh` in the same change so cleanup remains complete.
+- Treat `scripts/kill_ros_nodes.sh` as part of launch/runtime contract maintenance, not optional follow-up.
+
 ## Getting Started
 
 To use a skill, read its file in `.claude/skills/<skill_name>/SKILL.md` and adapt templates to the target package.

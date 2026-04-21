@@ -20,7 +20,7 @@ collision_monitor:
 
     # Explicit QoS keeps the LiDAR bridge and collision monitor on BEST_EFFORT.
     qos_overrides:
-      /scan:
+      /lidar/points_undistorted:
         subscription:
           reliability: best_effort
           durability: volatile
@@ -31,7 +31,7 @@ collision_monitor:
       type: "circle"
       radius: 1.0
       action_type: "slowdown"
-      slowdown_ratio: 0.9
+      slowdown_ratio: 0.95
       max_points: 0
       visualize: True
       polygon_pub_topic: "/collision_monitor/approach_zone"
@@ -39,9 +39,9 @@ collision_monitor:
 
     SlowZone:
       type: "circle"
-      radius: 0.6
+      radius: 0.25
       action_type: "slowdown"
-      slowdown_ratio: 0.6
+      slowdown_ratio: 0.2
       max_points: 0
       visualize: True
       polygon_pub_topic: "/collision_monitor/slow_zone"
@@ -49,7 +49,7 @@ collision_monitor:
 
     StopZone:
       type: "circle"
-      radius: 0.25
+      radius: 0.1
       action_type: "stop"
       max_points: 0
       visualize: True
@@ -57,9 +57,9 @@ collision_monitor:
       enabled: True
 
     # NOTE: Nav2 Humble collision_monitor only supports pointcloud/scan/range sources.
-    # The "costmap" source type is Iron+ only — do not add it here.
-    observation_sources: ["scan"]
-    scan:
-      type: "scan"
-      topic: "/scan"
+    # The "costmap" source type is Iron+ only - do not add it here.
+    observation_sources: ["pointcloud"]
+    pointcloud:
+      type: "pointcloud"
+      topic: "/lidar/points_undistorted"
       enabled: True

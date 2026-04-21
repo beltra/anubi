@@ -1,33 +1,12 @@
 # nav2_params.yaml
-# Robot-agnostic Nav2 configuration.
-# Tuned for a Unitree Go2 quadruped navigation stack.
-#
-# Localisation is provided by slam_toolbox (map → odom TF).
-# Odometry (odom → base_footprint) is provided by go2_hw_bridge.
-#
-# ASSUMPTIONS:
-#   A-NAV-1: Robot is configured as holonomic in DWB with constrained lateral motion.
-#   A-NAV-2: Deskewed LiDAR PointCloud2 on /lidar/points_undistorted is used for costmaps.
-#            LaserScan on /scan (lidar_stabilized frame) is used by slam_toolbox.
-#   A-NAV-3: map → odom is published by slam_toolbox (not AMCL).
-#             AMCL section below is kept for reference but excluded from lifecycle.
-#   A-NAV-4: Nav2 Humble publishes geometry_msgs/Twist on /cmd_vel.
-#             go2_hw_bridge converts this directly to sport API Move commands.
-#
-# NOTE — use_sim_time: true appears on every node below.
-#   nav2_bringup's RewrittenYaml rewrites ALL occurrences of use_sim_time at
-#   launch time when use_sim_time:=true is passed (sim) or false (hardware).
-#   The value written here is irrelevant at runtime; it is always overridden.
-#
-# NOTE — lifecycle_manager section below is NOT read by nav2_bringup.
-#   navigation_launch.py creates its own lifecycle_manager node with a hardcoded
-#   node list.  The section is kept here for documentation purposes only.
+# Default STVL profile: SmacPlannerLattice + MPPI.
+# map->odom comes from slam_toolbox. odom->base_footprint comes from robot odometry.
+# use_sim_time is rewritten at launch.
+# lifecycle_manager below is reference only when using nav2_bringup.
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# amcl — Adaptive Monte Carlo Localisation
+# amcl - Adaptive Monte Carlo Localization
 # Used when navigating on a pre-built map.  Disabled when using SLAM-only mode.
 # Localization tuning backlog: tune alpha, laser, and initial pose params for Go2 IMU motion.
-# ═══════════════════════════════════════════════════════════════════════════════
 amcl:
   ros__parameters:
     use_sim_time: true
@@ -53,7 +32,7 @@ amcl:
     odom_frame_id: "odom"
     pf_err: 0.05
     pf_z: 0.99
-    recovery_alpha_fast: 0.0  # KLD recovery disabled — slam_toolbox owns localisation, AMCL is reference only
+    recovery_alpha_fast: 0.0
     recovery_alpha_slow: 0.0
     resample_interval: 1
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
@@ -69,17 +48,13 @@ amcl:
     z_short: 0.05
     scan_topic: scan
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # map_server
-# ═══════════════════════════════════════════════════════════════════════════════
 map_server:
   ros__parameters:
     use_sim_time: true
     yaml_filename: ""  # Overridden via launch argument --map
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # map_saver
-# ═══════════════════════════════════════════════════════════════════════════════
 map_saver:
   ros__parameters:
     use_sim_time: true
@@ -88,10 +63,8 @@ map_saver:
     occupied_thresh_default: 0.65
     map_subscribe_transient_local: true
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # planner_server
 # Uses SmacPlannerLattice for reliable global path planning in grid maps.
-# ═══════════════════════════════════════════════════════════════════════════════
 planner_server:
   ros__parameters:
     use_sim_time: true
@@ -108,15 +81,15 @@ planner_server:
       analytic_expansion_ratio: 3.5
       analytic_expansion_max_length: 3.0
       reverse_penalty: 2.0        # Go2 can walk backward but forward is preferred
-      change_penalty: 0.05        # low: direction changes are cheap for legged robots
-      non_straight_penalty: 1.05  # very low: diagonal travel is fine
+      change_penalty: 0.15        # low: direction changes are cheap for legged robots
+      non_straight_penalty: 1.50  # very low: diagonal travel is fine
       # Increase obstacle-cost sensitivity so global plans stay farther from walls.
-      cost_penalty: 3.0
+      cost_penalty: 2.5
       rotation_penalty: 5.0       # moderate: rotation costs energy but is not forbidden
       retrospective_penalty: 0.025
-      lattice_filepath: "./lattice_omni_5.json"        
+      lattice_filepath: "./lattice_omni_5.json"
       lookup_table_size: 20.0
-      cache_obstacle_heuristic: false
+      cache_obstacle_heuristic: true
       allow_reverse_expansion: false
       smooth_path: true
       smoother:
@@ -126,47 +99,32 @@ planner_server:
         tolerance: 1.0e-10
         do_refinement: true
 
-# # ═══════════════════════════════════════════════════════════════════════════════
-# # smoother_server
-# # ═══════════════════════════════════════════════════════════════════════════════
-# smoother_server:
-#   ros__parameters:
-#     use_sim_time: true
-#     smoother_plugins: ["simple_smoother"]
-#     simple_smoother:
-#       plugin: "nav2_smoother::SimpleSmoother"
-#       tolerance: 1.0e-10
-#       max_its: 1000
-#       do_refinement: true
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # controller_server
-# Uses DWB (Dynamic Window Approach with critics) as the local trajectory planner.
-# ═══════════════════════════════════════════════════════════════════════════════
+# Uses MPPI as the local trajectory planner.
 controller_server:
   ros__parameters:
     use_sim_time: true
-    controller_frequency: 20.0
+    # Keep period (1/frequency) comfortably below model_dt (0.05 s).
+    controller_frequency: 25.0
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
-    failure_tolerance: 0.5      # was 0.3 (6 cycles) — too short; 0.5 s = 10 cycles before recovery
+    failure_tolerance: 0.5      # was 0.3 (6 cycles) - too short; 0.5 s = 10 cycles before recovery
     progress_checker_plugin: "progress_checker"
     goal_checker_plugins: ["general_goal_checker"]
-    # controller_plugins: ["FollowPath", "FollowPathDWB"]
     controller_plugins: ["FollowPath"]
 
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
       required_movement_radius: 0.15
-      movement_time_allowance: 15.0
+      movement_time_allowance: 20.0
 
     general_goal_checker:
       # Keep checking XY while aligning yaw to prevent orbiting around the goal.
       stateful: false
       plugin: "nav2_controller::SimpleGoalChecker"
       xy_goal_tolerance:  0.25
-      yaw_goal_tolerance: 0.35
+      yaw_goal_tolerance: 0.45
 
     FollowPath:
       plugin: "nav2_mppi_controller::MPPIController"
@@ -189,7 +147,7 @@ controller_server:
       # Velocity and acceleration envelopes match the maintained Go2 stack.
       vx_max: 1.5
       vx_min: 0.0
-      vy_max: 0.4
+      vy_max: 0.6
       wz_max: 1.2
       ax_max: 0.7
       ax_min: -1.0
@@ -275,67 +233,8 @@ controller_server:
         trajectory_step: 5
         time_step: 3
 
-    # FollowPathDWB:
-    #   plugin: "dwb_core::DWBLocalPlanner"
-    #   debug_trajectory_details: false
-    #   # Go2 can command lateral velocity; keep moderate lateral limits for stability.
-    #   holonomic: true
-    #   # DWB does not define a separate footprint polygon here; it inherits
-    #   # collision geometry from the active local/global costmap footprint.
-
-    #   # Velocity limits — matched to gait.yaml and go2_params.yaml limits
-    #   min_vel_x: 0.0
-    #   min_vel_y: -0.4
-    #   max_vel_x: 1.5
-    #   max_vel_y: 0.4
-    #   min_vel_theta: 0.0
-    #   max_vel_theta: 1.2   # matches gait.yaml max_angular_velocity_z
-    #   min_speed_xy: 0.0
-    #   max_speed_xy: 1.5
-    #   min_speed_theta: 0.05
-
-    #   # Acceleration limits
-    #   acc_lim_x: 0.7
-    #   acc_lim_y: 0.5
-    #   acc_lim_theta: 1.0
-    #   decel_lim_x: -1.0
-    #   decel_lim_y: -0.7
-    #   decel_lim_theta: -1.5
-
-    #   # Sampling — extra vy samples for richer holonomic coverage
-    #   vx_samples: 14
-    #   vy_samples: 8
-    #   vtheta_samples: 14
-    #   sim_time: 1.1
-    #   linear_granularity: 0.05
-    #   angular_granularity: 0.025
-
-    #   transform_tolerance: 0.5
-    #   xy_goal_tolerance: 0.25
-    #   trans_stopped_velocity: 0.05
-    #   short_circuit_trajectory_evaluation: true
-    #   stateful: true
-
-    #   # DWB critics
-    #   critics: ["RotateToGoal", "Oscillation", "ObstacleFootprint", "GoalAlign",
-    #             "PathAlign", "PathDist", "GoalDist"]
-
-    #   # Raise near-obstacle penalty to better match collision monitor safety envelope.
-    #   ObstacleFootprint.scale: 3.0
-    #   PathAlign.scale: 16.0
-    #   PathAlign.forward_point_distance: 0.1
-    #   GoalAlign.scale: 12.0
-    #   GoalAlign.forward_point_distance: 0.1
-    #   PathDist.scale: 20.0
-    #   GoalDist.scale: 14.0
-    #   RotateToGoal.scale: 12.0
-    #   RotateToGoal.slowing_factor: 5.0
-    #   RotateToGoal.lookahead_time: -1.0  # -1.0 = auto-compute from current speed
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # local_costmap
 # Uses STVL for rolling 3-D obstacle handling from the LiDAR point cloud.
-# ═══════════════════════════════════════════════════════════════════════════════
 local_costmap:
   local_costmap:
     ros__parameters:
@@ -355,7 +254,7 @@ local_costmap:
             reliability: best_effort
             durability: volatile
 
-      # Physical standing envelope: 0.70 m length (±0.35) × 0.31 m width (±0.155).
+      # Physical standing envelope: 0.70 m length (+/-0.35) x 0.31 m width (+/-0.155).
       # Footprint polygon represents actual robot extents when standing.
       footprint: "[ [-0.35, -0.155], [-0.35, 0.155], [0.35, 0.155], [0.35, -0.155] ]"
       footprint_padding: 0.03
@@ -365,7 +264,7 @@ local_costmap:
       stvl_layer:
         plugin: "spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer"
         enabled: true
-        voxel_decay: 0.5          # fast ghost clearing — ≈1 gait cycle instead of 4
+        voxel_decay: 2.0
         decay_model: 0            # 0 = linear decay
         voxel_size: 0.05
         track_unknown_space: false
@@ -375,7 +274,7 @@ local_costmap:
         combination_method: 1
         origin_z: 0.0
         publish_voxel_map: true
-        transform_tolerance: 0.1  # tighter TF lookup avoids using stale trunk pose
+        transform_tolerance: 0.1
         mapping_mode: false
         map_save_duration: 60.0
         observation_sources: lidar_mark
@@ -384,16 +283,16 @@ local_costmap:
           topic: /lidar/points_undistorted
           marking: true
           clearing: true
-          obstacle_range: 8.0
-          raytrace_range: 10.0
+          obstacle_range: 6.0
+          raytrace_range: 8.0
           # Lower threshold to keep short obstacles (pallets, low boxes) visible.
-          min_obstacle_height: 0.10
+          min_obstacle_height: 0.12
           max_obstacle_height: 2.3
           expected_update_rate: 0.0      # 0.0 = accept updates at any rate (LiDAR publishes at 10 Hz)
           observation_persistence: 0.0   # 0.0 = discard raw observations immediately; voxel_decay handles temporal filtering
           inf_is_valid: false
           filter: "voxel"
-          voxel_min_points: 2       # require 2 hits before marking — rejects single-point ghost returns
+          voxel_min_points: 2       # require 2 hits before marking - rejects single-point ghost returns
           clear_after_reading: true
           sensor_origin_frame: lidar_stabilized  # gravity-levelled frame; imu_stabilized_tf tracks physical sensor position
           max_z: 2.5    # STVL voxel volume upper bound (m above lidar_link origin; covers standing humans)
@@ -404,24 +303,19 @@ local_costmap:
         plugin: "nav2_costmap_2d::InflationLayer"
         # Wider + softer inflation gradient keeps local trajectories farther from obstacles.
         cost_scaling_factor: 2.8
-        inflation_radius: 0.65
+        inflation_radius: 0.60
         inflate_unknown: false
         inflate_around_unknown: false
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # global_costmap
-# Static map layer + obstacle overlay from /scan.
-# Assumption A-NAV-3: a map YAML file is provided at launch time.
-# For mapless / SLAM-only operation, comment out the static_layer plugin.
-# ═══════════════════════════════════════════════════════════════════════════════
+# Global obstacle costmap from /lidar/points_undistorted.
 global_costmap:
   global_costmap:
     ros__parameters:
       use_sim_time: true
       global_frame: map
       robot_base_frame: base_footprint
-      # FIX(agent3): set rolling_window: true for SLAM mode (static_layer removed from plugins).
-      # For localization mode, set false and restore static_layer plugin.
+
       rolling_window: true
       width: 30
       height: 30
@@ -439,11 +333,6 @@ global_costmap:
       footprint: "[ [-0.35, -0.155], [-0.35, 0.155], [0.35, 0.155], [0.35, -0.155] ]"
       footprint_padding: 0.03
 
-      # FIX(agent3): SLAM mode — rolling_window: true is set above; static_layer removed here
-      # because Nav2 Humble ignores the static layer when rolling_window: true, causing a
-      # silent conflict. For localization mode (pre-built map + AMCL), set rolling_window: false
-      # and restore: plugins: ["static_layer", "voxel_layer", "obstacle_layer", "inflation_layer"]
-      # and re-add the static_layer block below.
       plugins: ["voxel_layer", "inflation_layer"]
 
       voxel_layer:
@@ -453,11 +342,11 @@ global_costmap:
         footprint_clearing_enabled: true
         origin_z: 0.0
         z_resolution: 0.05
-        z_voxels: 16
-        min_obstacle_height: 0.10
+        z_voxels: 20
+        min_obstacle_height: 0.15
         max_obstacle_height: 2.3
         unknown_threshold: 15
-        mark_threshold: 0
+        mark_threshold: 1
         combination_method: 1
         observation_sources: cloud
         cloud:
@@ -465,12 +354,12 @@ global_costmap:
           data_type: "PointCloud2"
           clearing: true
           marking: true
-          min_obstacle_height: 0.10
-          max_obstacle_height: 2.5
+          min_obstacle_height: 0.15
+          max_obstacle_height: 2.3
           obstacle_min_range: 0.15
-          obstacle_max_range: 8.0
+          obstacle_max_range: 6.0
           raytrace_min_range: 0.05
-          raytrace_max_range: 10.0
+          raytrace_max_range: 8.0
           inf_is_valid: false
           expected_update_rate: 10.0
 
@@ -482,9 +371,7 @@ global_costmap:
         inflate_unknown: false
         inflate_around_unknown: false
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # bt_navigator
-# ═══════════════════════════════════════════════════════════════════════════════
 bt_navigator:
   ros__parameters:
     use_sim_time: true
@@ -500,13 +387,12 @@ bt_navigator:
       plugin: "nav2_bt_navigator/NavigateToPoseNavigator"
     navigate_through_poses:
       plugin: "nav2_bt_navigator/NavigateThroughPosesNavigator"
-    # Default Nav2 BT — handles replanning and recovery automatically
+    # Default Nav2 BT - handles replanning and recovery automatically
     default_nav_to_pose_bt_xml: "/opt/ros/humble/share/nav2_bt_navigator/behavior_trees/navigate_to_pose_w_replanning_and_recovery.xml"
     default_nav_through_poses_bt_xml: "/opt/ros/humble/share/nav2_bt_navigator/behavior_trees/navigate_through_poses_w_replanning_and_recovery.xml"
     # Plugin list verified against libraries present in ros-humble-navigation2.
     # Checked via: find /opt/ros/humble/lib -name "libnav2*bt*" | sort
     plugin_lib_names:
-      # ── Action nodes ─────────────────────────────────────────────────────
       - nav2_compute_path_to_pose_action_bt_node
       - nav2_compute_path_through_poses_action_bt_node
       - nav2_smooth_path_action_bt_node
@@ -528,7 +414,6 @@ bt_navigator:
       - nav2_remove_passed_goals_action_bt_node
       - nav2_navigate_to_pose_action_bt_node
       - nav2_navigate_through_poses_action_bt_node
-      # ── Condition nodes ───────────────────────────────────────────────────
       - nav2_is_stuck_condition_bt_node
       - nav2_goal_reached_condition_bt_node
       - nav2_goal_updated_condition_bt_node
@@ -538,7 +423,6 @@ bt_navigator:
       - nav2_transform_available_condition_bt_node
       - nav2_time_expired_condition_bt_node
       - nav2_distance_traveled_condition_bt_node
-      # ── Decorator / control nodes ─────────────────────────────────────────
       - nav2_rate_controller_bt_node
       - nav2_distance_controller_bt_node
       - nav2_speed_controller_bt_node
@@ -547,16 +431,13 @@ bt_navigator:
       - nav2_pipeline_sequence_bt_node
       - nav2_round_robin_node_bt_node
       - nav2_single_trigger_bt_node
-      # ── Selector nodes ────────────────────────────────────────────────────
       - nav2_goal_checker_selector_bt_node
       - nav2_controller_selector_bt_node
       - nav2_planner_selector_bt_node
       - nav2_smoother_selector_bt_node
       - nav2_progress_checker_selector_bt_node
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # behavior_server  (recovery behaviours)
-# ═══════════════════════════════════════════════════════════════════════════════
 behavior_server:
   ros__parameters:
     use_sim_time: true
@@ -585,9 +466,7 @@ behavior_server:
     assisted_teleop:
       plugin: "nav2_behaviors/AssistedTeleop"
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # waypoint_follower
-# ═══════════════════════════════════════════════════════════════════════════════
 waypoint_follower:
   ros__parameters:
     use_sim_time: true
@@ -600,9 +479,7 @@ waypoint_follower:
       enabled: true
       waypoint_pause_duration: 200
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # velocity_smoother
-# ═══════════════════════════════════════════════════════════════════════════════
 velocity_smoother:
   ros__parameters:
     use_sim_time: true
@@ -619,9 +496,7 @@ velocity_smoother:
     deadband_velocity: [0.02, 0.02, 0.01]
     velocity_timeout: 1.0
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # lifecycle_manager  (navigation)
-# ═══════════════════════════════════════════════════════════════════════════════
 lifecycle_manager:
   ros__parameters:
     use_sim_time: true
