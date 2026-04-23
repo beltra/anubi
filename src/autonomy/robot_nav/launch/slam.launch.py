@@ -1,25 +1,19 @@
 """
-slam.launch.py
-2D SLAM pipeline using slam_toolbox (LGPL-2.1).
+slam.launch.py — 2D SLAM pipeline using slam_toolbox.
 
-Starts:
-  1. distortion_corrector     - deskews /lidar/points into /lidar/points_undistorted
-  2. pointcloud_to_laserscan  - converts /lidar/points_undistorted to /scan (LaserScan)
-  3. slam_toolbox             - async 2D SLAM; mapping or localization mode
-  4. map_saver + lifecycle_manager_localization
-                               keeps Nav2's localization lifecycle panel active.
+Starts: distortion_corrector -> pointcloud_to_laserscan -> slam_toolbox (mapping or localization)
+        + map_saver + lifecycle_manager_localization
 
 Arguments
 ---------
 use_sim_time                : bool   (default: false)
-slam_params                 : str    Path to slam_toolbox YAML params file
-scan_params                 : str    Path to pointcloud_to_laserscan YAML params file
-distortion_params           : str    Path to distortion_corrector YAML params file
+slam_params                 : str    Path to slam_toolbox YAML
+scan_params                 : str    Path to pointcloud_to_laserscan YAML
+distortion_params           : str    Path to distortion_corrector YAML
 slam_mode                   : str    'mapping' (default) | 'localization'
-map                         : str    For localization mode: path to .posegraph file
-autostart                   : bool   Autostart localization lifecycle manager (default: true)
-bypass_distortion_corrector : bool   Skip deskew when an upstream stage already
-                                      publishes /lidar/points_undistorted
+map                         : str    Path to .posegraph file (localization mode)
+autostart                   : bool   (default: true)
+bypass_distortion_corrector : bool   Skip deskew (use in simulation)
 """
 
 import os
@@ -95,7 +89,6 @@ def generate_launch_description():
     is_mapping       = PythonExpression(["'", slam_mode, "' == 'mapping'"])
     is_localization  = PythonExpression(["'", slam_mode, "' == 'localization'"])
 
-    # 1) distortion_corrector
     distortion_corrector = Node(
         package="robot_nav",
         executable="distortion_corrector.py",
@@ -108,7 +101,6 @@ def generate_launch_description():
         condition=UnlessCondition(bypass_distortion_corrector),
     )
 
-    # 2) pointcloud_to_laserscan
     pointcloud_to_laserscan = Node(
         package="pointcloud_to_laserscan",
         executable="pointcloud_to_laserscan_node",
@@ -124,7 +116,6 @@ def generate_launch_description():
         ],
     )
 
-    # 3a) slam_toolbox mapping mode
     slam_mapping = Node(
         package="slam_toolbox",
         executable="async_slam_toolbox_node",
@@ -137,10 +128,6 @@ def generate_launch_description():
         condition=IfCondition(is_mapping),
     )
 
-    # 3b) slam_toolbox localization mode
-    # Used after a map has been saved with:
-    #   ros2 service call /slam_toolbox/serialize_map
-    #   slam_toolbox/srv/SerializePoseGraph "{filename: '/path/to/map'}"
     slam_localization = Node(
         package="slam_toolbox",
         executable="localization_slam_toolbox_node",
@@ -156,7 +143,6 @@ def generate_launch_description():
         condition=IfCondition(is_localization),
     )
 
-    # 4) map_saver + localization lifecycle manager
     map_saver = Node(
         package="nav2_map_server",
         executable="map_saver_server",
@@ -179,7 +165,6 @@ def generate_launch_description():
         parameters=[{
             "use_sim_time": use_sim_time,
             "autostart": autostart,
-            # Keep this manager scoped to map_saver only.
             "node_names": ["map_saver"],
         }],
     )

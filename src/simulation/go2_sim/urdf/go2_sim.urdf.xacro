@@ -44,6 +44,17 @@
   <xacro:arg name="robot_controllers"
              default="$(find go2_sim)/config/ros_control.yaml"/>
 
+  <!-- Real lidar IMU calibration imported from imu_calib_data.yaml -->
+  <xacro:property name="lidar_imu_acc_bias_x" value="-0.801651"/>
+  <xacro:property name="lidar_imu_acc_bias_y" value="1.72345"/>
+  <xacro:property name="lidar_imu_acc_bias_z" value="-0.22166"/>
+  <xacro:property name="lidar_imu_ang_bias_x" value="0.00149071"/>
+  <xacro:property name="lidar_imu_ang_bias_y" value="0.00388548"/>
+  <xacro:property name="lidar_imu_ang_bias_z" value="0.00161095"/>
+  <!-- Derived from ang_z2x_proj=0.143694 and ang_z2y_proj=-0.19373 -->
+  <xacro:property name="lidar_imu_roll" value="0.194961"/>
+  <xacro:property name="lidar_imu_pitch" value="0.144193"/>
+
   <!-- == Include sub-files == -->
   <xacro:include filename="$(find go2_sim)/urdf/const.xacro"/>
   <xacro:include filename="$(find go2_sim)/urdf/materials.xacro"/>
@@ -297,7 +308,7 @@
   <joint name="lidar_to_lidar_imu" type="fixed">
     <parent link="lidar_link"/>
     <child  link="lidar_imu_link"/>
-    <origin xyz="-0.007698 -0.014655 0.00667" rpy="0 0 0"/>
+    <origin xyz="-0.007698 -0.014655 0.00667" rpy="${lidar_imu_roll} ${lidar_imu_pitch} 0"/>
   </joint>
 
   <link name="lidar_imu_link">
@@ -329,14 +340,14 @@
       <ignition_frame_id>lidar_imu_link</ignition_frame_id>
       <imu>
         <angular_velocity>
-          <x><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></x>
-          <y><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></y>
-          <z><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></z>
+          <x><noise type="gaussian"><mean>${lidar_imu_ang_bias_x}</mean><stddev>0.009</stddev></noise></x>
+          <y><noise type="gaussian"><mean>${lidar_imu_ang_bias_y}</mean><stddev>0.009</stddev></noise></y>
+          <z><noise type="gaussian"><mean>${lidar_imu_ang_bias_z}</mean><stddev>0.009</stddev></noise></z>
         </angular_velocity>
         <linear_acceleration>
-          <x><noise type="gaussian"><mean>0</mean><stddev>0.021</stddev></noise></x>
-          <y><noise type="gaussian"><mean>0</mean><stddev>0.021</stddev></noise></y>
-          <z><noise type="gaussian"><mean>0</mean><stddev>0.021</stddev></noise></z>
+          <x><noise type="gaussian"><mean>${lidar_imu_acc_bias_x}</mean><stddev>0.021</stddev></noise></x>
+          <y><noise type="gaussian"><mean>${lidar_imu_acc_bias_y}</mean><stddev>0.021</stddev></noise></y>
+          <z><noise type="gaussian"><mean>${lidar_imu_acc_bias_z}</mean><stddev>0.021</stddev></noise></z>
         </linear_acceleration>
       </imu>
     </sensor>

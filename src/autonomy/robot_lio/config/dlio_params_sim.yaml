@@ -1,62 +1,42 @@
-# dlio_params_sim.yaml
-# Simulation-specific DLIO parameters for the Go2 Gazebo sensor stack.
+# DLIO parameters for the Go2 Gazebo simulation.
 #
-# Why this file exists:
-#   The simulation URDF mounts the LiDAR right-side-up with only a -15 deg pitch
-#   to work around a Gazebo Fortress gpu_lidar rendering bug. The real robot uses
-#   an upside-down mount (roll=pi, pitch=-15 deg). DLIO consumes hard-coded
-#   extrinsics rather than URDF TF, so the sim launch must override the real
-#   hardware extrinsics or LiDAR/IMU fusion will be inconsistent with the data.
+# The sim URDF mounts the LiDAR right-side-up with only a -15 deg pitch to work
+# around a Fortress gpu_lidar rendering bug (real robot uses roll=pi, pitch=-15 deg).
+# Extrinsics here must match the sim URDF or LiDAR/IMU fusion will be inconsistent.
 
 /**:
   ros__parameters:
     use_sim_time: true
-    # Keep TF ownership in CHAMP/EKF during sim bringup.
-    # DLIO provides /lidar_odom for fusion/inspection but should not publish
-    # a competing odom->base_link transform.
     publish_tf: false
 
     frames/odom: odom
-    # DLIO publishes /lidar_odom with child_frame_id=base_link. The EKF remains
-    # the single owner of /odom and odom->base_footprint for Nav2 / slam_toolbox.
     frames/baselink: base_link
     frames/lidar: dlio_lidar_link
     frames/imu: dlio_imu_link
 
-    # Simulation tuning: keep registration behavior deterministic and avoid
-    # aggressive adaptive threshold swings in small indoor maps.
     adaptive: false
     pointcloud/deskew: true
     pointcloud/voxelize: true
-    # odom/preprocessing/voxelFilter/res: 0.10
 
-    # # More conservative keyframe insertion in sim reduces high-frequency pose
-    # # jitter when the robot is mostly stationary.
     odom/keyframe/threshD: 0.20
     odom/keyframe/threshR: 2.0
 
-    # In simulation, LiDAR and IMU are on the same clock.
     odom/computeTimeOffset: false
     odom/imu/approximateGravity: false
-    # LIO start is delayed in sim bringup, so initial boot transients should be
-    # over before calibration begins.
     odom/imu/calibration/gyro: true
     odom/imu/calibration/accel: true
     odom/imu/calibration/time: 3.0
-    # imu/calibration: true
     odom/imu/bufferSize: 5000
 
-    # base_link -> lidar_link (sim mount) in base_link frame.
-    # go2_sim.urdf.xacro uses rpy (0, -pi/12, 0), not the real hardware's
-    # upside-down rpy (pi, -pi/12, 0).
+    # base_link -> lidar_link (sim mount); URDF rpy (0, -pi/12, 0)
+    # R = Ry(-pi/12)
     extrinsics/baselink2lidar/t: [0.28945, 0.0, -0.046825]
     extrinsics/baselink2lidar/R: [ 0.9659258263,  0.0, -0.2588190451,
                                    0.0,           1.0,  0.0,
                                    0.2588190451,  0.0,  0.9659258263]
 
-    # base_link -> lidar_imu_link (sim mount) in base_link frame.
-    # = lidar position in base_link + R_base_to_lidar(sim) * imu_in_lidar
-    # imu_in_lidar: [-0.007698, -0.014655, 0.00667] (Unitree UniLidar SDK offset)
+    # base_link -> lidar_imu_link (sim mount)
+    # = lidar_in_base + R_base_to_lidar(sim) * imu_in_lidar
     extrinsics/baselink2imu/t: [0.28028798, -0.014655, -0.042374664]
     extrinsics/baselink2imu/R: [ 0.9659258263,  0.0, -0.2588190451,
                                  0.0,           1.0,  0.0,

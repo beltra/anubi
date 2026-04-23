@@ -1,16 +1,11 @@
 """
-lio.launch.py
-Robot-agnostic LIO integration wrapper.
+lio.launch.py -- Robot-agnostic LIO integration wrapper.
 
-Responsibilities:
-  1. Normalize sensor topics to canonical names:
-       - /lidar/points
-       - /lidar/imu
-  2. Publish static lidar_link -> lidar_imu_link transform.
-  3. Optionally start DLIO ROS2 odometry and expose /lidar_odom.
+Normalizes sensor topics to canonical names (/lidar/points, /lidar/imu),
+publishes the static lidar_link -> lidar_imu_link TF,
+and optionally starts the DLIO odometry node (/lidar_odom).
 
-By default use_lio:=false, so this launch acts as a topic/TF contract provider
-without changing active odometry ownership.
+By default use_lio:=false, so this launch acts as a topic/TF relay only.
 """
 
 import os
@@ -45,7 +40,7 @@ def generate_launch_description():
         DeclareLaunchArgument("publish_lidar_imu_tf", default_value="true"),
         DeclareLaunchArgument("lidar_frame", default_value="lidar_link"),
         DeclareLaunchArgument("lidar_imu_frame", default_value="lidar_imu_link"),
-        # Unitree UniLidar SDK: IMU origin in LiDAR frame (meters).
+        # UniLidar SDK IMU offset within the LiDAR frame [m]
         DeclareLaunchArgument("lidar_imu_x", default_value="-0.007698"),
         DeclareLaunchArgument("lidar_imu_y", default_value="-0.014655"),
         DeclareLaunchArgument("lidar_imu_z", default_value="0.00667"),
@@ -99,8 +94,8 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("publish_lidar_imu_tf")),
     )
 
-    # Keep DLIO isolated from Nav2 TF ownership by publishing odometry on
-    # /lidar_odom and disabling TF unless explicitly requested.
+    # DLIO publishes odometry on /lidar_odom; TF publication is disabled to keep
+    # EKF as the single owner of odom->base_footprint.
     dlio_odom_node = Node(
         package="direct_lidar_inertial_odometry",
         executable="dlio_odom_node",

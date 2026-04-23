@@ -1,10 +1,2 @@
-# safety_params.yaml
-# Parameters for the robot_safety package.
-#
-# velocity_limiter reads its parameters from the launch file (safety.launch.py),
-# not from this file.  See launch/safety.launch.py for defaults:
-#   cmd_timeout:  0.5 s
-#   publish_rate: 20.0 Hz
-#
-# Override via launch arguments:
-#   ros2 launch go2_bringup go2_bringup.launch.py use_safety:=true cmd_timeout:=1.0
+# velocity_limiter parameters are set via launch arguments in safety.launch.py.
+# Override at launch time: use_safety:=true cmd_timeout:=1.0

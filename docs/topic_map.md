@@ -41,6 +41,7 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 | `base_footprint -> base_link` | `static_transform_publisher` (sim) / `go2_hw_bridge` (HW) | same | same | Sim uses fixed standing-height offset; HW includes body roll/pitch plus standing height. |
 | `base_link -> lidar_link` | URDF / `robot_state_publisher` | same | same | xyz=(0.28945, 0, -0.046825), rpy=(pi, -0.26180, 0). Sensor is mounted **upside-down** with ~15 deg forward pitch. |
 | `base_link -> imu_link` | URDF / `robot_state_publisher` | same | same | Identity (co-located with base_link). |
+| `base_footprint -> lidar_stabilized` | `imu_stabilized_tf` node | same | same | Dynamic TF at IMU rate. Gravity-levelled LiDAR frame: tracks physical LiDAR position while holding zero roll/pitch. Used as frame_id for undistorted clouds when gravity_align is enabled. |
 | `lidar_link -> lidar_imu_link` | URDF / `robot_state_publisher` (sim) / `robot_lio` static TF (HW) | URDF | robot_lio TF | Unitree UniLidar IMU offset: xyz=(-0.007698, -0.014655, 0.00667). Sim: always in URDF. HW: published by `robot_lio` (always included from `go2_bringup`; absent when using `go2_hardware.launch.py` alone). |
 
 ---
@@ -49,7 +50,8 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 
 | Topic | Type | Publisher | Consumer(s) | Sim | HW | Notes |
 |-------|------|-----------|-------------|-----|----|-------|
-| `/cmd_vel` | `geometry_msgs/Twist` | Nav2 `controller_server` | `velocity_limiter` (if `use_safety:=true`) or locomotion directly | same | same | Nav2 Humble publishes Twist (not TwistStamped). |
+| `/cmd_vel` | `geometry_msgs/Twist` | Nav2 `controller_server` | `collision_monitor` | same | same | Nav2 Humble publishes Twist (not TwistStamped). |
+| `/cmd_vel_collision_free` | `geometry_msgs/Twist` | `collision_monitor` | `velocity_limiter` (if `use_safety:=true`) or locomotion directly | same | same | collision_monitor output after proximity checks. |
 | `/cmd_vel_safe` | `geometry_msgs/Twist` | `velocity_limiter` | CHAMP `quadruped_controller` (sim) / `go2_hw_bridge` (HW) | same | same | Output of velocity_limiter safety gate. Only active when `use_safety:=true`. |
 
 ---
@@ -89,6 +91,6 @@ These follow standard Nav2 Humble topic naming; listed here for completeness.
 |-------|------|-------|
 | `/goal_pose` | `geometry_msgs/PoseStamped` | Nav2 goal input (RViz -> Nav2). |
 | `/plan` | `nav_msgs/Path` | Global planner output. |
-| `/local_plan` | `nav_msgs/Path` | DWB local planner trajectory. |
+| `/local_plan` | `nav_msgs/Path` | Local planner trajectory (MPPI by default). |
 | `/costmap_raw` | `nav2_msgs/Costmap` | Raw costmap for debugging. |
 | `/cmd_vel` | `geometry_msgs/Twist` | Nav2 controller output (see Command Topics above). |

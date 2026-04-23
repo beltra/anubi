@@ -1,26 +1,15 @@
 """
-sim_bringup.launch.py
-Full Gazebo Fortress + CHAMP + Nav2 simulation bringup for Go2.
+sim_bringup.launch.py — Full Gazebo Fortress + CHAMP + Nav2 simulation bringup for Go2.
 
-What this launch file starts
------------------------------
-  1. go2_sim/sim_champ.launch.py
-       - Ignition Gazebo (Fortress)
-       - ros_ign bridges
-       - robot_state_publisher
-       - CHAMP controller + EKF odometry (odom -> base_footprint)
-  2. cloud_self_filter.py
-       - /lidar/points -> /lidar/points_undistorted for SLAM / costmaps in sim
-       - optional debug cloud on /debug/lidar/points_filtered
-  3. robot_nav/slam.launch.py (optional via start_nav:=true)
-  4. robot_nav/nav2.launch.py (optional via start_nav:=true)
-  5. RViz2 (optional)
+Starts:
+  1. go2_sim/sim_champ.launch.py   (Gazebo, CHAMP, bridges, EKF, TF)
+  2. cloud_self_filter.py          (/lidar/points -> /lidar/points_undistorted, sim only)
+  3. robot_nav/slam.launch.py      (optional via start_nav:=true)
+  4. robot_nav/nav2.launch.py      (optional via start_nav:=true)
+  5. RViz2                         (optional)
 
-Key integration rule
---------------------
-sim_champ.launch.py publishes a fallback static map->odom transform by default.
-For SLAM/Nav2 bringup we disable that fallback so slam_toolbox is the sole
-publisher of map->odom.
+Note: sim_champ publishes a fallback static map->odom TF by default.
+SLAM bringup disables it so slam_toolbox is the sole map->odom publisher.
 """
 
 import os
@@ -49,8 +38,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "use_stvl",
             default_value="true",
-            description="Use SpatioTemporalVoxelLayer for 3D obstacle avoidance"
-                        " in the local costmap. Set false to revert to 2D obstacle layer.",
+            description="Use SpatioTemporalVoxelLayer in the local costmap",
         ),
         DeclareLaunchArgument(
             "nav_profile",
@@ -76,19 +64,15 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "lio_start_before_nav_sec",
             default_value="4.0",
-            description=(
-                "Start DLIO this many seconds before nav_delay_sec. This keeps "
-                "LIO after CHAMP startup while still starting before the nav stack."
-            ),
+            description="Start DLIO this many seconds before nav_delay_sec",
         ),
         DeclareLaunchArgument("start_nav", default_value="true"),
         DeclareLaunchArgument(
             "nav_delay_sec",
             default_value="20.0",
             description=(
-                "Delay before starting SLAM. Must exceed the CHAMP controller "
-                "spawn and stand-up time so perception starts from the settled "
-                "standing pose."
+                "Delay before starting SLAM. Must exceed CHAMP spawn and stand-up time "
+                "to avoid polluting the map with collapsed-posture observations."
             ),
         ),
         DeclareLaunchArgument("slam_mode", default_value="mapping"),
@@ -157,11 +141,8 @@ def generate_launch_description():
                             "use_sim_time": use_sim_time,
                             "use_lio": use_lio,
                             "start_lidar_points_relay": "false",
-                            # Simulation already publishes /lidar/imu from lidar_imu_link.
                             "start_lidar_imu_relay": "false",
                             "publish_lidar_imu_tf": "false",
-                            # Simulation uses a different LiDAR mount rotation from the
-                            # hardware URDF; DLIO must consume matching extrinsics.
                             "dlio_params_file": dlio_sim_params,
                         }.items(),
                     )
@@ -171,24 +152,19 @@ def generate_launch_description():
 
     lio = OpaqueFunction(function=maybe_include_lio)
 
-    # Self-body filter — simulation only.
-    # The real Unitree L1 has a hardware minimum range of 0.8 m. The Go2's body
-    # and legs are always within ~0.4 m of the sensor, so hardware prevents
-    # self-body returns entirely. Gazebo uses range_min=0.1 m for simulation
-    # stability, so body returns appear and must be removed in software.
+    # Simulation only: real L1 has 0.8 m hardware min range, body never appears.
+    # Gazebo uses range_min=0.1 m, so body returns must be filtered in software.
     nav_cloud_filter = Node(
         package="robot_nav",
         executable="cloud_self_filter.py",
-        name="nav_cloud_filter",
+        name="cloud_self_filter",
         output="screen",
         parameters=[{
             "use_sim_time": use_sim_time,
             "input_topic": "/lidar/points",
             "output_topic": "/lidar/points_undistorted",
-            # Sim sensor is mounted right-side-up (rpy=0,-0.262,0) to work
-            # around a Fortress gpu_lidar rendering bug that drops most rays
-            # when the parent link has Rx(π) roll.  The real L1 uses
-            # sensor_mount_rpy=[π,-0.262,0] (see distortion_corrector.yaml).
+            # Sim mounts L1 right-side-up (rpy=0,-0.262,0) to work around a Fortress
+            # gpu_lidar rendering bug; real hardware uses sensor_mount_rpy=[pi,-0.262,0].
             "sensor_mount_rpy": [0.0, -0.26179938779915, 0.0],
             "gravity_align": True,
             "gravity_align_frame": "lidar_stabilized",
@@ -219,8 +195,6 @@ def generate_launch_description():
             "slam_mode": LaunchConfiguration("slam_mode"),
             "slam_params": LaunchConfiguration("slam_params"),
             "map": LaunchConfiguration("map"),
-            # Gazebo produces instantaneous LiDAR snapshots, so bypass deskew
-            # and use the self-filtered nav cloud directly in simulation.
             "bypass_distortion_corrector": "true",
             "scan_cloud_topic": "/lidar/points_undistorted",
         }.items(),
@@ -238,12 +212,8 @@ def generate_launch_description():
         }.items(),
     )
 
-    # SLAM starts only after CHAMP has had time to spawn both controllers
-    # (20 s + 30 s in sim_champ.launch.py) and settle into its standing pose.
-    # Starting scan processing before then pollutes SLAM and the downstream
-    # obstacle stack with observations from the collapsed/spawning posture.
-    # Nav2 starts 10 s after SLAM so slam_toolbox can publish map→odom first.
-    # Total Nav2 start offset = nav_delay_sec + 10 s.
+    # SLAM starts after CHAMP has settled into standing pose (nav_delay_sec).
+    # Nav2 starts 10 s after SLAM so slam_toolbox can publish map->odom first.
     start_nav_stack = TimerAction(
         period=LaunchConfiguration("nav_delay_sec"),
         actions=[

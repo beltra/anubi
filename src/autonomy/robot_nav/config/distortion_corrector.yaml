@@ -1,3 +1,5 @@
+# LiDAR motion deskew parameters for the Unitree L1 on the Go2.
+
 distortion_corrector:
   ros__parameters:
     input_topic: /lidar/points
@@ -5,69 +7,44 @@ distortion_corrector:
     odom_topic: /odom
     imu_topic: /imu/data
 
-    # Mirrors the Autoware-style integration: twist-based correction with IMU
-    # angular rates for full 3D deskew on a pitching/rolling body.
     use_twist: true
     use_imu: true
     use_3d_distortion_correction: true
 
-    # Static mount rotation [roll, pitch, yaw] from body frame (base_link) to
-    # sensor frame (lidar_link).  The Unitree L1 LiDAR on the Go2 is mounted
-    # upside-down with ~15 deg forward pitch: R = Ry(-15 deg) * Rx(pi)
-    # under this file's RPY convention.
-    # This rotation is applied to odom/IMU velocities so deskew operates in
-    # the physical sensor frame.
+    # L1 upside-down mount: roll=pi, pitch=-15 deg (Rx(pi) * Ry(-pi/12))
     sensor_mount_rpy: [3.14159265358979, -0.26179938779915, 0.0]
 
-    # Unitree L1 nominal rotation frequency is 10 Hz -> 0.1 s per revolution.
-    scan_period: 0.1
+    scan_period: 0.1  # L1 rotates at 10 Hz
 
-    # If the cloud exposes a relative-time field, prefer it. Otherwise fall back
-    # to azimuth-based timing over one revolution.
     timestamp_field_name: ""
     timestamp_field_candidates: ["time_stamp", "timestamp", "time", "t"]
     timestamp_unit: auto
     fallback_mode: azimuth
-    azimuth_direction: cw  # Flipped from ccw due to Rx(pi) upside-down mount rotation affecting arctan2(y,x)
+    # cw because Rx(pi) upside-down mount flips arctan2(y,x), reversing apparent scan direction
+    azimuth_direction: cw
 
-    # During startup, publish raw clouds rather than dropping data while waiting
-    # for the first synchronized odom/IMU samples.
     passthrough_on_missing_state: true
     state_timeout_sec: 0.25
 
-    # Keep the deskew stage real-time. If processing falls behind, drop stale
-    # clouds instead of feeding old data into SLAM, costmaps, and safety nodes.
+    # Drop stale clouds to avoid feeding old data into SLAM and costmaps
     drop_stale_clouds: true
     max_input_delay_sec: 0.25
 
-    # Preserve the original cloud timestamp so that downstream TF lookups
-    # (pointcloud_to_laserscan, SLAM, costmap) project the scan from the
-    # correct robot pose at acquisition time.  Using "now" caused 13-20 ms
-    # timestamp shifts that misaligned scans in SLAM, producing a smeared map.
+    # Preserve input timestamp so downstream TF lookups use the acquisition time.
+    # Using "now" caused 13-20 ms shifts that smeared the SLAM map.
     output_stamp_mode: input
 
-    # Gravity alignment
-    # Rotate all deskewed points by R_body(roll, pitch, 0) extracted from the
-    # IMU orientation quaternion.  Outputs the cloud in `gravity_align_frame`
-    # (lidar_stabilized) so STVL sees floor returns consistently at world-z ~= 0
-    # regardless of trunk tilt or TF lag.  Requires imu_stabilized_tf.py to be
-    # running so the lidar_stabilized TF is available.
+    # Gravity alignment: rotate deskewed points to lidar_stabilized (R_body @ R_mount_inv).
+    # Requires imu_stabilized_tf.py to broadcast the lidar_stabilized TF.
     gravity_align: true
     gravity_align_frame: lidar_stabilized
 
-    # Floor filter
-    # Drop deskewed points whose estimated world-frame z is below min_world_z.
-    # Uses the IMU orientation quaternion to account for trunk pitch/roll so
-    # floor sweeps during gait are rejected before reaching the STVL costmap.
-    # The threshold (0.12 m) sits slightly above STVL min_obstacle_height
-    # (0.10 m) to absorb any small approximation error in the static base_z.
-    # Disabled by default; enable only when needed for specific environments.
+    # Floor filter: drop points below min_world_z to suppress gait-induced floor returns.
+    # Disabled by default; enable for environments where floor sweeps are a problem.
     filter_floor: false
     min_world_z: 0.12
-    # LiDAR position in base_link frame [m] (from go2_description URDF,
-    # l1_lidar joint: xyz="0.28945 0 -0.046825", rpy="pi -0.261799 0")
+    # Sensor position in base_link frame (from go2_description URDF)
     sensor_x_in_base: 0.28945
     sensor_y_in_base: 0.0
     sensor_z_in_base: -0.046825
-    # Nominal standing height of base_link above ground [m].
     base_z_nominal: 0.28

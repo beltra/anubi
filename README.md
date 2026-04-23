@@ -1,4 +1,4 @@
-# Anubi — Go2 Nav2 Autonomy Stack
+# Anubi - Go2 Nav2 Autonomy Stack
 
 Minimal, clean, production-oriented ROS 2 Humble autonomy stack for the **Unitree Go2**
 quadruped robot.  Navigation uses **Nav2**; localisation uses **slam_toolbox** (2D SLAM).
@@ -20,7 +20,7 @@ src/
 ├── autonomy/
 │   ├── robot_nav/            # Robot-agnostic Nav2 + slam_toolbox config/launch
 │   ├── robot_lio/            # Robot-agnostic LIO hooks (/lidar/imu, /lidar_odom)
-│   ├── robot_safety/         # Safety-stop placeholder
+│   ├── robot_safety/         # velocity_limiter safety gate and obstacle tracking
 │   └── robot_sim/            # Simulation bringup launch (sim_bringup.launch.py)
 ├── simulation/
 │   ├── go2_sim/              # Go2 Gazebo simulation URDF (planar_move + L1 LiDAR + IMU)
@@ -38,37 +38,40 @@ src/
 ### TF tree (full chain)
 
 ```
-map  ──(slam_toolbox)──►  odom  ──(EKF)──►  base_footprint
-                                                             └─(URDF)─►  base_link
-                                                                              ├──►  lidar_link
-                                                                              └──►  imu_link
+map --(slam_toolbox)--> odom --(EKF)--> base_footprint --(imu_stabilized_tf)--> lidar_stabilized
+                                             |
+                                             +--(URDF)--> base_link
+                                                              +--> lidar_link
+                                                              +--> imu_link
 ```
 
 ### Data flow
 
 ```
 Go2 hardware
-  │
-  ├── /sportmodestate  [SportModeState, ~50 Hz]
-  │       └──►  go2_hw_bridge  ──►  /odom_raw
-  │                                └──► EKF  ──►  /odom + TF(odom→base_footprint)
-  │
-  └── /lidar/points  [PointCloud2]
-      ├──►  robot_lio  ──► /lidar/imu + /lidar_odom (optional)
-      │
-          ├──►  pointcloud_to_laserscan  ──►  /scan
-          │         └──►  slam_toolbox  ──►  /map + TF(map→odom)
-          └──►  Nav2 costmaps (obstacle layer, direct PointCloud2)
+  |
+  +-- /sportmodestate  [SportModeState, ~50 Hz]
+  |       +--> go2_hw_bridge --> /odom_raw
+  |                                +--> EKF --> /odom + TF(odom -> base_footprint)
+  |
+  +-- /lidar/points  [PointCloud2]
+          +--> robot_lio --> /lidar/imu + /lidar_odom (optional, LIO backend)
+          |
+          +--> distortion_corrector (HW) / cloud_self_filter (sim)
+                   +--> /lidar/points_undistorted  [frame: lidar_stabilized]
+                            +--> pointcloud_to_laserscan --> /scan --> slam_toolbox --> /map
+                            +--> Nav2 STVL costmap (direct PointCloud2)
 
-Nav2  ──►  /cmd_vel  [Twist]
-               └──►  go2_hw_bridge  ──►  /api/sport/request  ──►  Go2 hardware
+Nav2 --> /cmd_vel --> collision_monitor --> /cmd_vel_collision_free
+    +--> [velocity_limiter (use_safety:=true)] --> /cmd_vel_safe
+    +--> go2_hw_bridge --> /api/sport/request --> Go2 hardware
 ```
 
 ---
 
 ## Dependencies
 
-All packages are in this workspace — no upstream workspace needed at runtime.
+All packages are in this workspace; no upstream workspace needed at runtime.
 
 | Dependency | Install |
 |---|---|
@@ -81,9 +84,9 @@ All packages are in this workspace — no upstream workspace needed at runtime.
 | rviz2 | `apt install ros-humble-rviz2` |
 
 > **Assumption A1:** The Go2 robot's internal ROS2 bridge is running and publishing:
-> - `/sportmodestate` — `unitree_go/SportModeState` (proprioceptive state, ~50 Hz)
-> - `/lowstate` — `unitree_go/LowState` (low-level state; used for battery data)
-> - `/lidar/points` — `sensor_msgs/PointCloud2` (3D LiDAR)
+> - `/sportmodestate` -- `unitree_go/SportModeState` (proprioceptive state, ~50 Hz)
+> - `/lowstate` -- `unitree_go/LowState` (low-level state; used for battery data)
+> - `/lidar/points` -- `sensor_msgs/PointCloud2` (3D LiDAR)
 >
 > `/lowstate` is used only for battery reporting in `RobotStatus`.  If the bridge
 > does not publish it, navigation still works but `battery_soc` and `battery_voltage`
@@ -152,7 +155,7 @@ Script options:
 - `run_go2_sim.sh --help`
 - `run_go2_real.sh --help`
 
-### Step 1 — Start the Go2 internal bridge on the robot
+### Step 1 -- Start the Go2 internal bridge on the robot
 
 The Unitree Go2 internal software must publish:
 - `/sportmodestate`  (`unitree_go/SportModeState`)
@@ -163,7 +166,7 @@ And subscribe to:
 
 Refer to the Unitree Go2 ROS 2 SDK documentation for activating the bridge.
 
-### Step 2 — Map the environment (first time only)
+### Step 2 -- Map the environment (first time only)
 
 ```bash
 source /opt/ros/humble/setup.bash
@@ -178,7 +181,7 @@ ros2 service call /slam_toolbox/serialize_map \
     "{filename: '/ws/anubi/src/autonomy/robot_nav/maps/my_map'}"
 ```
 
-### Step 3 — Navigate with a saved map
+### Step 3 -- Navigate with a saved map
 
 ```bash
 ros2 launch go2_bringup go2_bringup.launch.py \
@@ -186,14 +189,14 @@ ros2 launch go2_bringup go2_bringup.launch.py \
     map:=/ws/anubi/src/autonomy/robot_nav/maps/my_map
 ```
 
-### Step 4 — Send a goal in RViz
+### Step 4 -- Send a goal in RViz
 
 1. RViz opens automatically (set `rviz:=false` to disable).
 2. Click **"2D Goal Pose"** in the toolbar.
 3. Click + drag on the map to set position and orientation.
 4. The robot plans a path and drives autonomously.
 
-### Optional — Mapping mode without goal (SLAM only, no navigation)
+### Optional -- Mapping mode without goal (SLAM only, no navigation)
 
 ```bash
 ros2 launch go2_bringup go2_bringup.launch.py slam_mode:=mapping rviz:=true
@@ -205,8 +208,8 @@ ros2 launch go2_bringup go2_bringup.launch.py slam_mode:=mapping rviz:=true
 
 1. Create `agibot_d1_bringup` package, mirroring `go2_bringup`.
 2. Implement `d1_hw_bridge.cpp`:
-   - Subscribe to the D1 Ultra state topic → publish `/odom` + TF `odom → base_footprint`
-   - Subscribe to `/cmd_vel` → convert to D1 Ultra motion API
+   - Subscribe to the D1 Ultra state topic -> publish `/odom` + TF `odom -> base_footprint`
+   - Subscribe to `/cmd_vel` -> convert to D1 Ultra motion API
 3. Create `agibot_d1_description` with the same frame names: `base_footprint`, `base_link`, `lidar_link`, `imu_link`.
 4. Create `agibot_d1_bringup/config/d1_params.yaml` with D1-specific topic names.
 5. Use `go2_bringup/launch/go2_bringup.launch.py` as a template.
@@ -224,7 +227,7 @@ The simulation layer is fully implemented. **No hardware required.**
 source /opt/ros/humble/setup.bash
 source /ws/anubi/install/setup.bash
 
-# Full simulation — office world (default), mapping mode, with GUI and RViz
+# Full simulation -- office world (default), mapping mode, with GUI and RViz
 ros2 launch robot_sim sim_bringup.launch.py
 
 # Warehouse world, localization with a saved map, no GUI
@@ -255,7 +258,7 @@ ros2 run sim_scenarios scenario_manager \
 ### Known simulation limits
 
 - Gazebo Fortress + CHAMP is the maintained simulation path.
-- AgiBot D1 Ultra sim (`simulation/d1_sim/`) is a stub — chassis dimensions are placeholders.
+- AgiBot D1 Ultra sim (`simulation/d1_sim/`) is a stub; chassis dimensions are placeholders.
 
 ---
 
@@ -264,9 +267,9 @@ ros2 run sim_scenarios scenario_manager \
 | Decision | Rationale |
 |---|---|
 | `go2_hw_bridge` single node for both odom and cmd_vel | Minimal Go2-specific surface area |
-| `SportModeState` → `odom/TF` (not Point-LIO) | Self-contained; Go2's internal state estimator is accurate short-term; slam_toolbox corrects long-term drift |
-| `pointcloud_to_laserscan` → slam_toolbox | slam_toolbox needs 2D scan; Nav2 costmaps still use full 3D cloud |
-| `odom → base_footprint` (not base_link) | Standard Nav2 2D convention; slam_toolbox tracks `base_footprint` |
+| `SportModeState` -> `odom/TF` (not Point-LIO) | Self-contained; Go2's internal state estimator is accurate short-term; slam_toolbox corrects long-term drift |
+| `pointcloud_to_laserscan` -> slam_toolbox | slam_toolbox needs 2D scan; Nav2 costmaps still use full 3D cloud |
+| `odom -> base_footprint` (not base_link) | Standard Nav2 2D convention; slam_toolbox tracks `base_footprint` |
 | cmd_vel watchdog (0.5 s) | Stops robot if Nav2 crashes; prevents runaway |
 | nlohmann/json (system package, MIT) | No vendoring; standard Go2 SDK serialisation format |
 | slam_toolbox LGPL-2.1 | Standard Nav2 SLAM; LGPL OK under dynamic linking |
@@ -275,7 +278,7 @@ ros2 run sim_scenarios scenario_manager \
 
 ## TODO Markers in Code
 
-- `TODO(agibot)` — changes for AgiBot D1 Ultra porting (implement `simulation/d1_sim/urdf/d1_sim.urdf.xacro` and `agibot_d1_bringup`)
-- `TODO(sim)` — Gazebo plugin stubs remaining in `go2_description/urdf/go2.urdf.xacro` (hardware URDF); the simulation itself is fully working via `go2_sim/`
-- `TODO(safety)` — `tilt_monitor` node (IMU-based fall detection); `velocity_limiter` is already implemented
-- `TODO(localization)` — where to wire in map-based localization improvements
+- `TODO(agibot)` -- changes for AgiBot D1 Ultra porting (implement `simulation/d1_sim/urdf/d1_sim.urdf.xacro` and `agibot_d1_bringup`)
+- `TODO(sim)` -- Gazebo plugin stubs remaining in `go2_description/urdf/go2.urdf.xacro` (hardware URDF); the simulation itself is fully working via `go2_sim/`
+- `TODO(safety)` -- `tilt_monitor` node (IMU-based fall detection); `velocity_limiter` is already implemented
+- `TODO(localization)` -- where to wire in map-based localization improvements

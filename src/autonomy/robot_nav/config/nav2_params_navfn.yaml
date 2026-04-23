@@ -128,7 +128,7 @@ controller_server:
       max_vel_x: 1.1
       max_vel_y: 0.15
       min_vel_theta: 0.0
-      max_vel_theta: 0.9
+      max_vel_theta: 1.0
       min_speed_xy: 0.0
       max_speed_xy: 1.1
       min_speed_theta: 0.05
@@ -394,7 +394,7 @@ behavior_server:
     robot_base_frame: base_footprint
     transform_tolerance: 0.1
     simulate_ahead_time: 2.0
-    max_rotational_vel: 0.9
+    max_rotational_vel: 1.0
     min_rotational_vel: 0.02
     rotational_acc_lim: 1.0
     costmap_topic: local_costmap/costmap_raw
@@ -432,8 +432,8 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: false
     feedback: "OPEN_LOOP"
-    max_velocity: [1.1, 0.15, 0.9]
-    min_velocity: [0.0, -0.15, -0.9]
+    max_velocity: [1.1, 0.15, 1.0]
+    min_velocity: [0.0, -0.15, -1.0]
     max_accel: [0.7, 0.3, 1.0]
     max_decel: [-1.0, -0.5, -1.3]
     odom_topic: "odom"

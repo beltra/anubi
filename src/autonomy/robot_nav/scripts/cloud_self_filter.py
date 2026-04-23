@@ -1,22 +1,13 @@
 #!/usr/bin/env python3
 """
-cloud_self_filter.py
-Filter robot-body returns from a LiDAR PointCloud2 and optionally
-gravity-align the output to the lidar_stabilized frame.
+cloud_self_filter.py -- Simulation-only self-body filter for LiDAR PointCloud2.
 
-Why simulation-only?
-  The real Unitree L1 has a hardware minimum range of 0.8 m.  The Go2's
-  body and legs are always within ~0.4 m of the sensor, so the hardware
-  never returns self-body points.  Simulation (Gazebo Fortress gpu_lidar)
-  uses range_min=0.1 m for stability, so body returns appear and must be
-  removed in software before reaching the costmap / SLAM.
+The real Unitree L1 has a hardware minimum range of 0.8 m; the Go2 body is always
+within ~0.4 m of the sensor, so self-body returns never appear on hardware.
+Gazebo uses range_min=0.1 m, so body returns must be removed in software.
 
-  On the real robot, distortion_corrector.py handles gravity alignment
-  (no self-body filter needed).
-
-Gravity alignment mirrors the behaviour of distortion_corrector.py so that
-the simulation STVL costmap receives the same lidar_stabilized frame
-representation as the real robot.
+Also applies gravity alignment (matching distortion_corrector.py) so simulation
+STVL and SLAM receive the same lidar_stabilized representation as the real robot.
 """
 
 import math
@@ -50,8 +41,7 @@ class CloudSelfFilter(Node):
         self.declare_parameter("lidar_x", 0.28945)
         self.declare_parameter("lidar_y", 0.0)
         self.declare_parameter("lidar_z", -0.046825)
-        # Static mount rotation from base_link to lidar_link.
-        # Real Go2 + L1 uses upside-down mount with ~15 deg forward pitch.
+        # Static mount rotation base_link -> lidar_link (Go2 + L1: upside-down, -15 deg pitch)
         self.declare_parameter(
             "sensor_mount_rpy", [3.14159265358979, -0.26179938779915, 0.0]
         )
@@ -62,9 +52,8 @@ class CloudSelfFilter(Node):
         self.declare_parameter("rear_floor_start_x", -0.2)
         self.declare_parameter("rear_floor_z_per_meter", 0.02)
         self.declare_parameter("rear_floor_max_extra_z", 0.08)
-        # Self-body bounding box in base_link frame.  Must NOT extend below
-        # the ground plane (z ~ -0.28 in base_link at standing height 0.28 m)
-        # or floor returns are deleted as "body" returns.
+        # Self-body bounding box in base_link frame.
+        # z lower bound must not reach the ground plane or floor returns are deleted.
         self.declare_parameter("robot_min_x", -0.40)
         self.declare_parameter("robot_max_x", 0.36)
         self.declare_parameter("robot_min_y", -0.20)
@@ -144,8 +133,7 @@ class CloudSelfFilter(Node):
             return None
         q = imu.orientation
         w, x, y, z = q.w, q.x, q.y, q.z
-        # Third row of R (body->world) from unit quaternion:
-        # R[2] = [2(xz - yw),  2(yz + xw),  1 - 2(x^2 + y^2)]
+        # Third row of rotation matrix from unit quaternion
         return np.array(
             [
                 2.0 * (x * z - y * w),
@@ -170,7 +158,6 @@ class CloudSelfFilter(Node):
         imu = self._nearest_imu(cloud_stamp_sec)
         R_z_row = self._world_z_row(imu)
 
-        # Parse cloud into numpy arrays (zero-copy view)
         dt_struct = build_pc2_dtype(msg)
         raw = np.frombuffer(msg.data, dtype=dt_struct)
 
@@ -180,20 +167,16 @@ class CloudSelfFilter(Node):
 
         finite_mask = np.isfinite(x) & np.isfinite(y) & np.isfinite(z)
 
-        # Radius filter (near-body clutter)
         radius_sq = x * x + y * y + z * z
         radius_mask = finite_mask & (radius_sq < self._min_radius ** 2)
 
-        # Self-body box filter
-        # Transform finite sensor points to base_link frame using the
-        # static mount rotation and translation.
         x_b = np.full_like(x, np.nan)
         y_b = np.full_like(y, np.nan)
         z_b = np.full_like(z, np.nan)
         if np.any(finite_mask):
             pts_b = self._R_mount @ np.stack(
                 [x[finite_mask], y[finite_mask], z[finite_mask]], axis=0
-            )  # 3 x N_valid
+            )
             x_b[finite_mask] = pts_b[0] + self._lidar_x
             y_b[finite_mask] = pts_b[1] + self._lidar_y
             z_b[finite_mask] = pts_b[2] + self._lidar_z
@@ -205,7 +188,6 @@ class CloudSelfFilter(Node):
             & (z_b >= self._robot_min_z) & (z_b <= self._robot_max_z)
         )
 
-        # Below-ground gate (IMU-tilt-corrected)
         floor_mask = np.zeros_like(finite_mask, dtype=bool)
         if self._filter_floor:
             world_z = np.full_like(x, np.inf)
@@ -231,7 +213,6 @@ class CloudSelfFilter(Node):
 
             floor_mask = finite_mask & (world_z < floor_threshold)
 
-        # Combine and remove bad points
         remove = radius_mask | self_box_mask | floor_mask | (~finite_mask)
 
         out_data = bytearray(msg.data)
@@ -242,9 +223,6 @@ class CloudSelfFilter(Node):
         cy = np.where(remove, nan32, raw["y"].astype(np.float32))
         cz = np.where(remove, nan32, raw["z"].astype(np.float32))
 
-        # Gravity alignment
-        # Rotate filtered points to the gravity-levelled lidar_stabilized frame:
-        #   P_stab = R_body @ R_mount @ P_lidar_link
         out_frame_id = msg.header.frame_id
         gravity_aligned = False
         if self._gravity_align and imu is not None:
@@ -252,8 +230,6 @@ class CloudSelfFilter(Node):
             R_body = rotation_from_rpy(roll, pitch, 0.0)
             keep = finite_mask & ~remove
             if np.any(keep):
-                # Only gravity-align points that survived filtering; NaN points
-                # stay NaN and the frame_id changes for the whole cloud.
                 cx_keep, cy_keep, cz_keep = gravity_align_cloud(
                     cx, cy, cz, keep, R_body, self._R_mount
                 )
@@ -277,7 +253,7 @@ class CloudSelfFilter(Node):
         out_msg.point_step = msg.point_step
         out_msg.row_step = msg.row_step
         out_msg.data = bytes(out_data)
-        out_msg.is_dense = False   # NaN points may be present
+        out_msg.is_dense = False
         self._publisher.publish(out_msg)
 
 

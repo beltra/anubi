@@ -1,26 +1,12 @@
 #!/usr/bin/env python3
-"""Publish a dynamic TF for the gravity-stabilized LiDAR frame.
+"""Broadcast a dynamic TF for the gravity-stabilized LiDAR frame.
 
-The `lidar_stabilized` frame tracks the physical LiDAR position as the robot
-trunk pitches and rolls, while keeping orientation gravity-leveled
-(zero roll, zero pitch). This decouples downstream consumers from trunk
-dynamics.
+lidar_stabilized tracks the physical LiDAR position as the robot trunk pitches
+and rolls, while keeping orientation gravity-levelled (zero roll, zero pitch).
+This decouples downstream consumers (STVL, scan extraction) from trunk dynamics.
 
-Frame relationship
-------------------
-    base_footprint -> lidar_stabilized
-      (yaw + pos)           (gravity-aligned, dynamic translation)
-
-The translation is computed as:
-
-    R_body = Rx(roll) Ry(pitch)          # trunk roll+pitch from IMU (no yaw)
-    t      = R_body @ lidar_in_base_link + [0, 0, standing_height]
-
-where `lidar_in_base_link` is the URDF joint offset from `base_link` to
-`lidar_link` ([0.28945, 0, -0.046825] for the Go2 + L1 LiDAR).
-
-The rotation is always the identity quaternion so that `lidar_stabilized`
-stays gravity-levelled regardless of trunk pitch/roll.
+Translation: t = R_body(roll, pitch) @ lidar_in_base_link + [0, 0, standing_height]
+Rotation: identity quaternion (always gravity-levelled).
 """
 
 import numpy as np
@@ -36,7 +22,7 @@ from robot_nav.pointcloud_utils import roll_pitch_from_imu, rotation_from_rpy
 
 
 class ImuStabilizedTf(Node):
-    """Broadcast `parent_frame` -> `child_frame` at the IMU rate."""
+    """Broadcast parent_frame -> child_frame at the IMU rate."""
 
     def __init__(self) -> None:
         super().__init__("imu_stabilized_tf")
@@ -44,11 +30,9 @@ class ImuStabilizedTf(Node):
         self.declare_parameter("imu_topic",      "/imu/data")
         self.declare_parameter("parent_frame",   "base_footprint")
         self.declare_parameter("child_frame",    "lidar_stabilized")
-        # LiDAR joint origin in base_link (from go2_description/urdf/go2.urdf.xacro)
         self.declare_parameter("lidar_x_in_base",  0.28945)
         self.declare_parameter("lidar_y_in_base",  0.0)
         self.declare_parameter("lidar_z_in_base", -0.046825)
-        # Nominal height of base_link above base_footprint / ground [m]
         self.declare_parameter("standing_height",  0.28)
 
         self._parent_frame   = str(self.get_parameter("parent_frame").value)
@@ -72,15 +56,8 @@ class ImuStabilizedTf(Node):
         )
 
     def _imu_cb(self, msg: Imu) -> None:
-        # Yaw is intentionally ignored here.
         roll, pitch = roll_pitch_from_imu(msg.orientation)
-
-        # Body-to-world rotation for roll+pitch only.
         R_body = rotation_from_rpy(roll, pitch, 0.0)
-
-        # Physical LiDAR position in base_footprint.
-        # When trunk is level R_body = I, so translation = lidar_in_base + [0,0,0.28]
-        # = [0.28945, 0, 0.233175], matching the previous static TF exactly.
         t = R_body @ self._lidar_in_base + np.array([0.0, 0.0, self._standing_height])
 
         tf_msg = TransformStamped()
@@ -92,7 +69,6 @@ class ImuStabilizedTf(Node):
         tf_msg.transform.translation.y = float(t[1])
         tf_msg.transform.translation.z = float(t[2])
 
-        # Rotation stays identity so lidar_stabilized remains gravity-leveled.
         tf_msg.transform.rotation.x = 0.0
         tf_msg.transform.rotation.y = 0.0
         tf_msg.transform.rotation.z = 0.0

@@ -1,9 +1,8 @@
 """
-nav2.launch.py
-Robot-agnostic Nav2 launch file.
+nav2.launch.py — Robot-agnostic Nav2 launch file.
 
-Starts the Nav2 navigation nodes via nav2_bringup.
-Localization (map->odom) is provided by slam_toolbox, started separately via slam.launch.py.
+Starts the Nav2 navigation stack via nav2_bringup.
+Localization (map->odom) is provided by slam_toolbox (slam.launch.py).
 Odometry (odom->base_footprint) is provided by the robot adapter.
 
 Arguments
@@ -52,8 +51,7 @@ def generate_launch_description():
     declare_use_stvl = DeclareLaunchArgument(
         "use_stvl",
         default_value="true",
-        description="Use SpatioTemporalVoxelLayer for 3D obstacle avoidance"
-                    " in the local costmap. Set false to revert to 2D obstacle layer.",
+        description="Use SpatioTemporalVoxelLayer in the local costmap",
     )
     declare_use_sim_time = DeclareLaunchArgument(
         "use_sim_time", default_value="false",
@@ -67,7 +65,7 @@ def generate_launch_description():
     declare_nav2_params_stvl_narrow = DeclareLaunchArgument(
         "nav2_params_stvl_narrow",
         default_value=default_nav2_params_stvl_narrow,
-        description="STVL narrow-gap Nav2 params YAML (target 1.0 m passages)",
+        description="STVL narrow-gap Nav2 params YAML",
     )
     declare_nav2_params = DeclareLaunchArgument(
         "nav2_params",
@@ -112,7 +110,6 @@ def generate_launch_description():
     collision_monitor_params_file = LaunchConfiguration("collision_monitor_params")
     lattice_filepath = LaunchConfiguration("lattice_filepath")
 
-    # SmacPlannerLattice expects an absolute lattice file path.
     configured_params = RewrittenYaml(
         source_file=params_file,
         root_key=namespace,
@@ -130,8 +127,6 @@ def generate_launch_description():
     )
     remappings = [("/tf", "tf"), ("/tf_static", "tf_static")]
 
-    # Delegate node composition and lifecycle handling to nav2_bringup.
-    # slam_toolbox is started separately via slam.launch.py.
     nav2_bringup = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(nav2_bringup_share, "launch", "navigation_launch.py")

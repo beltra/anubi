@@ -35,12 +35,20 @@
 ## Launch/Process Maintenance Rule
 - If you add/change launch-started nodes/processes, update `scripts/kill_ros_nodes.sh` in the same change so cleanup remains complete.
 
-## Gotchas Agents Commonly Miss
-- ROS setup scripts are not nounset-safe; repo scripts use `set +u` while sourcing (`run_go2_sim.sh`, `run_go2_real.sh`, `run_mppi_suite.sh`). Preserve this pattern in new scripts.
-- `run_go2_sim.sh` kills stale ROS/Gazebo processes by default; use `--no-clean` to keep existing sessions.
-- Sim Nav2 startup is intentionally delayed in `sim_bringup.launch.py` (`nav_delay_sec`, then Nav2 10s after SLAM) to avoid bad initial mapping from spawn/stand-up transients.
-- `nav2.launch.py` chooses params by `use_stvl` + `nav_profile` (`default_safe` or `narrow_gap_1p0m`); do not hardcode a different params file without updating this selection logic.
+## Launch And Script Gotchas
+- ROS setup scripts are not nounset-safe; keep `set +u` while sourcing setup files, then restore `set -u`.
+- `run_go2_sim.sh` cleans stale ROS/Gazebo processes by default; pass `--no-clean` to keep existing sessions.
+- `sim_bringup.launch.py` intentionally delays startup (`nav_delay_sec`, then Nav2 10s after SLAM); do not remove this without replacing the stabilization rationale.
+- `nav2.launch.py` parameter selection depends on `use_stvl` + `nav_profile` (`default_safe` or `narrow_gap_1p0m`); avoid hardcoding a single params YAML.
+- If you add/change launch-started processes, update `scripts/kill_ros_nodes.sh` in the same change.
 
-## Minimal Validation Before Hand-off
+## Coding Guidelines For This Workspace
+- Use ASCII only in new/edited files.
+- Keep comments clean and sparse: explain non-obvious integration constraints (TF ownership, topic contracts, hardware quirks), not obvious code flow.
+- Use explicit function and variable names that reflect ROS intent (`cmd_vel_in`, `lidar_points_input_topic`, `use_safety`) and keep parameter naming consistent with existing launch/config conventions.
+- For booleans, keep `use_*`, `enable_*`, or `start_*` naming; for topics, prefer `*_topic` or `*_input_topic`/`*_output_topic`.
+- Preserve safety-critical defaults unless task explicitly changes behavior (watchdog timeouts, cmd gating, TF ownership).
+
+## Minimum Validation Before Hand-off
 - Build only affected packages.
-- For launch/topic/TF/safety changes, run one relevant smoke launch (`run_go2_sim.sh` or `run_go2_real.sh`) and verify impacted topics/TF against `docs/topic_map.md`.
+- For launch/topic/TF/safety edits, run one relevant smoke launch (`scripts/run_go2_sim.sh` or `scripts/run_go2_real.sh`) and check impacted topics/TF against `docs/topic_map.md`.

@@ -1,18 +1,13 @@
 <?xml version="1.0"?>
 <!--
-  d1_sim.urdf.xacro
-  AgiBot D1 Ultra — Gazebo Fortress simulation model STUB.
+  d1_sim.urdf.xacro -- AgiBot D1 Ultra Gazebo Fortress simulation model STUB.
 
-  TODO(agibot): Implement this file following go2_sim/urdf/go2_sim.urdf.xacro as a template.
-
-  Checklist:
-    [ ] 1. Update physical constants (trunk dimensions, mass, inertia) to D1 Ultra datasheet values
-    [ ] 2. Update standing_height, lidar_x/y/z to D1 Ultra geometry
-    [ ] 3. Choose sensor macro:
-        Option A — reuse l1_lidar with D1's LiDAR parameters
-        Option B — add a d1_lidar macro to sensor_models/ if D1 uses a different LiDAR
-      [ ] 4. Keep frame names UNCHANGED: base_footprint, base_link, lidar_link, imu_link
-      [ ] 5. Update robot_name attribute to "d1_ultra"
+  TODO(d1): Implement following go2_sim/urdf/go2_sim.urdf.xacro as template.
+    [ ] Update physical constants (trunk dimensions, mass, inertia) from D1 Ultra datasheet
+    [ ] Update standing_height, lidar_x/y/z to D1 Ultra geometry
+    [ ] Choose sensor: reuse l1_lidar macro or add a new one in sensor_models/ if needed
+    [ ] Keep frame names unchanged: base_footprint, base_link, lidar_link, imu_link
+    [ ] Update robot name attribute to "d1_ultra"
 
   After implementing, launch with:
     ros2 launch robot_sim sim_bringup.launch.py robot:=d1
@@ -21,8 +16,8 @@
 
   <xacro:include filename="$(find sensor_models)/urdf/l1_lidar.urdf.xacro"/>
 
-  <!-- TODO(agibot): Replace with D1 Ultra physical specs -->
-  <xacro:property name="body_length"     value="0.50"/>   <!-- placeholder -->
+  <!-- TODO(d1): Replace with D1 Ultra physical specs -->
+  <xacro:property name="body_length"     value="0.50"/>
   <xacro:property name="body_width"      value="0.15"/>
   <xacro:property name="body_height"     value="0.12"/>
   <xacro:property name="body_mass"       value="15.0"/>
@@ -31,7 +26,6 @@
   <xacro:property name="lidar_y"         value="0.0"/>
   <xacro:property name="lidar_z"         value="0.20"/>
 
-  <!-- Frame tree (must match this exactly — no changes allowed) -->
   <link name="base_footprint">
     <visual><geometry><box size="0.001 0.001 0.001"/></geometry></visual>
   </link>
@@ -51,7 +45,7 @@
       <geometry><box size="${body_length+0.05} ${body_width*2+0.1} ${body_height+0.04}"/></geometry>
     </collision>
     <inertial>
-      <!-- TODO(agibot): Replace with real D1 Ultra inertia tensor -->
+      <!-- TODO(d1): Replace with real D1 Ultra inertia tensor -->
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <mass value="${body_mass}"/>
       <inertia ixx="0.1" ixy="0" ixz="0" iyy="0.3" iyz="0" izz="0.35"/>
@@ -69,7 +63,7 @@
     </inertial>
   </link>
 
-  <!-- TODO(agibot): Update sensor params to D1 LiDAR specs if different from L1 -->
+  <!-- TODO(d1): Update sensor params to D1 LiDAR specs if different from L1 -->
   <xacro:l1_lidar parent="base_link" prefix="">
     <origin xyz="${lidar_x} ${lidar_y} ${lidar_z}" rpy="0 0 0"/>
   </xacro:l1_lidar>

@@ -1,11 +1,3 @@
-# sim_params.yaml
 # Simulation-specific parameter overrides.
-#
-# use_sim_time=true is set via the sim_bringup.launch.py launch argument and
-# propagated to all nodes automatically.  No per-node overrides are needed here.
-#
-# The active simulation stack is Fortress + ros_ign_bridge (see go2_sim/launch/sim_champ.launch.py).
-# Topic bridging/remapping is defined in launch, not in this config file.
-#
-# TODO(agibot): Add D1 Ultra specific overrides here if needed when
-#   d1_sim/urdf/d1_sim.urdf.xacro is implemented.
+# use_sim_time is propagated to all nodes via the sim_bringup.launch.py launch argument.
+# TODO(d1): add D1 Ultra specific overrides here when d1_sim.urdf.xacro is implemented.
