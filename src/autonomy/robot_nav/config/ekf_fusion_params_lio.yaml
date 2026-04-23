@@ -16,8 +16,11 @@
 #                                 control) was causing the map to rotate when the robot is still.
 #                                 DLIO already fuses the LiDAR IMU internally; double-fusing
 #                                 the body IMU on top degrades rather than improves the estimate.
-#   odom1 (/lidar_odom_reliable): DLIO output with injected covariances (via lidar_odom_relay).
+#   odom1 (/lidar_odom_reliable): DLIO output with adaptive covariances (via lidar_odom_relay).
 #                                 Primary source for position, heading, and angular velocity.
+#                                 Covariances scale with reliability signals (velocity consistency,
+#                                 update rate) so the EKF automatically down-weights DLIO
+#                                 during degenerate conditions.
 #
 # This file is loaded when use_lio:=true.
 # go2_bringup selects ekf_fusion_params.yaml instead when use_lio:=false.

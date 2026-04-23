@@ -15,7 +15,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
 
@@ -29,6 +29,11 @@ def generate_launch_description():
     args = [
         DeclareLaunchArgument("use_sim_time", default_value="false"),
         DeclareLaunchArgument("use_lio", default_value="false"),
+        DeclareLaunchArgument(
+            "start_dlio_map_node",
+            default_value="true",
+            description="Start DLIO map node to expose /save_pcd map export service",
+        ),
         DeclareLaunchArgument("start_lidar_points_relay", default_value="false"),
         DeclareLaunchArgument("start_lidar_imu_relay", default_value="false"),
         DeclareLaunchArgument("lidar_points_input_topic", default_value="/lidar/points"),
@@ -36,6 +41,11 @@ def generate_launch_description():
         DeclareLaunchArgument("lidar_imu_input_topic", default_value="/lidar/imu"),
         DeclareLaunchArgument("lidar_imu_topic", default_value="/lidar/imu"),
         DeclareLaunchArgument("lidar_odom_topic", default_value="/lidar_odom"),
+        DeclareLaunchArgument(
+            "dlio_keyframes_topic",
+            default_value="/kf_cloud",
+            description="Keyframe cloud topic consumed by dlio_map_node",
+        ),
         DeclareLaunchArgument("dlio_publish_tf", default_value="false"),
         DeclareLaunchArgument("publish_lidar_imu_tf", default_value="true"),
         DeclareLaunchArgument("lidar_frame", default_value="lidar_link"),
@@ -57,6 +67,7 @@ def generate_launch_description():
     lidar_imu_input_topic = LaunchConfiguration("lidar_imu_input_topic")
     lidar_imu_topic = LaunchConfiguration("lidar_imu_topic")
     lidar_odom_topic = LaunchConfiguration("lidar_odom_topic")
+    dlio_keyframes_topic = LaunchConfiguration("dlio_keyframes_topic")
 
     pointcloud_relay = Node(
         package="topic_tools",
@@ -114,9 +125,31 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("use_lio")),
     )
 
+    dlio_map_node = Node(
+        package="direct_lidar_inertial_odometry",
+        executable="dlio_map_node",
+        name="dlio_map_node",
+        output="screen",
+        parameters=[
+            LaunchConfiguration("dlio_params_file"),
+            {"use_sim_time": use_sim_time},
+        ],
+        remappings=[
+            ("keyframes", dlio_keyframes_topic),
+        ],
+        condition=IfCondition(
+            PythonExpression([
+                "'", LaunchConfiguration("use_lio"), "' == 'true' and '",
+                LaunchConfiguration("start_dlio_map_node"),
+                "' == 'true'",
+            ])
+        ),
+    )
+
     return LaunchDescription(args + [
         pointcloud_relay,
         imu_relay,
         lidar_imu_tf,
         dlio_odom_node,
+        dlio_map_node,
     ])
