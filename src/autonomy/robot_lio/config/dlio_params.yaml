@@ -22,11 +22,16 @@
     pointcloud/voxelize: true
 
     odom/computeTimeOffset: true
-    odom/imu/approximateGravity: false
+    odom/imu/approximateGravity: true
     odom/imu/calibration/gyro: true
     odom/imu/calibration/accel: true
     odom/imu/calibration/time: 3.0
     odom/imu/bufferSize: 5000
+
+    # Keyframe thresholds: build a new submap keyframe every 20 cm or ~20 deg.
+    # DLIO defaults (0.5 m, 5 rad) are too coarse for indoor L1 LiDAR trajectories.
+    odom/keyframe/threshD: 0.20
+    odom/keyframe/threshR: 0.349
 
     # base_link -> lidar_link; URDF rpy (pi, -pi/12, 0)
     # R = Ry(-pi/12) * Rx(pi)

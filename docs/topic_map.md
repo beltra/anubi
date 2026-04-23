@@ -26,7 +26,8 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 | Topic | Type | Publisher | Consumer(s) | Sim | HW | Notes |
 |-------|------|-----------|-------------|-----|----|-------|
 | `/odom_raw` | `nav_msgs/Odometry` | CHAMP odom bridge (sim) / `go2_hw_bridge` (HW) | EKF fusion node | same | same | Raw body odometry input to EKF. |
-| `/lidar_odom` | `nav_msgs/Odometry` | optional LIO backend (via `robot_lio`) | EKF fusion node | optional | optional | Disabled by default (`use_lio:=false`). |
+| `/lidar_odom` | `nav_msgs/Odometry` | optional LIO backend (via `robot_lio`) | `lidar_odom_relay` | optional | optional | Disabled by default (`use_lio:=false`). All-zero covariances (DLIO limitation) — never feed directly to the EKF. |
+| `/lidar_odom_reliable` | `nav_msgs/Odometry` | `lidar_odom_relay` | EKF fusion node | optional | optional | `/lidar_odom` with injected diagonal covariances. Active only when `use_lio:=true`. This is the topic the EKF consumes. |
 | `/odom` | `nav_msgs/Odometry` | `footprint_to_odom_ekf` (sim) / `ekf_filter_node` (HW) | `slam_toolbox`, Nav2 | same | same | Fused odometry output. frame_id=`odom`, child_frame_id=`base_footprint`. |
 | `/map` | `nav_msgs/OccupancyGrid` | `slam_toolbox` | Nav2 `map_server`, RViz | same | same | Published during mapping mode; used as localization reference in localization mode. |
 

@@ -308,7 +308,11 @@
   <joint name="lidar_to_lidar_imu" type="fixed">
     <parent link="lidar_link"/>
     <child  link="lidar_imu_link"/>
-    <origin xyz="-0.007698 -0.014655 0.00667" rpy="${lidar_imu_roll} ${lidar_imu_pitch} 0"/>
+    <!-- rpy="0 0 0" matches go2_description and DLIO extrinsics convention.
+         The physical IMU tilt within the L1 housing is already compensated by the
+         UniLidar SDK on the real robot; the sim IMU should present the same
+         pre-corrected frame so dlio_params_sim.yaml extrinsics remain valid. -->
+    <origin xyz="-0.007698 -0.014655 0.00667" rpy="0 0 0"/>
   </joint>
 
   <link name="lidar_imu_link">
@@ -340,14 +344,14 @@
       <ignition_frame_id>lidar_imu_link</ignition_frame_id>
       <imu>
         <angular_velocity>
-          <x><noise type="gaussian"><mean>${lidar_imu_ang_bias_x}</mean><stddev>0.009</stddev></noise></x>
-          <y><noise type="gaussian"><mean>${lidar_imu_ang_bias_y}</mean><stddev>0.009</stddev></noise></y>
-          <z><noise type="gaussian"><mean>${lidar_imu_ang_bias_z}</mean><stddev>0.009</stddev></noise></z>
+          <x><noise type="gaussian"><mean>0.0</mean><stddev>0.009</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0.0</mean><stddev>0.009</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0.0</mean><stddev>0.009</stddev></noise></z>
         </angular_velocity>
         <linear_acceleration>
-          <x><noise type="gaussian"><mean>${lidar_imu_acc_bias_x}</mean><stddev>0.021</stddev></noise></x>
-          <y><noise type="gaussian"><mean>${lidar_imu_acc_bias_y}</mean><stddev>0.021</stddev></noise></y>
-          <z><noise type="gaussian"><mean>${lidar_imu_acc_bias_z}</mean><stddev>0.021</stddev></noise></z>
+          <x><noise type="gaussian"><mean>0.0</mean><stddev>0.021</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0.0</mean><stddev>0.021</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0.0</mean><stddev>0.021</stddev></noise></z>
         </linear_acceleration>
       </imu>
     </sensor>

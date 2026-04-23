@@ -54,6 +54,8 @@ def generate_launch_description():
     default_slam    = os.path.join(robot_nav_share,      "config", "slam_toolbox_params.yaml")
     urdf_file       = os.path.join(go2_description_share,"urdf",   "go2.urdf.xacro")
     rviz_config     = os.path.join(robot_nav_share,      "rviz",   "nav2.rviz")
+    ekf_params_base = os.path.join(robot_nav_share,      "config", "ekf_fusion_params.yaml")
+    ekf_params_lio  = os.path.join(robot_nav_share,      "config", "ekf_fusion_params_lio.yaml")
 
     args = [
         DeclareLaunchArgument(
@@ -161,8 +163,33 @@ def generate_launch_description():
         launch_arguments={
             "use_sim_time": use_sim_time,
             "output_odom_topic": "/odom",
+            # LIO mode uses a separate EKF config: velocity-only wheel odom + DLIO position.
+            # Non-LIO mode uses the base config: Sport Mode absolute position + body IMU.
+            "params_file": PythonExpression([
+                f"'{ekf_params_lio}' if '", use_lio, f"' == 'true' else '{ekf_params_base}'"
+            ]),
         }.items(),
         condition=IfCondition(use_ekf_fusion),
+    )
+
+    # DLIO publishes all-zero covariances; this relay injects diagonal covariances
+    # so the EKF applies a proper Kalman gain instead of hard-overwriting state.
+    # Only needed (and only running) when use_lio:=true.
+    lidar_odom_relay = Node(
+        package="robot_nav",
+        executable="lidar_odom_relay.py",
+        name="lidar_odom_relay",
+        output="screen",
+        parameters=[{
+            "use_sim_time": use_sim_time,
+            "input_topic":  "/lidar_odom",
+            "output_topic": "/lidar_odom_reliable",
+            # pose diagonal [x, y, z, roll, pitch, yaw] in m^2 / rad^2
+            "pose_cov":  [0.005, 0.005, 0.05, 0.005, 0.005, 0.002],
+            # twist diagonal [vx, vy, vz, vroll, vpitch, vyaw]
+            "twist_cov": [0.01, 0.01, 0.05, 0.005, 0.005, 0.005],
+        }],
+        condition=IfCondition(use_lio),
     )
 
     def maybe_include_lio(context):
@@ -236,6 +263,7 @@ def generate_launch_description():
         lidar_stabilized_tf,
         safety,
         ekf,
+        lidar_odom_relay,
         lio,
         slam,
         nav2,

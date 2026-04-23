@@ -1,0 +1,62 @@
+# EKF for body odom + LiDAR-inertial odometry fusion (LIO mode, use_lio:=true).
+#
+# Frame ownership:
+#   map->odom        : slam_toolbox (or AMCL)
+#   odom->base_*     : this EKF
+#
+# Source roles:
+#   odom0 (/odom_raw)           : Sport Mode wheel/leg odometry -- LINEAR velocity only (vx, vy).
+#                                 Provides high-rate (~50 Hz) velocity between DLIO updates.
+#                                 Position and heading excluded: DLIO is the authoritative
+#                                 position source; fusing two absolute positions causes oscillation.
+#                                 Angular velocity (vyaw) excluded: Go2 active balance control
+#                                 produces a non-zero gyro bias at rest, which integrates into
+#                                 a continuous yaw drift between 10 Hz DLIO updates.
+#   imu0                        : NOT USED in LIO mode. Raw IMU vyaw bias (from active balance
+#                                 control) was causing the map to rotate when the robot is still.
+#                                 DLIO already fuses the LiDAR IMU internally; double-fusing
+#                                 the body IMU on top degrades rather than improves the estimate.
+#   odom1 (/lidar_odom_reliable): DLIO output with injected covariances (via lidar_odom_relay).
+#                                 Primary source for position, heading, and angular velocity.
+#
+# This file is loaded when use_lio:=true.
+# go2_bringup selects ekf_fusion_params.yaml instead when use_lio:=false.
+
+ekf_filter_node:
+  ros__parameters:
+    frequency: 50.0
+    sensor_timeout: 0.1
+    two_d_mode: true
+    transform_time_offset: 0.0
+    transform_timeout: 0.2
+    print_diagnostics: true
+    publish_tf: true
+    publish_acceleration: false
+
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_footprint
+    world_frame: odom
+
+    # --- Sport Mode leg odometry (linear velocity only) ---
+    odom0: /odom_raw
+    odom0_config: [false, false, false,
+                   false, false, false,
+                   true,  true,  false,
+                   false, false, false,
+                   false, false, false]
+    odom0_differential: false
+    odom0_relative: false
+    odom0_queue_size: 10
+
+    # --- DLIO LiDAR odometry (primary position + heading + velocity source) ---
+    # Requires lidar_odom_relay to be running (started by go2_bringup when use_lio:=true).
+    odom1: /lidar_odom_reliable
+    odom1_config: [true,  true,  false,
+                   false, false, true,
+                   true,  true,  false,
+                   false, false, true,
+                   false, false, false]
+    odom1_differential: false
+    odom1_relative: false
+    odom1_queue_size: 10

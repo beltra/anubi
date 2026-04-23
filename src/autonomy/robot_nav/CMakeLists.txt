@@ -10,6 +10,7 @@ install(PROGRAMS
   scripts/cloud_self_filter.py
   scripts/distortion_corrector.py
   scripts/imu_stabilized_tf.py
+  scripts/lidar_odom_relay.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
