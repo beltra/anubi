@@ -4,7 +4,7 @@ set -euo pipefail
 MODE="mapping"
 MAP_PATH=""
 RVIZ="true"
-USE_SAFETY="false"
+USE_SAFETY="true"
 USE_STVL="true"
 USE_LIO="false"
 NAV_PROFILE="default_safe"
@@ -13,6 +13,7 @@ ROUTE_GRAPH_FILE=""
 ROBOT_NAME=""
 LIDAR_POINTS_IN_TOPIC="/utlidar/cloud"
 LIDAR_IMU_IN_TOPIC="/unilidar/imu"
+RECOVERY_ACK_KEY_MASK="0"
 
 usage() {
   cat <<'EOF'
@@ -22,7 +23,7 @@ Usage:
 Options:
   --map <path>               Path to slam_toolbox map (.posegraph), required in localization mode
   --no-rviz                  Start without RViz
-  --use-safety               Enable safety gate (velocity_limiter)
+  --no-safety                Disable safety arbiter for bench tests only
   --use-lio                  Enable optional LIO backend (/lidar_odom)
   --no-stvl                  Disable SpatioTemporalVoxelLayer in Nav2 local costmap
   --nav-profile <id>         Nav2 profile: default_safe | narrow_gap_1p0m | forward_static
@@ -33,12 +34,15 @@ Options:
                               Raw pointcloud topic relayed to /lidar/points (default: /utlidar/cloud)
   --lidar-imu-in-topic <topic>
                               Raw LiDAR IMU topic relayed to /lidar/imu (default: /unilidar/imu)
+  --recovery-ack-key-mask <mask>
+                              Controller START key mask for tilt recovery (hex or decimal)
   -h, --help                 Show this help
 
 Examples:
   run_go2_real.sh
-  run_go2_real.sh mapping --use-safety
-  run_go2_real.sh localization --map /ws/anubi/src/autonomy/robot_nav/maps/my_map --use-safety
+  run_go2_real.sh localization --map /ws/anubi/src/autonomy/robot_nav/maps/my_map
+  run_go2_real.sh mapping --recovery-ack-key-mask 0x0001
+  run_go2_real.sh mapping --no-safety
   run_go2_real.sh mapping --nav-profile forward_static
 EOF
 }
@@ -59,7 +63,12 @@ while [[ $# -gt 0 ]]; do
       RVIZ="false"
       shift
       ;;
+    --no-safety)
+      USE_SAFETY="false"
+      shift
+      ;;
     --use-safety)
+      echo "--use-safety is now the default; use --no-safety only for bench tests." >&2
       USE_SAFETY="true"
       shift
       ;;
@@ -98,6 +107,11 @@ while [[ $# -gt 0 ]]; do
     --lidar-imu-in-topic)
       [[ $# -ge 2 ]] || { echo "Missing value for --lidar-imu-in-topic" >&2; usage; exit 1; }
       LIDAR_IMU_IN_TOPIC="$2"
+      shift 2
+      ;;
+    --recovery-ack-key-mask)
+      [[ $# -ge 2 ]] || { echo "Missing value for --recovery-ack-key-mask" >&2; usage; exit 1; }
+      RECOVERY_ACK_KEY_MASK="$2"
       shift 2
       ;;
     -h|--help)
@@ -154,6 +168,7 @@ CMD=(
   use_route_server:="$USE_ROUTE_SERVER"
   lidar_points_input_topic:="$LIDAR_POINTS_IN_TOPIC"
   lidar_imu_input_topic:="$LIDAR_IMU_IN_TOPIC"
+  recovery_ack_key_mask:="$RECOVERY_ACK_KEY_MASK"
 )
 
 if [[ -n "$ROUTE_GRAPH_FILE" ]]; then
@@ -169,6 +184,9 @@ if [[ -n "$ROBOT_NAME" ]]; then
 fi
 
 echo "Starting GO2 real robot stack..."
+if [[ "$USE_SAFETY" != "true" ]]; then
+  echo "WARNING: safety arbiter disabled. Use only for unloaded bench tests." >&2
+fi
 printf 'Command:'
 printf ' %q' "${CMD[@]}"
 echo

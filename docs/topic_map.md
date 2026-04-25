@@ -53,8 +53,11 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 |-------|------|-----------|-------------|-----|----|-------|
 | `/cmd_vel_nav` | `geometry_msgs/Twist` | Nav2 `controller_server` | Nav2 `velocity_smoother` | same | same | Nav2 bringup remaps controller output from `cmd_vel` to `cmd_vel_nav`. |
 | `/cmd_vel` | `geometry_msgs/Twist` | Nav2 `velocity_smoother` | `collision_monitor` | same | same | Smoothed Nav2 command. Nav2 Humble uses Twist (not TwistStamped). |
-| `/cmd_vel_collision_free` | `geometry_msgs/Twist` | `collision_monitor` | `velocity_limiter` (if `use_safety:=true`) or locomotion directly | same | same | collision_monitor output after proximity checks. |
-| `/cmd_vel_safe` | `geometry_msgs/Twist` | `velocity_limiter` | CHAMP `quadruped_controller` (sim) / `go2_hw_bridge` (HW) | same | same | Output of velocity_limiter safety gate. Only active when `use_safety:=true`. |
+| `/cmd_vel_collision_free` | `geometry_msgs/Twist` | `collision_monitor` | `velocity_limiter` safety arbiter | same | same | collision_monitor output after proximity checks. In real production runs this must not go directly to hardware. |
+| `/cmd_vel_manual_collision_free` | `geometry_msgs/Twist` | optional manual source after collision filtering | `velocity_limiter` (disabled by default) | optional | optional | Reserved command-mux input. Must be collision-filtered before enabling. |
+| `/cmd_vel_assisted_collision_free` | `geometry_msgs/Twist` | optional assisted teleop source after collision filtering | `velocity_limiter` (disabled by default) | optional | optional | Reserved command-mux input. Must be collision-filtered before enabling. |
+| `/cmd_vel_recovery_collision_free` | `geometry_msgs/Twist` | optional recovery source after collision filtering | `velocity_limiter` (disabled by default) | optional | optional | Reserved command-mux input. Must be collision-filtered before enabling. |
+| `/cmd_vel_safe` | `geometry_msgs/Twist` | `velocity_limiter` | CHAMP `quadruped_controller` (sim) / `go2_hw_bridge` (HW) | same | same | Final command after watchdog, joystick override, and tilt estop gating. Default real-robot hardware input. |
 
 ---
 
@@ -72,7 +75,11 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 
 | Topic | Type | Publisher | Consumer(s) | Sim | HW | Notes |
 |-------|------|-----------|-------------|-----|----|-------|
-| `/robot_status` | `robot_common_interfaces/RobotStatus` | `go2_hw_bridge` | `velocity_limiter` | same | same | Published at 1 Hz. Contains `estop_active` flag and battery percentage. In sim, `go2_hw_bridge` is absent; `velocity_limiter` is configured with `status_topic: ""` (watchdog-only mode). |
+| `/robot_status` | `robot_common_interfaces/RobotStatus` | `go2_hw_bridge` | `velocity_limiter` | absent | published | Published at 1 Hz. Contains hardware estop/watchdog flag and battery percentage. In sim, `go2_hw_bridge` is absent; `velocity_limiter` is configured with `status_topic: ""` (watchdog-only mode). |
+| `/wirelesscontroller` | `unitree_go/WirelessController` | Go2 internal bridge | `joystick_safety`, `tilt_monitor` recovery ack | absent | published | Hardware controller axes and key bitmask. Any active axis/key triggers `/joystick_override`; START bit must be calibrated for tilt recovery. |
+| `/joystick_override` | `std_msgs/Bool` | `joystick_safety` | `velocity_limiter` | absent | published | True while operator input is active; Nav2 goals are canceled on activation and `/cmd_vel_safe` is held at zero. |
+| `/safety/tilt_estop` | `std_msgs/Bool` | `tilt_monitor` | `velocity_limiter` | absent | published | Latched true when body roll/pitch exceeds the configured estop threshold; clears only below clear threshold with calibrated controller ack. |
+| `/safety/command_source` | `std_msgs/String` | `velocity_limiter` | operators/diagnostics | same | same | Current final arbiter state: `nav`, `estop`, `tilt_estop`, `joystick_override`, `watchdog`, or `waiting_for_cmd`. |
 
 ---
 

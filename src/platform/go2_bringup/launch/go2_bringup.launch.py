@@ -4,7 +4,7 @@ go2_bringup.launch.py -- Master entry point for the Go2 autonomy stack.
 Starts (in order):
   1. robot_state_publisher  (URDF + static TF from joints)
   2. go2_hw_bridge          (SportModeState -> odom/TF, cmd_vel -> Sport API)
-  3. velocity_limiter       (optional safety gate; enabled by use_safety:=true)
+  3. robot_safety           (safety arbiter; enabled by use_safety:=true)
   4. EKF                    (optional odom fusion; enabled by use_ekf_fusion:=true)
   5. robot_lio              (canonical LiDAR relay + optional DLIO backend)
   6. slam.launch.py         (pointcloud_to_laserscan + slam_toolbox)
@@ -26,9 +26,10 @@ use_route_server: bool   Launch optional Nav2 route_server scaffold (default: fa
 route_graph_file: str    Route graph GeoJSON file for route_server experiments
 slam_params     : str    Override slam_toolbox params file
 slam_mode       : str    'mapping' or 'localization' (default: 'mapping')
-use_safety      : bool   Enable velocity_limiter safety gate (default: false)
+use_safety      : bool   Enable safety arbiter (default: true)
 use_ekf_fusion  : bool   EKF odom fusion (default: true)
 use_lio         : bool   Enable DLIO LiDAR-inertial odometry (default: false)
+recovery_ack_key_mask : int Controller START key mask for tilt recovery
 """
 
 import os
@@ -86,8 +87,10 @@ def generate_launch_description():
                               description="Raw LiDAR pointcloud topic to relay to /lidar/points"),
         DeclareLaunchArgument("lidar_imu_input_topic", default_value="/unilidar/imu",
                               description="Raw LiDAR IMU topic to relay to /lidar/imu"),
-        DeclareLaunchArgument("use_safety",   default_value="false",
-                              description="Enable velocity_limiter; go2_hw_bridge reads /cmd_vel_safe"),
+        DeclareLaunchArgument("use_safety",   default_value="true",
+                              description="Enable safety arbiter; go2_hw_bridge reads /cmd_vel_safe"),
+        DeclareLaunchArgument("recovery_ack_key_mask", default_value="0",
+                              description="Controller START key mask for tilt estop recovery"),
     ]
 
     use_sim_time = LaunchConfiguration("use_sim_time")
@@ -105,6 +108,7 @@ def generate_launch_description():
     lidar_points_input_topic = LaunchConfiguration("lidar_points_input_topic")
     lidar_imu_input_topic = LaunchConfiguration("lidar_imu_input_topic")
     use_safety   = LaunchConfiguration("use_safety")
+    recovery_ack_key_mask = LaunchConfiguration("recovery_ack_key_mask")
 
     hw_bridge_cmd_topic = PythonExpression(
         ["'/cmd_vel_safe' if '", use_safety, "' == 'true' else '/cmd_vel_collision_free'"]
@@ -161,6 +165,7 @@ def generate_launch_description():
             "use_sim_time": use_sim_time,
             "cmd_vel_in": "/cmd_vel_collision_free",
             "cmd_vel_out": "/cmd_vel_safe",
+            "recovery_ack_key_mask": recovery_ack_key_mask,
         }.items(),
         condition=IfCondition(use_safety),
     )

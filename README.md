@@ -63,8 +63,11 @@ Go2 hardware
                             +--> Nav2 STVL costmap (direct PointCloud2)
 
 Nav2 --> /cmd_vel --> collision_monitor --> /cmd_vel_collision_free
-    +--> [velocity_limiter (use_safety:=true)] --> /cmd_vel_safe
+    +--> [velocity_limiter safety arbiter] --> /cmd_vel_safe
     +--> go2_hw_bridge --> /api/sport/request --> Go2 hardware
+
+/wirelesscontroller --> joystick_safety --> /joystick_override
+/imu/data --> tilt_monitor --> /safety/tilt_estop
 ```
 
 ---
@@ -146,8 +149,8 @@ You can use these wrappers instead of typing long `ros2 launch` commands:
 # Real robot (mapping mode, with LiDAR relay /utlidar/cloud -> /lidar/points)
 /ws/anubi/scripts/run_go2_real.sh
 
-# Real robot (localization mode + safety gate)
-/ws/anubi/scripts/run_go2_real.sh localization --map /ws/anubi/src/autonomy/robot_nav/maps/my_map --use-safety
+# Real robot (localization mode; safety gate is on by default)
+/ws/anubi/scripts/run_go2_real.sh localization --map /ws/anubi/src/autonomy/robot_nav/maps/my_map
 ```
 
 Script options:
@@ -280,7 +283,7 @@ ros2 run sim_scenarios scenario_manager \
 
 - `TODO(agibot)` -- changes for AgiBot D1 Ultra porting (implement `simulation/d1_sim/urdf/d1_sim.urdf.xacro` and `agibot_d1_bringup`)
 - `TODO(sim)` -- Gazebo plugin stubs remaining in `go2_description/urdf/go2.urdf.xacro` (hardware URDF); the simulation itself is fully working via `go2_sim/`
-- `TODO(safety)` -- `tilt_monitor` node (IMU-based fall detection); `velocity_limiter` is already implemented
+- `TODO(safety)` -- calibrate the real controller START key mask for tilt recovery
 - `TODO(localization)` -- where to wire in map-based localization improvements
 
 ---
@@ -293,7 +296,7 @@ Ordered by current value to the project. Difficulty is a rough implementation es
 |---|---:|---|---|---|
 | 1 | M | Safety | Make real-robot safety gating the production default | Enable `use_safety` by default in the real-robot path, keep an explicit opt-out for bench tests, and verify that `go2_hw_bridge` only reads `/cmd_vel_safe` in production runs. This reduces the chance of bypassing the watchdog and future safety checks during field use. |
 | 2 | M | Safety | Add joystick override and autonomous-goal cancellation | Implement the `/wirelesscontroller -> /joystick_override` path described in `docs/PROJECT_SPECS.md`, cancel active Nav2 goals when the operator touches the controller, and hold zero velocity until the controller is neutral for a configurable grace period. This gives the human operator hard priority over autonomy. |
-| 3 | M | Safety | Implement IMU tilt and fall detection | Add the planned `tilt_monitor` node using `/imu/data`, publish a safety/estop state through the existing status path, and latch zero commands until recovery is acknowledged. This protects the robot and environment when the body pitch/roll exceeds safe walking assumptions. |
+| 3 | M | Safety | Implement IMU tilt and fall detection | Add the planned `tilt_monitor` node using `/imu/data`, publish a latched safety/estop state, and latch zero commands until recovery is acknowledged. This protects the robot and environment when the body pitch/roll exceeds safe walking assumptions. |
 | 4 | M | Safety | Add sensor, TF, and command-chain health monitors | Create diagnostics for stale `/lidar/points_undistorted`, `/scan`, `/odom`, `/tf`, `/cmd_vel`, and `/cmd_vel_safe`, with clear WARN/ERROR states. This makes silent perception or localization failures visible before they become motion failures. |
 | 5 | M | Safety | Validate collision monitor zones against real geometry | Re-measure the Go2 footprint, leg sweep, stopping distance, LiDAR blind zones, and collision monitor polygons in both sim and hardware. This turns the current hand-tuned stop/slow zones into documented safety envelopes. |
 | 6 | L | Safety | Add safety regression scenarios in simulation | Extend `sim_scenarios` with repeatable tests for sudden obstacles, blocked corridors, stale sensor topics, map jumps, and operator override. This gives safety behavior a measurable pass/fail loop instead of relying on manual RViz inspection. |

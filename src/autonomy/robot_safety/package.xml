@@ -6,16 +6,9 @@
   <description>
     Safety gating layer for the Go2 autonomy stack.
 
-    velocity_limiter node:
-      Sits between Nav2 /cmd_vel and go2_hw_bridge.
-      Publishes /cmd_vel_safe (zero) when:
-        - robot_status.estop_active is true, or
-        - No /cmd_vel received within cmd_timeout seconds (watchdog).
-      Otherwise forwards /cmd_vel unchanged.
-
-    Enable via: ros2 launch go2_bringup go2_bringup.launch.py use_safety:=true
-
-    TODO(safety): Add tilt_monitor node (IMU-based fall/tilt detection → /estop).
+    velocity_limiter sits between collision_monitor and go2_hw_bridge.
+    joystick_safety and tilt_monitor publish safety state consumed by the
+    final velocity arbiter.
   </description>
   <maintainer email="todo@example.com">Maintainer</maintainer>
   <license>Apache-2.0</license>
@@ -24,8 +17,14 @@
   <buildtool_depend>ament_cmake_python</buildtool_depend>
 
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>action_msgs</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>robot_common_interfaces</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>unitree_go</exec_depend>
+
+  <test_depend>ament_cmake_pytest</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
