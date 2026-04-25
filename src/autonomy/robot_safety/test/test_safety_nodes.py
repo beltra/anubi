@@ -33,6 +33,20 @@ def test_joystick_active_uses_axes_and_keys():
     assert joystick.joystick_active(key_active, 0.05) is True
 
 
+def test_start_resume_requires_start_key_and_neutral_axes():
+    msg = SimpleNamespace(lx=0.0, ly=0.0, rx=0.0, ry=0.0, keys=0x0008)
+    assert joystick.start_resume_requested(0, msg, 0.05, 0x0008)
+
+    held = SimpleNamespace(lx=0.0, ly=0.0, rx=0.0, ry=0.0, keys=0x0008)
+    assert not joystick.start_resume_requested(0x0008, held, 0.05, 0x0008)
+
+    moving = SimpleNamespace(lx=0.0, ly=0.2, rx=0.0, ry=0.0, keys=0x0008)
+    assert not joystick.start_resume_requested(0, moving, 0.05, 0x0008)
+
+    no_mask = SimpleNamespace(lx=0.0, ly=0.0, rx=0.0, ry=0.0, keys=0x0008)
+    assert not joystick.start_resume_requested(0, no_mask, 0.05, 0)
+
+
 def test_tilt_roll_pitch_and_recovery_ack():
     half_angle = math.radians(30.0) / 2.0
     q = SimpleNamespace(x=math.sin(half_angle), y=0.0, z=0.0, w=math.cos(half_angle))

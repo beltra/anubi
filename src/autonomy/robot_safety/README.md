@@ -41,7 +41,7 @@ Nav2 /cmd_vel -> collision_monitor -> /cmd_vel_collision_free -> velocity_limite
 
 ## `joystick_safety` node
 
-Subscribes to `/wirelesscontroller`, publishes `/joystick_override`, and cancels active Nav2 goals when any controller axis or key is active. Override clears only after the controller is neutral for `neutral_hold_secs`.
+Subscribes to `/wirelesscontroller`, publishes `/joystick_override`, and cancels active Nav2 goals when any controller axis or key is active. It remembers the latest `/goal_pose`; pressing the calibrated START key with neutral sticks clears override and resends that goal through `navigate_to_pose`, forcing Nav2 to compute a new path from the current pose. Override also clears without resuming after the controller is neutral for `neutral_hold_secs`.
 
 ---
 

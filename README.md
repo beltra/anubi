@@ -283,7 +283,7 @@ ros2 run sim_scenarios scenario_manager \
 
 - `TODO(agibot)` -- changes for AgiBot D1 Ultra porting (implement `simulation/d1_sim/urdf/d1_sim.urdf.xacro` and `agibot_d1_bringup`)
 - `TODO(sim)` -- Gazebo plugin stubs remaining in `go2_description/urdf/go2.urdf.xacro` (hardware URDF); the simulation itself is fully working via `go2_sim/`
-- `TODO(safety)` -- calibrate the real controller START key mask for tilt recovery
+- `TODO(safety)` -- calibrate the real controller START key mask for tilt and navigation recovery
 - `TODO(localization)` -- where to wire in map-based localization improvements
 
 ---

@@ -43,6 +43,7 @@ def generate_launch_description():
         DeclareLaunchArgument('start_joystick_safety', default_value='true'),
         DeclareLaunchArgument('start_tilt_monitor', default_value='true'),
         DeclareLaunchArgument('recovery_ack_key_mask', default_value='0'),
+        DeclareLaunchArgument('resume_nav_on_start', default_value='true'),
     ]
 
     velocity_limiter = Node(
@@ -73,6 +74,8 @@ def generate_launch_description():
             'use_sim_time': LaunchConfiguration('use_sim_time'),
             'joystick_topic': LaunchConfiguration('joystick_topic'),
             'override_topic': LaunchConfiguration('joystick_override_topic'),
+            'start_key_mask': LaunchConfiguration('recovery_ack_key_mask'),
+            'resume_on_start': LaunchConfiguration('resume_nav_on_start'),
         }],
     )
 

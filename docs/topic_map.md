@@ -77,7 +77,7 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 |-------|------|-----------|-------------|-----|----|-------|
 | `/robot_status` | `robot_common_interfaces/RobotStatus` | `go2_hw_bridge` | `velocity_limiter` | absent | published | Published at 1 Hz. Contains hardware estop/watchdog flag and battery percentage. In sim, `go2_hw_bridge` is absent; `velocity_limiter` is configured with `status_topic: ""` (watchdog-only mode). |
 | `/wirelesscontroller` | `unitree_go/WirelessController` | Go2 internal bridge | `joystick_safety`, `tilt_monitor` recovery ack | absent | published | Hardware controller axes and key bitmask. Any active axis/key triggers `/joystick_override`; START bit must be calibrated for tilt recovery. |
-| `/joystick_override` | `std_msgs/Bool` | `joystick_safety` | `velocity_limiter` | absent | published | True while operator input is active; Nav2 goals are canceled on activation and `/cmd_vel_safe` is held at zero. |
+| `/joystick_override` | `std_msgs/Bool` | `joystick_safety` | `velocity_limiter` | absent | published | True while operator input is active; Nav2 goals are canceled on activation and `/cmd_vel_safe` is held at zero. Pressing calibrated START with neutral sticks clears override and resends the latest `/goal_pose`. |
 | `/safety/tilt_estop` | `std_msgs/Bool` | `tilt_monitor` | `velocity_limiter` | absent | published | Latched true when body roll/pitch exceeds the configured estop threshold; clears only below clear threshold with calibrated controller ack. |
 | `/safety/command_source` | `std_msgs/String` | `velocity_limiter` | operators/diagnostics | same | same | Current final arbiter state: `nav`, `estop`, `tilt_estop`, `joystick_override`, `watchdog`, or `waiting_for_cmd`. |
 
