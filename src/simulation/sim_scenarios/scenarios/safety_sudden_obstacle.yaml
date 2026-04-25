@@ -1,0 +1,6 @@
+name: safety_sudden_obstacle
+description: Close obstacle in front of the robot for collision monitor regression checks.
+obstacles:
+  - name: sudden_box_front
+    model: obstacle_box
+    pose: {x: 0.80, y: 0.0, z: 0.50, yaw: 0.0}

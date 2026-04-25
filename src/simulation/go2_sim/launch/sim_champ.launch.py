@@ -340,6 +340,18 @@ def generate_launch_description():
         }],
     )
 
+    health_monitor = Node(
+        package="robot_safety",
+        executable="health_monitor",
+        name="health_monitor",
+        output="screen",
+        parameters=[{
+            "use_sim_time": use_sim_time,
+            "cmd_vel_topic": "/cmd_vel_collision_free",
+            "cmd_vel_safe_topic": "/cmd_vel_safe",
+        }],
+    )
+
     # Controller spawners: delayed for Gazebo + ign_ros2_control init (~15-20 s on Fortress)
     controller_spawner_js = TimerAction(
         period=10.0,
@@ -392,6 +404,7 @@ def generate_launch_description():
         gazebo_spawn_robot,
         gazebo_bridge,
         velocity_limiter,
+        health_monitor,
         quadruped_controller_node,
         footprint_to_odom_ekf,
         base_footprint_to_base_link_tf,

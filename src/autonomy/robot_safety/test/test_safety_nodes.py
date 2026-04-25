@@ -20,6 +20,7 @@ def load_script(name):
 joystick = load_script("joystick_safety_node.py")
 tilt = load_script("tilt_monitor_node.py")
 limiter = load_script("velocity_limiter_node.py")
+health = load_script("health_monitor_node.py")
 
 
 def test_joystick_active_uses_axes_and_keys():
@@ -72,6 +73,44 @@ def test_velocity_limiter_priority_order():
     assert limiter.select_command_source(False, False, False, fresh_sources) == "recovery"
 
 
+def test_health_monitor_freshness_levels():
+    missing = health.freshness_status(None, 10.0, 1.0, 3.0)
+    assert missing.level == health.ERROR
+    assert missing.message == "no messages observed"
+
+    fresh = health.freshness_status(9.5, 10.0, 1.0, 3.0)
+    assert fresh.level == health.OK
+    assert fresh.age_sec == pytest_approx(0.5)
+
+    delayed = health.freshness_status(8.5, 10.0, 1.0, 3.0)
+    assert delayed.level == health.WARN
+    assert delayed.message == "delayed"
+
+    stale = health.freshness_status(6.5, 10.0, 1.0, 3.0)
+    assert stale.level == health.ERROR
+    assert stale.message == "stale"
+
+
+def test_health_monitor_map_jump_thresholds():
+    prev = make_tf(0.0, 0.0, 0.0)
+    stable = health.map_jump_status(prev, make_tf(0.1, 0.0, 0.1), 0.5, 1.0, 0.35, 0.7)
+    assert stable.level == health.OK
+
+    warned = health.map_jump_status(prev, make_tf(0.6, 0.0, 0.1), 0.5, 1.0, 0.35, 0.7)
+    assert warned.level == health.WARN
+
+    errored = health.map_jump_status(prev, make_tf(1.1, 0.0, 0.1), 0.5, 1.0, 0.35, 0.7)
+    assert errored.level == health.ERROR
+
+    yaw_error = health.map_jump_status(prev, make_tf(0.0, 0.0, 0.8), 0.5, 1.0, 0.35, 0.7)
+    assert yaw_error.level == health.ERROR
+
+
+def test_health_monitor_parse_tf_pair():
+    assert health.parse_tf_pair("map->odom") == ("map", "odom")
+    assert health.parse_tf_pair("base_link:imu_link") == ("base_link", "imu_link")
+
+
 def test_real_launch_and_script_default_to_safety():
     launch = (
         WORKSPACE_ROOT
@@ -94,3 +133,18 @@ def pytest_approx(value):
     import pytest
 
     return pytest.approx(value, abs=0.001)
+
+
+def make_tf(x, y, yaw):
+    half = yaw / 2.0
+    return SimpleNamespace(
+        transform=SimpleNamespace(
+            translation=SimpleNamespace(x=x, y=y, z=0.0),
+            rotation=SimpleNamespace(
+                x=0.0,
+                y=0.0,
+                z=math.sin(half),
+                w=math.cos(half),
+            ),
+        )
+    )

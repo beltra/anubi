@@ -15,6 +15,7 @@ cmd_vel_out            str    Output command topic         (default: /cmd_vel_sa
 status_topic           str    RobotStatus topic            (default: /robot_status)
 start_joystick_safety  bool   Launch joystick override node (default: true)
 start_tilt_monitor     bool   Launch tilt estop node       (default: true)
+start_health_monitor   bool   Launch topic/TF health diagnostics (default: true)
 recovery_ack_key_mask  int    Controller key mask for tilt recovery
 """
 
@@ -42,6 +43,7 @@ def generate_launch_description():
         DeclareLaunchArgument('command_source_topic', default_value='/safety/command_source'),
         DeclareLaunchArgument('start_joystick_safety', default_value='true'),
         DeclareLaunchArgument('start_tilt_monitor', default_value='true'),
+        DeclareLaunchArgument('start_health_monitor', default_value='true'),
         DeclareLaunchArgument('recovery_ack_key_mask', default_value='0'),
         DeclareLaunchArgument('resume_nav_on_start', default_value='true'),
     ]
@@ -94,4 +96,22 @@ def generate_launch_description():
         }],
     )
 
-    return LaunchDescription(args + [joystick_safety, tilt_monitor, velocity_limiter])
+    health_monitor = Node(
+        package='robot_safety',
+        executable='health_monitor',
+        name='health_monitor',
+        output='screen',
+        condition=IfCondition(LaunchConfiguration('start_health_monitor')),
+        parameters=[{
+            'use_sim_time': LaunchConfiguration('use_sim_time'),
+            'cmd_vel_topic': LaunchConfiguration('cmd_vel_in'),
+            'cmd_vel_safe_topic': LaunchConfiguration('cmd_vel_out'),
+        }],
+    )
+
+    return LaunchDescription(args + [
+        joystick_safety,
+        tilt_monitor,
+        velocity_limiter,
+        health_monitor,
+    ])

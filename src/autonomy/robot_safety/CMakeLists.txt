@@ -28,6 +28,12 @@ install(PROGRAMS
   RENAME wireless_key_inspector
 )
 
+install(PROGRAMS
+  scripts/health_monitor_node.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME health_monitor
+)
+
 install(DIRECTORY launch config
   DESTINATION share/${PROJECT_NAME}
 )

@@ -55,11 +55,30 @@ Parameters are set via `safety.launch.py` launch arguments, not `config/safety_p
 
 ---
 
+## `health_monitor` node
+
+Publishes `/diagnostics` (`diagnostic_msgs/DiagnosticArray`) for the safety-critical runtime contract. It reports WARN/ERROR states for stale processed LiDAR, scan, odometry, command input, final safe command output, required TF links, and large `map -> odom` jumps.
+
+Default monitored topics:
+
+| Diagnostic | Topic or TF |
+|------------|-------------|
+| `anubi/topic/lidar_points_undistorted` | `/lidar/points_undistorted` |
+| `anubi/topic/scan` | `/scan` |
+| `anubi/topic/odom` | `/odom` |
+| `anubi/topic/cmd_vel` | `/cmd_vel_collision_free` when launched via `safety.launch.py` |
+| `anubi/topic/cmd_vel_safe` | `/cmd_vel_safe` |
+| `anubi/map_jump/map_to_odom` | `map -> odom` jump detector |
+
+The monitor is launched by default from `safety.launch.py` and directly from the Go2 simulation launch so sim and hardware expose the same diagnostics surface.
+
+---
+
 ## Launch
 
 | File | Purpose |
 |------|---------|
-| `launch/safety.launch.py` | Start safety arbiter, joystick override, and tilt monitor |
+| `launch/safety.launch.py` | Start safety arbiter, joystick override, tilt monitor, and health monitor |
 
 ---
 

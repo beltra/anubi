@@ -21,11 +21,13 @@ setup(
     maintainer_email='todo@example.com',
     description='Runtime obstacle management for Gazebo simulation',
     license='Apache-2.0',
+    test_suite='test',
     entry_points={
         'console_scripts': [
             'scenario_manager = sim_scenarios.scenario_manager_node:main',
             'spawn_obstacle = sim_scenarios.spawn_obstacle:main',
             'benchmark_mppi = sim_scenarios.benchmark_mppi:main',
+            'safety_regression_runner = sim_scenarios.safety_regression_runner:main',
         ],
     },
 )

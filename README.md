@@ -255,8 +255,20 @@ ros2 run sim_scenarios spawn_obstacle --delete box_1
 ros2 run sim_scenarios scenario_manager \
     --ros-args -p scenario_file:=crowded_room
 
+# Run deterministic safety regression report checks without Gazebo
+/ws/anubi/scripts/run_sim_safety_regressions.sh --synthetic-only
+
+# Run live headless sim safety regressions and write JSON reports under log/
+/ws/anubi/scripts/run_sim_safety_regressions.sh
+
 # Nav2-only restart entry point is not provided in the current tree.
 ```
+
+### Safety diagnostics and regression reports
+
+`robot_safety` publishes `/diagnostics` through `health_monitor` in both simulation and real-robot safety launch paths. The monitor reports stale sensor topics, stale command-chain topics, missing TF links, and large `map -> odom` jumps using the names documented in `docs/topic_map.md`.
+
+`sim_scenarios` includes `safety_regression_runner` plus scenario manifests for sudden obstacles, blocked corridors, stale sensors, map jumps, and operator override. The wrapper script writes JSON reports suitable for manual review or the manual GitHub Actions safety workflow.
 
 ### Known simulation limits
 

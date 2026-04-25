@@ -1,0 +1,47 @@
+name: safety_regression_cases
+description: Regression expectations for safety diagnostics and command gating.
+cases:
+  - name: sudden_obstacle
+    description: A close obstacle should not break the command safety chain.
+    scenario_file: safety_sudden_obstacle
+    expected_diagnostics:
+      - {name: anubi/topic/cmd_vel_safe, max_level: OK}
+      - {name: anubi/tf/odom_to_base_footprint, max_level: OK}
+    sample_diagnostics:
+      - {name: anubi/topic/cmd_vel_safe, level: OK}
+      - {name: anubi/tf/odom_to_base_footprint, level: OK}
+
+  - name: blocked_corridor
+    description: A blocked route should keep the final command topic alive.
+    scenario_file: safety_blocked_corridor
+    expected_diagnostics:
+      - {name: anubi/topic/cmd_vel_safe, max_level: OK}
+      - {name: anubi/topic/odom, max_level: OK}
+    sample_diagnostics:
+      - {name: anubi/topic/cmd_vel_safe, level: OK}
+      - {name: anubi/topic/odom, level: OK}
+
+  - name: stale_sensor
+    description: Stale processed LiDAR must be reported as an error.
+    expected_diagnostics:
+      - {name: anubi/topic/lidar_points_undistorted, min_level: ERROR}
+    sample_diagnostics:
+      - {name: anubi/topic/lidar_points_undistorted, level: ERROR}
+
+  - name: map_jump
+    description: A large map-to-odom correction must be reported as an error.
+    expected_diagnostics:
+      - {name: anubi/map_jump/map_to_odom, min_level: ERROR}
+    sample_diagnostics:
+      - {name: anubi/map_jump/map_to_odom, level: ERROR}
+
+  - name: operator_override
+    description: Joystick override must win over autonomy commands.
+    publish_joystick_override: true
+    publish_nav_command: true
+    expected_command_source: joystick_override
+    expected_diagnostics:
+      - {name: anubi/topic/cmd_vel_safe, max_level: OK}
+    sample_command_source: joystick_override
+    sample_diagnostics:
+      - {name: anubi/topic/cmd_vel_safe, level: OK}

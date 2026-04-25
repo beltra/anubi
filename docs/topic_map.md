@@ -80,6 +80,26 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 | `/joystick_override` | `std_msgs/Bool` | `joystick_safety` | `velocity_limiter` | absent | published | True while operator input is active; Nav2 goals are canceled on activation and `/cmd_vel_safe` is held at zero. Pressing calibrated START with neutral sticks clears override and resends the latest `/goal_pose`. |
 | `/safety/tilt_estop` | `std_msgs/Bool` | `tilt_monitor` | `velocity_limiter` | absent | published | Latched true when body roll/pitch exceeds the configured estop threshold; clears only below clear threshold with calibrated controller ack. |
 | `/safety/command_source` | `std_msgs/String` | `velocity_limiter` | operators/diagnostics | same | same | Current final arbiter state: `nav`, `estop`, `tilt_estop`, `joystick_override`, `watchdog`, or `waiting_for_cmd`. |
+| `/diagnostics` | `diagnostic_msgs/DiagnosticArray` | `health_monitor`, EKF/LIO nodes when enabled | operators, CI/simulation regression tools | same | same | `health_monitor` reports WARN/ERROR status for stale `/lidar/points_undistorted`, `/scan`, `/odom`, `/cmd_vel_collision_free`, `/cmd_vel_safe`, required TF links, and `map -> odom` jumps. |
+
+### Health Monitor Diagnostic Names
+
+`robot_safety/health_monitor` publishes these `DiagnosticStatus.name` values:
+
+| Diagnostic name | Meaning |
+|-----------------|---------|
+| `anubi/topic/lidar_points_undistorted` | Freshness of `/lidar/points_undistorted` |
+| `anubi/topic/scan` | Freshness of `/scan` |
+| `anubi/topic/odom` | Freshness of `/odom` |
+| `anubi/topic/cmd_vel` | Freshness of the configured final arbiter input, default `/cmd_vel_collision_free` when launched through `robot_safety` |
+| `anubi/topic/cmd_vel_safe` | Freshness of `/cmd_vel_safe` |
+| `anubi/tf/map_to_odom` | Availability of `map -> odom` |
+| `anubi/tf/odom_to_base_footprint` | Availability of `odom -> base_footprint` |
+| `anubi/tf/base_footprint_to_base_link` | Availability of `base_footprint -> base_link` |
+| `anubi/tf/base_link_to_lidar_link` | Availability of `base_link -> lidar_link` |
+| `anubi/tf/base_link_to_imu_link` | Availability of `base_link -> imu_link` |
+| `anubi/tf/base_footprint_to_lidar_stabilized` | Availability of `base_footprint -> lidar_stabilized` |
+| `anubi/map_jump/map_to_odom` | Per-sample jump size of `map -> odom` |
 
 ---
 

@@ -1,0 +1,69 @@
+name: Manual Sim Safety Regressions
+
+on:
+  workflow_dispatch:
+
+jobs:
+  sim-safety:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    env:
+      ROS_DISTRO: humble
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Add ROS 2 apt repository
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl gnupg lsb-release xvfb
+          sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+            -o /usr/share/keyrings/ros-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo ${UBUNTU_CODENAME}) main" \
+            | sudo tee /etc/apt/sources.list.d/ros2.list >/dev/null
+
+      - name: Install tools and dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            nlohmann-json3-dev \
+            python3-colcon-common-extensions \
+            python3-rosdep \
+            python3-vcstool \
+            ros-${ROS_DISTRO}-desktop \
+            ros-${ROS_DISTRO}-navigation2 \
+            ros-${ROS_DISTRO}-nav2-bringup \
+            ros-${ROS_DISTRO}-slam-toolbox \
+            ros-${ROS_DISTRO}-pointcloud-to-laserscan \
+            ros-${ROS_DISTRO}-robot-localization \
+            ros-${ROS_DISTRO}-ros-ign-bridge \
+            ros-${ROS_DISTRO}-ros-ign-gazebo \
+            ros-${ROS_DISTRO}-ign-ros2-control \
+            ros-${ROS_DISTRO}-spatio-temporal-voxel-layer
+          sudo rosdep init || true
+          rosdep update
+          rosdep install --from-paths src --ignore-src -r -y --rosdistro ${ROS_DISTRO}
+
+      - name: Build
+        run: |
+          set +u
+          source /opt/ros/${ROS_DISTRO}/setup.bash
+          set -u
+          colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+      - name: Run manual safety regressions
+        run: |
+          set +u
+          source /opt/ros/${ROS_DISTRO}/setup.bash
+          source install/setup.bash
+          set -u
+          xvfb-run -a scripts/run_sim_safety_regressions.sh --results-dir "${PWD}/safety_regression_results"
+
+      - name: Upload safety reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safety-regression-results
+          path: |
+            safety_regression_results
+            /tmp/anubi_safety_*.log

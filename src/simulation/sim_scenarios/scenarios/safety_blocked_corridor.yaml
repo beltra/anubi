@@ -1,0 +1,18 @@
+name: safety_blocked_corridor
+description: Narrow route with a cross-wall blockage for safety regression checks.
+obstacles:
+  - name: safety_corridor_west_1
+    model: obstacle_wall
+    pose: {x: -0.80, y: -1.5, z: 0.40, yaw: 1.5708}
+  - name: safety_corridor_west_2
+    model: obstacle_wall
+    pose: {x: -0.80, y: 1.5, z: 0.40, yaw: 1.5708}
+  - name: safety_corridor_east_1
+    model: obstacle_wall
+    pose: {x: 0.80, y: -1.5, z: 0.40, yaw: 1.5708}
+  - name: safety_corridor_east_2
+    model: obstacle_wall
+    pose: {x: 0.80, y: 1.5, z: 0.40, yaw: 1.5708}
+  - name: safety_corridor_blocker
+    model: obstacle_wall
+    pose: {x: 0.0, y: 0.0, z: 0.40, yaw: 0.0}

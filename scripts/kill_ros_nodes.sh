@@ -21,7 +21,7 @@ for name in \
   gazebo gazebo-fortress \
   parameter_bridge create \
   robot_state_publisher static_transform_publisher \
-  pointcloud_to_laserscan_node velocity_limiter joystick_safety tilt_monitor wireless_key_inspector \
+  pointcloud_to_laserscan_node velocity_limiter joystick_safety tilt_monitor health_monitor wireless_key_inspector \
   quadruped_controller_node state_estimation_node \
   ekf_node spawner \
   champ champ_base champ_msgs champ_gazebo champ_utils champ_localization champ_navigation champ_teleop champ_description; do
@@ -47,6 +47,7 @@ add_pids < <(pgrep -f 'pointcloud_to_laserscan' || true)
 add_pids < <(pgrep -f 'velocity_limiter' || true)
 add_pids < <(pgrep -f 'joystick_safety' || true)
 add_pids < <(pgrep -f 'tilt_monitor' || true)
+add_pids < <(pgrep -f 'health_monitor' || true)
 add_pids < <(pgrep -f 'wireless_key_inspector' || true)
 add_pids < <(pgrep -f 'route_server' || true)
 
