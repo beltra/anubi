@@ -1,5 +1,5 @@
 """
-nav2.launch.py — Robot-agnostic Nav2 launch file.
+nav2.launch.py -- Robot-agnostic Nav2 launch file.
 
 Starts the Nav2 navigation stack via nav2_bringup.
 Localization (map->odom) is provided by slam_toolbox (slam.launch.py).
@@ -7,10 +7,13 @@ Odometry (odom->base_footprint) is provided by the robot adapter.
 
 Arguments
 ---------
-use_sim_time : bool   (default: false)
-params_file  : str    Path to Nav2 YAML params (default: robot_nav default)
-nav_profile  : str    Predefined Nav2 profile (default_safe|narrow_gap_1p0m)
-namespace    : str    Robot namespace prefix (default: '')
+use_sim_time        : bool   (default: false)
+params_file         : str    Explicit Nav2 YAML override; if empty, nav_profile drives selection
+nav_profile         : str    Predefined Nav2 profile (default_safe|narrow_gap_1p0m|forward_static)
+use_stvl            : bool   Use SpatioTemporalVoxelLayer (default: true)
+namespace           : str    Robot namespace prefix (default: '')
+use_route_server    : bool   Launch route_server scaffold (default: false)
+route_graph_file    : str    Path to route graph file (default: '')
 """
 
 import os
@@ -18,9 +21,16 @@ import os
 from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, SetEnvironmentVariable
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    OpaqueFunction,
+    SetEnvironmentVariable,
+    SetLaunchConfiguration,
+)
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.descriptions import ParameterFile
 from launch_ros.parameter_descriptions import ParameterValue
@@ -32,97 +42,101 @@ def generate_launch_description():
     robot_nav_share    = get_package_share_directory("robot_nav")
     nav2_bringup_share = get_package_share_directory("nav2_bringup")
 
-    default_nav2_params_stvl = os.path.join(robot_nav_share, "config", "nav2_params.yaml")
-    default_nav2_params_stvl_narrow = os.path.join(
-        robot_nav_share, "config", "nav2_params_narrow_gap_1p0m.yaml"
-    )
-    default_nav2_params_2d = os.path.join(robot_nav_share, "config", "nav2_params_2d.yaml")
-    default_collision_monitor_params = os.path.join(
-        robot_nav_share, "config", "collision_monitor_params.yaml"
-    )
-    default_nav_to_pose_bt = os.path.join(
-        robot_nav_share, "behavior_trees", "navigate_to_pose_industrial_safety.xml"
-    )
-    default_nav_through_poses_bt = os.path.join(
-        robot_nav_share, "behavior_trees", "navigate_through_poses_industrial_safety.xml"
-    )
-    default_lattice_file = os.path.join(robot_nav_share, "config", "lattice_omni_5.json")
+    _params_stvl         = os.path.join(robot_nav_share, "config", "nav2_params.yaml")
+    _params_stvl_narrow  = os.path.join(robot_nav_share, "config", "nav2_params_narrow_gap_1p0m.yaml")
+    _params_2d           = os.path.join(robot_nav_share, "config", "nav2_params_2d.yaml")
+    _params_fwd_static   = os.path.join(robot_nav_share, "config", "nav2_params_forward_static.yaml")
+    _params_collision    = os.path.join(robot_nav_share, "config", "collision_monitor_params.yaml")
+    _bt_nav_to_pose      = os.path.join(robot_nav_share, "behavior_trees", "navigate_to_pose_industrial_safety.xml")
+    _bt_nav_through      = os.path.join(robot_nav_share, "behavior_trees", "navigate_through_poses_industrial_safety.xml")
+    _lattice_file        = os.path.join(robot_nav_share, "config", "lattice_omni_5.json")
 
-    declare_use_stvl = DeclareLaunchArgument(
-        "use_stvl",
-        default_value="true",
-        description="Use SpatioTemporalVoxelLayer in the local costmap",
-    )
-    declare_use_sim_time = DeclareLaunchArgument(
-        "use_sim_time", default_value="false",
-        description="Use simulation clock",
-    )
-    declare_nav2_params_stvl = DeclareLaunchArgument(
-        "nav2_params_stvl",
-        default_value=default_nav2_params_stvl,
-        description="Default STVL Nav2 params YAML",
-    )
-    declare_nav2_params_stvl_narrow = DeclareLaunchArgument(
-        "nav2_params_stvl_narrow",
-        default_value=default_nav2_params_stvl_narrow,
-        description="STVL narrow-gap Nav2 params YAML",
-    )
-    declare_nav2_params = DeclareLaunchArgument(
-        "nav2_params",
-        default_value=default_nav2_params_2d,
-        description="Fallback 2D Nav2 params YAML",
-    )
-    declare_nav_profile = DeclareLaunchArgument(
-        "nav_profile",
-        default_value="default_safe",
-        description="Navigation profile: default_safe or narrow_gap_1p0m",
-    )
-    declare_params_file = DeclareLaunchArgument(
-        "params_file",
-        default_value=PythonExpression([
-            '"', LaunchConfiguration("nav2_params_stvl_narrow"), '"',
-            ' if ("true" == "', LaunchConfiguration("use_stvl"),
-            '" and "narrow_gap_1p0m" == "', LaunchConfiguration("nav_profile"), '")',
-            ' else ("', LaunchConfiguration("nav2_params_stvl"), '"',
-            ' if "true" == "', LaunchConfiguration("use_stvl"), '"',
-            ' else "', LaunchConfiguration("nav2_params"), '")',
-        ]),
-        description="Full path to Nav2 params YAML",
-    )
-    declare_namespace = DeclareLaunchArgument(
-        "namespace", default_value="",
-        description="Robot namespace for multi-robot setups",
-    )
-    declare_collision_monitor_params = DeclareLaunchArgument(
-        "collision_monitor_params",
-        default_value=default_collision_monitor_params,
-        description="Collision monitor params YAML",
-    )
-    declare_lattice_filepath = DeclareLaunchArgument(
-        "lattice_filepath",
-        default_value=default_lattice_file,
-        description="Absolute path to Smac lattice primitive file",
-    )
+    # Profile -> YAML mapping resolved at launch time via OpaqueFunction.
+    _profile_map = {
+        "default_safe":    _params_stvl,
+        "narrow_gap_1p0m": _params_stvl_narrow,
+        "forward_static":  _params_fwd_static,
+    }
 
-    use_sim_time = LaunchConfiguration("use_sim_time")
-    params_file  = LaunchConfiguration("params_file")
-    namespace    = LaunchConfiguration("namespace")
-    collision_monitor_params_file = LaunchConfiguration("collision_monitor_params")
-    lattice_filepath = LaunchConfiguration("lattice_filepath")
+    args = [
+        DeclareLaunchArgument(
+            "use_stvl",
+            default_value="true",
+            description="Use SpatioTemporalVoxelLayer in the local costmap",
+        ),
+        DeclareLaunchArgument(
+            "use_sim_time", default_value="false",
+            description="Use simulation clock",
+        ),
+        DeclareLaunchArgument(
+            "nav_profile",
+            default_value="default_safe",
+            description="Navigation profile: default_safe | narrow_gap_1p0m | forward_static",
+        ),
+        DeclareLaunchArgument(
+            "params_file",
+            default_value="",
+            description="Explicit Nav2 params YAML path; overrides nav_profile when non-empty",
+        ),
+        DeclareLaunchArgument(
+            "namespace", default_value="",
+            description="Robot namespace for multi-robot setups",
+        ),
+        DeclareLaunchArgument(
+            "collision_monitor_params",
+            default_value=_params_collision,
+            description="Collision monitor params YAML",
+        ),
+        DeclareLaunchArgument(
+            "lattice_filepath",
+            default_value=_lattice_file,
+            description="Absolute path to Smac lattice primitive file",
+        ),
+        DeclareLaunchArgument(
+            "use_route_server",
+            default_value="false",
+            description="Launch optional route_server scaffold (requires a route graph file)",
+        ),
+        DeclareLaunchArgument(
+            "route_graph_file",
+            default_value="",
+            description="Path to route graph GeoJSON file (required when use_route_server:=true)",
+        ),
+    ]
+
+    def resolve_params_file(context):
+        explicit = context.launch_configurations.get("params_file", "")
+        if explicit:
+            return []  # caller provided an explicit path; keep it
+        use_stvl_val  = context.launch_configurations.get("use_stvl", "true")
+        nav_profile_val = context.launch_configurations.get("nav_profile", "default_safe")
+        if use_stvl_val.lower() != "true":
+            path = _params_2d
+        else:
+            path = _profile_map.get(nav_profile_val, _params_stvl)
+        return [SetLaunchConfiguration("params_file", path)]
+
+    use_sim_time              = LaunchConfiguration("use_sim_time")
+    params_file               = LaunchConfiguration("params_file")
+    namespace                 = LaunchConfiguration("namespace")
+    collision_monitor_params  = LaunchConfiguration("collision_monitor_params")
+    lattice_filepath          = LaunchConfiguration("lattice_filepath")
+    use_route_server          = LaunchConfiguration("use_route_server")
 
     configured_params = RewrittenYaml(
         source_file=params_file,
         root_key=namespace,
         param_rewrites={
-            "lattice_filepath": lattice_filepath,
-            "use_sim_time": use_sim_time,
-            "default_nav_to_pose_bt_xml": default_nav_to_pose_bt,
-            "default_nav_through_poses_bt_xml": default_nav_through_poses_bt,
+            "lattice_filepath":                   lattice_filepath,
+            "graph_filepath":                     LaunchConfiguration("route_graph_file"),
+            "use_sim_time":                       use_sim_time,
+            "default_nav_to_pose_bt_xml":         _bt_nav_to_pose,
+            "default_nav_through_poses_bt_xml":   _bt_nav_through,
         },
         convert_types=True,
     )
     configured_collision_monitor_params = ParameterFile(
-        collision_monitor_params_file,
+        collision_monitor_params,
         allow_substs=True,
     )
     remappings = [("/tf", "tf"), ("/tf_static", "tf_static")]
@@ -162,19 +176,34 @@ def generate_launch_description():
         ],
     )
 
-    return LaunchDescription([
+    route_server = Node(
+        package="nav2_route",
+        executable="route_server",
+        name="route_server",
+        output="screen",
+        parameters=[configured_params, {"use_sim_time": use_sim_time}],
+        remappings=remappings,
+        condition=IfCondition(use_route_server),
+    )
+    route_server_lifecycle = Node(
+        package="nav2_lifecycle_manager",
+        executable="lifecycle_manager",
+        name="lifecycle_manager_route_server",
+        output="screen",
+        parameters=[
+            {"use_sim_time": use_sim_time},
+            {"autostart": True},
+            {"node_names": ["route_server"]},
+        ],
+        condition=IfCondition(use_route_server),
+    )
+
+    return LaunchDescription(args + [
         SetEnvironmentVariable("RCUTILS_LOGGING_BUFFERED_STREAM", "1"),
-        declare_use_stvl,
-        declare_use_sim_time,
-        declare_nav2_params_stvl,
-        declare_nav2_params_stvl_narrow,
-        declare_nav2_params,
-        declare_nav_profile,
-        declare_params_file,
-        declare_namespace,
-        declare_collision_monitor_params,
-        declare_lattice_filepath,
+        OpaqueFunction(function=resolve_params_file),
         nav2_bringup,
         collision_monitor,
         collision_monitor_lifecycle,
+        route_server,
+        route_server_lifecycle,
     ])

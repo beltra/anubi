@@ -21,7 +21,9 @@ use_sim_time    : bool   (default: false)
 map             : str    slam_toolbox .posegraph file for localization mode; empty = mapping
 robot_name      : str    Nav2 namespace prefix (default: '')
 rviz            : bool   Launch RViz2 (default: true)
-params_file     : str    Override Nav2 params file
+nav_profile     : str    Nav2 profile: default_safe | narrow_gap_1p0m | forward_static
+use_route_server: bool   Launch optional Nav2 route_server scaffold (default: false)
+route_graph_file: str    Route graph GeoJSON file for route_server experiments
 slam_params     : str    Override slam_toolbox params file
 slam_mode       : str    'mapping' or 'localization' (default: 'mapping')
 use_safety      : bool   Enable velocity_limiter safety gate (default: false)
@@ -50,7 +52,6 @@ def generate_launch_description():
     robot_safety_share    = get_package_share_directory("robot_safety")
 
     go2_params      = os.path.join(go2_bringup_share,    "config", "go2_params.yaml")
-    default_nav     = os.path.join(robot_nav_share,      "config", "nav2_params.yaml")
     default_slam    = os.path.join(robot_nav_share,      "config", "slam_toolbox_params.yaml")
     urdf_file       = os.path.join(go2_description_share,"urdf",   "go2.urdf.xacro")
     rviz_config     = os.path.join(robot_nav_share,      "rviz",   "nav2.rviz")
@@ -68,7 +69,12 @@ def generate_launch_description():
                               description="slam_toolbox map file (.posegraph) for localization mode"),
         DeclareLaunchArgument("robot_name",   default_value=""),
         DeclareLaunchArgument("rviz",         default_value="true"),
-        DeclareLaunchArgument("params_file",  default_value=default_nav),
+        DeclareLaunchArgument("nav_profile",  default_value="default_safe",
+                              description="Nav2 profile: default_safe | narrow_gap_1p0m | forward_static"),
+        DeclareLaunchArgument("use_route_server", default_value="false",
+                              description="Launch optional Nav2 route_server scaffold"),
+        DeclareLaunchArgument("route_graph_file", default_value="",
+                              description="Route graph GeoJSON file for route_server experiments"),
         DeclareLaunchArgument("slam_params",  default_value=default_slam),
         DeclareLaunchArgument("slam_mode",    default_value="mapping",
                               description="'mapping' or 'localization'"),
@@ -89,6 +95,9 @@ def generate_launch_description():
     map_path     = LaunchConfiguration("map")
     robot_name   = LaunchConfiguration("robot_name")
     rviz         = LaunchConfiguration("rviz")
+    nav_profile  = LaunchConfiguration("nav_profile")
+    use_route_server = LaunchConfiguration("use_route_server")
+    route_graph_file = LaunchConfiguration("route_graph_file")
     slam_params  = LaunchConfiguration("slam_params")
     slam_mode    = LaunchConfiguration("slam_mode")
     use_ekf_fusion = LaunchConfiguration("use_ekf_fusion")
@@ -243,7 +252,9 @@ def generate_launch_description():
             "use_sim_time": use_sim_time,
             "namespace":    robot_name,
             "use_stvl":     use_stvl,
-            "params_file":  LaunchConfiguration("params_file"),
+            "nav_profile":  nav_profile,
+            "use_route_server": use_route_server,
+            "route_graph_file": route_graph_file,
         }.items(),
     )
 

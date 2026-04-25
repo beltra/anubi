@@ -8,6 +8,8 @@ GUI="true"
 RVIZ="true"
 USE_STVL="true"
 NAV_PROFILE="default_safe"
+USE_ROUTE_SERVER="false"
+ROUTE_GRAPH_FILE=""
 NAV_DELAY_SEC="20.0"
 USE_LIO="false"
 CLEAN_EXISTING="true"
@@ -25,7 +27,10 @@ Options:
   --no-stvl            Disable SpatioTemporalVoxelLayer in Nav2 local costmap
   --use-lio            Enable optional LIO backend (/lidar_odom)
   --no-clean           Do not clean pre-existing ROS/Gazebo processes before launch
-  --nav-profile <id>   Nav2 profile: default_safe | narrow_gap_1p0m
+  --nav-profile <id>   Nav2 profile: default_safe | narrow_gap_1p0m | forward_static
+  --use-route-server   Launch optional Nav2 route_server scaffold
+  --route-graph-file <path>
+                       Route graph GeoJSON file for route_server experiments
   --nav-delay <sec>    Delay before Nav2 stack starts (default: 20.0)
   -h, --help           Show this help
 
@@ -78,6 +83,15 @@ while [[ $# -gt 0 ]]; do
       NAV_PROFILE="$2"
       shift 2
       ;;
+    --use-route-server)
+      USE_ROUTE_SERVER="true"
+      shift
+      ;;
+    --route-graph-file)
+      [[ $# -ge 2 ]] || { echo "Missing value for --route-graph-file" >&2; usage; exit 1; }
+      ROUTE_GRAPH_FILE="$2"
+      shift 2
+      ;;
     --nav-delay)
       [[ $# -ge 2 ]] || { echo "Missing value for --nav-delay" >&2; usage; exit 1; }
       NAV_DELAY_SEC="$2"
@@ -95,8 +109,17 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$NAV_PROFILE" != "default_safe" && "$NAV_PROFILE" != "narrow_gap_1p0m" ]]; then
-  echo "Invalid --nav-profile: $NAV_PROFILE (expected default_safe or narrow_gap_1p0m)" >&2
+if [[ "$NAV_PROFILE" != "default_safe" && "$NAV_PROFILE" != "narrow_gap_1p0m" && "$NAV_PROFILE" != "forward_static" ]]; then
+  echo "Invalid --nav-profile: $NAV_PROFILE (expected default_safe, narrow_gap_1p0m, or forward_static)" >&2
+  exit 1
+fi
+
+if [[ "$USE_ROUTE_SERVER" == "true" && -z "$ROUTE_GRAPH_FILE" ]]; then
+  echo "--use-route-server requires --route-graph-file <path>." >&2
+  exit 1
+fi
+if [[ "$USE_ROUTE_SERVER" == "true" && ! -f "$ROUTE_GRAPH_FILE" ]]; then
+  echo "Route graph file not found: $ROUTE_GRAPH_FILE" >&2
   exit 1
 fi
 
@@ -130,8 +153,13 @@ CMD=(
   use_stvl:="$USE_STVL"
   use_lio:="$USE_LIO"
   nav_profile:="$NAV_PROFILE"
+  use_route_server:="$USE_ROUTE_SERVER"
   nav_delay_sec:="$NAV_DELAY_SEC"
 )
+
+if [[ -n "$ROUTE_GRAPH_FILE" ]]; then
+  CMD+=(route_graph_file:="$ROUTE_GRAPH_FILE")
+fi
 
 if [[ -n "$MAP_PATH" ]]; then
   CMD+=(map:="$MAP_PATH")
@@ -142,7 +170,8 @@ if [[ -n "$WORLD_PATH" ]]; then
 fi
 
 echo "Starting GO2 simulation stack..."
-printf 'Command: %q ' "${CMD[@]}"
+printf 'Command:'
+printf ' %q' "${CMD[@]}"
 echo
 
 exec "${CMD[@]}"

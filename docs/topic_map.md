@@ -1,6 +1,6 @@
 # Topic Map - Anubi Autonomy Stack
 
-Last updated: 2026-04-21
+Last updated: 2026-04-25
 Branch: `feat/lio`
 
 This document is the authoritative reference for all ROS 2 topics in the anubi stack.
@@ -29,7 +29,7 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 | `/lidar_odom` | `nav_msgs/Odometry` | optional LIO backend (via `robot_lio`) | `lidar_odom_relay` | optional | optional | Disabled by default (`use_lio:=false`). All-zero covariances (DLIO limitation) — never feed directly to the EKF. |
 | `/lidar_odom_reliable` | `nav_msgs/Odometry` | `lidar_odom_relay` | EKF fusion node | optional | optional | `/lidar_odom` with injected diagonal covariances. Active only when `use_lio:=true`. This is the topic the EKF consumes. |
 | `/odom` | `nav_msgs/Odometry` | `footprint_to_odom_ekf` (sim) / `ekf_filter_node` (HW) | `slam_toolbox`, Nav2 | same | same | Fused odometry output. frame_id=`odom`, child_frame_id=`base_footprint`. |
-| `/map` | `nav_msgs/OccupancyGrid` | `slam_toolbox` | Nav2 `map_server`, RViz | same | same | Published during mapping mode; used as localization reference in localization mode. |
+| `/map` | `nav_msgs/OccupancyGrid` | `slam_toolbox` | Nav2 global costmap `StaticLayer`, RViz | same | same | Published during mapping mode; used as localization reference in localization mode and by STVL profiles for map-backed global planning. |
 
 ---
 
@@ -51,7 +51,8 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 
 | Topic | Type | Publisher | Consumer(s) | Sim | HW | Notes |
 |-------|------|-----------|-------------|-----|----|-------|
-| `/cmd_vel` | `geometry_msgs/Twist` | Nav2 `controller_server` | `collision_monitor` | same | same | Nav2 Humble publishes Twist (not TwistStamped). |
+| `/cmd_vel_nav` | `geometry_msgs/Twist` | Nav2 `controller_server` | Nav2 `velocity_smoother` | same | same | Nav2 bringup remaps controller output from `cmd_vel` to `cmd_vel_nav`. |
+| `/cmd_vel` | `geometry_msgs/Twist` | Nav2 `velocity_smoother` | `collision_monitor` | same | same | Smoothed Nav2 command. Nav2 Humble uses Twist (not TwistStamped). |
 | `/cmd_vel_collision_free` | `geometry_msgs/Twist` | `collision_monitor` | `velocity_limiter` (if `use_safety:=true`) or locomotion directly | same | same | collision_monitor output after proximity checks. |
 | `/cmd_vel_safe` | `geometry_msgs/Twist` | `velocity_limiter` | CHAMP `quadruped_controller` (sim) / `go2_hw_bridge` (HW) | same | same | Output of velocity_limiter safety gate. Only active when `use_safety:=true`. |
 
@@ -94,4 +95,15 @@ These follow standard Nav2 Humble topic naming; listed here for completeness.
 | `/plan` | `nav_msgs/Path` | Global planner output. |
 | `/local_plan` | `nav_msgs/Path` | Local planner trajectory (MPPI by default). |
 | `/costmap_raw` | `nav2_msgs/Costmap` | Raw costmap for debugging. |
-| `/cmd_vel` | `geometry_msgs/Twist` | Nav2 controller output (see Command Topics above). |
+| `/cmd_vel_nav` | `geometry_msgs/Twist` | Nav2 controller output before velocity smoothing (see Command Topics above). |
+| `/speed_limit` | `nav2_msgs/SpeedLimit` | Optional controller speed-limit input. No default publisher. |
+
+## Optional Topics (route_server, disabled by default)
+
+Active only when `use_route_server:=true` is passed to `nav2.launch.py`.
+The safety chain (`/cmd_vel_nav -> velocity_smoother -> /cmd_vel -> /cmd_vel_collision_free -> /cmd_vel_safe`) is unchanged.
+
+| Topic | Type | Notes |
+|-------|------|-------|
+| `/route` | `nav2_msgs/Route` | Route graph path computed by `route_server`. |
+| `/route_graph` | `visualization_msgs/MarkerArray` | Route graph visualization (RViz). |

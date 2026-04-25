@@ -45,6 +45,7 @@ add_pids < <(pgrep -f 'ros_ign_bridge' || true)
 add_pids < <(pgrep -f 'controller_manager/spawner' || true)
 add_pids < <(pgrep -f 'pointcloud_to_laserscan' || true)
 add_pids < <(pgrep -f 'velocity_limiter' || true)
+add_pids < <(pgrep -f 'route_server' || true)
 
 add_pids < <(pgrep -f 'champ' || true)
 

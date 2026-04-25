@@ -37,9 +37,12 @@ def _validate_localization_inputs(context):
             raise RuntimeError(
                 "slam_mode:=localization requires map:=<path/to/map.posegraph>."
             )
-        if not os.path.isfile(map_file):
+        # slam_toolbox expects the base path WITHOUT .posegraph extension.
+        # Accept both forms; always check for the .posegraph file.
+        posegraph = map_file if map_file.endswith(".posegraph") else map_file + ".posegraph"
+        if not os.path.isfile(posegraph):
             raise RuntimeError(
-                f"Localization map file not found: '{map_file}'. "
+                f"Localization map file not found: '{posegraph}'. "
                 "Provide a valid slam_toolbox .posegraph file path via map:=..."
             )
 
@@ -128,6 +131,10 @@ def generate_launch_description():
         condition=IfCondition(is_mapping),
     )
 
+    # slam_toolbox appends .posegraph itself; strip the extension so either
+    # "my_map" or "my_map.posegraph" from the caller works correctly.
+    map_file_name = PythonExpression(["'", map_path, "'.removesuffix('.posegraph')"])
+
     slam_localization = Node(
         package="slam_toolbox",
         executable="localization_slam_toolbox_node",
@@ -137,7 +144,7 @@ def generate_launch_description():
             slam_params,
             {
                 "use_sim_time": use_sim_time,
-                "map_file_name": map_path,
+                "map_file_name": map_file_name,
             },
         ],
         condition=IfCondition(is_localization),

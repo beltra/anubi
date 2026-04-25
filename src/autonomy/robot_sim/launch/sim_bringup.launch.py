@@ -43,7 +43,17 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "nav_profile",
             default_value="default_safe",
-            description="Nav2 profile: default_safe or narrow_gap_1p0m",
+            description="Nav2 profile: default_safe | narrow_gap_1p0m | forward_static",
+        ),
+        DeclareLaunchArgument(
+            "use_route_server",
+            default_value="false",
+            description="Launch optional Nav2 route_server scaffold",
+        ),
+        DeclareLaunchArgument(
+            "route_graph_file",
+            default_value="",
+            description="Route graph GeoJSON file for route_server experiments",
         ),
         DeclareLaunchArgument("use_sim_time", default_value="true"),
         DeclareLaunchArgument("world", default_value=default_world),
@@ -87,6 +97,8 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_stvl = LaunchConfiguration("use_stvl")
     nav_profile = LaunchConfiguration("nav_profile")
+    use_route_server = LaunchConfiguration("use_route_server")
+    route_graph_file = LaunchConfiguration("route_graph_file")
     use_lio = LaunchConfiguration("use_lio")
 
     champ_sim = IncludeLaunchDescription(
@@ -209,6 +221,8 @@ def generate_launch_description():
             "use_sim_time": use_sim_time,
             "use_stvl": use_stvl,
             "nav_profile": nav_profile,
+            "use_route_server": use_route_server,
+            "route_graph_file": route_graph_file,
         }.items(),
     )
 

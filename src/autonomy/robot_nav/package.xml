@@ -36,6 +36,7 @@
   <exec_depend>nav2_map_server</exec_depend>
   <exec_depend>nav2_amcl</exec_depend>
   <exec_depend>nav2_lifecycle_manager</exec_depend>
+  <exec_depend>nav2_route</exec_depend>
   <exec_depend>nav2_waypoint_follower</exec_depend>
   <exec_depend>nav2_smoother</exec_depend>
   <exec_depend>rviz2</exec_depend>
@@ -44,6 +45,8 @@
   <exec_depend>slam_toolbox</exec_depend>
   <!-- PointCloud2 -> LaserScan conversion for slam_toolbox input - BSD-3-Clause -->
   <exec_depend>pointcloud_to_laserscan</exec_depend>
+
+  <test_depend>ament_cmake_pytest</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
