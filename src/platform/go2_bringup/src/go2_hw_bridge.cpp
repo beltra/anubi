@@ -93,6 +93,9 @@ public:
     declare_parameter<double>("max_linear_vel",        1.0);   // [m/s]
     declare_parameter<double>("max_lateral_vel",       0.3);   // [m/s]
     declare_parameter<double>("max_angular_vel",       1.5);   // [rad/s]
+    declare_parameter<bool>("enable_startup_motion_sequence", true);
+    declare_parameter<double>("startup_standup_delay_sec", 1.0);
+    declare_parameter<double>("startup_classic_walk_delay_sec", 3.0);
 
     state_topic_    = get_parameter("state_topic").as_string();
     lowstate_topic_ = get_parameter("lowstate_topic").as_string();
@@ -111,6 +114,11 @@ public:
     max_lin_        = get_parameter("max_linear_vel").as_double();
     max_lat_        = get_parameter("max_lateral_vel").as_double();
     max_ang_        = get_parameter("max_angular_vel").as_double();
+    enable_startup_motion_sequence_ =
+      get_parameter("enable_startup_motion_sequence").as_bool();
+    startup_standup_delay_sec_ = get_parameter("startup_standup_delay_sec").as_double();
+    startup_classic_walk_delay_sec_ =
+      get_parameter("startup_classic_walk_delay_sec").as_double();
 
     // ── Publishers ────────────────────────────────────────────────────────
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
@@ -144,6 +152,17 @@ public:
     status_timer_ = create_wall_timer(
       std::chrono::milliseconds(1000),
       std::bind(&Go2HwBridge::publish_status, this));
+
+    // Startup sequence (real robot): StandUp first, then enable ClassicWalk.
+    if (enable_startup_motion_sequence_) {
+      startup_sequence_timer_ = create_wall_timer(
+        std::chrono::milliseconds(200),
+        std::bind(&Go2HwBridge::run_startup_motion_sequence, this));
+      RCLCPP_INFO(
+        get_logger(),
+        "  startup sequence enabled: StandUp at +%.1fs, ClassicWalk at +%.1fs (after StandUp)",
+        startup_standup_delay_sec_, startup_classic_walk_delay_sec_);
+    }
 
     RCLCPP_INFO(
       get_logger(),
@@ -336,6 +355,62 @@ private:
     }
   }
 
+  // ── Startup sequence ───────────────────────────────────────────────────────
+
+  void run_startup_motion_sequence()
+  {
+    if (startup_classic_walk_sent_) {
+      return;
+    }
+
+    // Wait for first hardware state sample so startup delays are anchored to an
+    // active bridge and not process launch time.
+    if (!has_state_) {
+      return;
+    }
+
+    // Avoid dropping startup commands before DDS discovery settles.
+    if (sport_pub_->get_subscription_count() == 0) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 5000,
+        "Waiting for a subscriber on %s before sending startup Sport API commands",
+        sport_topic_.c_str());
+      return;
+    }
+
+    if (!startup_sequence_anchor_time_.has_value()) {
+      startup_sequence_anchor_time_ = now();
+      RCLCPP_INFO(
+        get_logger(),
+        "Startup motion sequence armed from first state sample: StandUp -> ClassicWalk");
+    }
+
+    const double elapsed = (now() - *startup_sequence_anchor_time_).seconds();
+    if (!startup_standup_sent_ && elapsed >= startup_standup_delay_sec_) {
+      unitree_api::msg::Request req;
+      sport_.StandUp(req);
+      sport_pub_->publish(req);
+      startup_standup_sent_ = true;
+      startup_standup_time_ = now();
+      RCLCPP_INFO(get_logger(), "Sent startup Sport API command: StandUp");
+      return;
+    }
+
+    if (startup_standup_sent_ && !startup_classic_walk_sent_) {
+      const double since_standup = (now() - *startup_standup_time_).seconds();
+      if (since_standup >= startup_classic_walk_delay_sec_) {
+        unitree_api::msg::Request req;
+        sport_.ClassicWalk(req, true);
+        sport_pub_->publish(req);
+        startup_classic_walk_sent_ = true;
+        RCLCPP_INFO(get_logger(), "Sent startup Sport API command: ClassicWalk(true)");
+        if (startup_sequence_timer_) {
+          startup_sequence_timer_->cancel();
+        }
+      }
+    }
+  }
+
   // ── Status publisher ──────────────────────────────────────────────────────
 
   void publish_status()
@@ -395,6 +470,9 @@ private:
   double standing_height_;
   double cmd_timeout_;
   double max_lin_, max_lat_, max_ang_;
+  bool enable_startup_motion_sequence_;
+  double startup_standup_delay_sec_;
+  double startup_classic_walk_delay_sec_;
 
   SportClient sport_;
   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
@@ -410,9 +488,14 @@ private:
 
   rclcpp::TimerBase::SharedPtr watchdog_timer_;
   rclcpp::TimerBase::SharedPtr status_timer_;
+  rclcpp::TimerBase::SharedPtr startup_sequence_timer_;
 
   std::optional<rclcpp::Time> last_cmd_time_;
+  std::optional<rclcpp::Time> startup_sequence_anchor_time_;
+  std::optional<rclcpp::Time> startup_standup_time_;
   bool stopped_       = false;
+  bool startup_standup_sent_ = false;
+  bool startup_classic_walk_sent_ = false;
   bool has_state_     = false;
   bool has_low_state_ = false;
   unitree_go::msg::SportModeState last_state_;

@@ -1,6 +1,6 @@
 # Topic Map - Anubi Autonomy Stack
 
-Last updated: 2026-04-25
+Last updated: 2026-04-26
 Branch: `feat/lio`
 
 This document is the authoritative reference for all ROS 2 topics in the anubi stack.
@@ -67,7 +67,7 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 |-------|------|-----------|-------------|-------|
 | `/sportmodestate` | `unitree_go/SportModeState` | Go2 internal bridge | `go2_hw_bridge` | ~50 Hz. Provides position, velocity, IMU, and foot contacts. Source of HW odometry. |
 | `/lowstate` | `unitree_go/LowState` | Go2 internal bridge | `go2_hw_bridge` | Provides battery data (`BmsState.soc`). |
-| `/api/sport/request` | `unitree_api/Request` | `go2_hw_bridge` | Go2 onboard controller | Sport Mode API command channel. `go2_hw_bridge` calls `Move()` and `StopMove()`. |
+| `/api/sport/request` | `unitree_api/Request` | `go2_hw_bridge` | Go2 onboard controller | Sport Mode API command channel. `go2_hw_bridge` publishes startup `StandUp` then `ClassicWalk(true)`, plus runtime `Move()` and `StopMove()`. |
 
 ---
 

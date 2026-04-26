@@ -18,6 +18,9 @@ go2_hw_bridge:
     standing_height: 0.28
 
     cmd_timeout: 0.5
+    enable_startup_motion_sequence: true
+    startup_standup_delay_sec: 1.0
+    startup_classic_walk_delay_sec: 3.0
 
     max_linear_vel:  1.5
     max_lateral_vel: 0.4
