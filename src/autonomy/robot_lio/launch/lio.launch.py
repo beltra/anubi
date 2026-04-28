@@ -20,11 +20,14 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
+    vendor_dlio_pkg = get_package_share_directory("direct_lidar_inertial_odometry")
     dlio_default_params = os.path.join(
         get_package_share_directory("robot_lio"),
         "config",
         "dlio_params.yaml",
     )
+    dlio_base_params = os.path.join(vendor_dlio_pkg, "cfg", "dlio.yaml")
+    dlio_upstream_params = os.path.join(vendor_dlio_pkg, "cfg", "params.yaml")
 
     args = [
         DeclareLaunchArgument("use_sim_time", default_value="false"),
@@ -112,7 +115,10 @@ def generate_launch_description():
         executable="dlio_odom_node",
         name="dlio_odom_node",
         output="screen",
+        arguments=["--ros-args", "--log-level", "warn"],
         parameters=[
+            dlio_base_params,
+            dlio_upstream_params,
             LaunchConfiguration("dlio_params_file"),
             {"use_sim_time": use_sim_time},
             {"publish_tf": LaunchConfiguration("dlio_publish_tf")},
@@ -130,7 +136,10 @@ def generate_launch_description():
         executable="dlio_map_node",
         name="dlio_map_node",
         output="screen",
+        arguments=["--ros-args", "--log-level", "warn"],
         parameters=[
+            dlio_base_params,
+            dlio_upstream_params,
             LaunchConfiguration("dlio_params_file"),
             {"use_sim_time": use_sim_time},
         ],

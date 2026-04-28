@@ -43,18 +43,18 @@ class LidarOdomRelay(Node):
         self.declare_parameter("input_topic", "/lidar_odom")
         self.declare_parameter("output_topic", "/lidar_odom_reliable")
         # Diagonal base covariances [x, y, z, roll, pitch, yaw] (m^2 or rad^2)
-        self.declare_parameter("pose_cov", [0.005, 0.005, 0.05, 0.005, 0.005, 0.002])
+        self.declare_parameter("pose_cov", [0.03, 0.03, 0.05, 0.03, 0.03, 0.02])
         # Diagonal base twist covariances [vx, vy, vz, vroll, vpitch, vyaw]
-        self.declare_parameter("twist_cov", [0.01, 0.01, 0.05, 0.005, 0.005, 0.005])
+        self.declare_parameter("twist_cov", [0.02, 0.02, 0.05, 0.02, 0.02, 0.02])
         # Reliability tuning
         self.declare_parameter("nominal_dt", 0.10)        # expected DLIO period [s]
         self.declare_parameter("v_jump_threshold", 0.5)   # m/s inter-frame twist spike
         self.declare_parameter("omega_threshold", 0.8)    # rad/s angular speed penalty onset
         # Physical ceiling for position displacement speed. Exceeding this in a
         # single DLIO frame means the displacement is a scan-match artifact, not
-        # real motion. Set above the robot's practical top speed (Go2 ~1.2 m/s).
+        # real motion. Set near the robot's practical navigation speed.
         self.declare_parameter("max_pos_speed", 1.5)      # m/s
-        self.declare_parameter("max_scale", 10.0)         # covariance scale ceiling
+        self.declare_parameter("max_scale", 100.0)        # covariance scale ceiling
         # EMA weight for smoothed scale: 0=frozen, 1=no smoothing.
         # At 10 Hz with alpha=0.3, recovery to 1.0 after a 10x spike takes ~1.5 s.
         self.declare_parameter("scale_alpha", 0.3)

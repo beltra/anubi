@@ -201,9 +201,11 @@ def generate_launch_description():
             "input_topic":  "/lidar_odom",
             "output_topic": "/lidar_odom_reliable",
             # pose diagonal [x, y, z, roll, pitch, yaw] in m^2 / rad^2
-            "pose_cov":  [0.005, 0.005, 0.05, 0.005, 0.005, 0.002],
+            "pose_cov":  [0.03, 0.03, 0.05, 0.03, 0.03, 0.02],
             # twist diagonal [vx, vy, vz, vroll, vpitch, vyaw]
-            "twist_cov": [0.01, 0.01, 0.05, 0.005, 0.005, 0.005],
+            "twist_cov": [0.02, 0.02, 0.05, 0.02, 0.02, 0.02],
+            "max_pos_speed": 1.5,
+            "max_scale": 100.0,
         }],
         condition=IfCondition(use_lio),
     )

@@ -51,7 +51,7 @@ std::string to_string_with_precision(const T a_value, const int n = 6)
 #include <nano_gicp/nano_gicp.h>
 
 namespace dlio {
-  enum class SensorType { OUSTER, VELODYNE, HESAI, LIVOX, UNKNOWN };
+  enum class SensorType { OUSTER, VELODYNE, HESAI, LIVOX, UNITREE, UNKNOWN };
 
   class OdomNode;
   class MapNode;
@@ -66,6 +66,7 @@ namespace dlio {
     float time;        // (Velodyne) time since beginning of scan in seconds
     double timestamp;  // (Hesai) absolute timestamp in seconds
                        // (Livox) absolute timestamp in (seconds * 10e9)
+    double time_stamp; // (Unitree) timestamp field used by Go2 clouds
     };
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   } EIGEN_ALIGN16;
@@ -78,6 +79,7 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(dlio::Point,
                                  (float, intensity, intensity)
                                  (std::uint32_t, t, t)
                                  (float, time, time)
-                                 (double, timestamp, timestamp))
+                                 (double, timestamp, timestamp)
+                                 (double, time_stamp, time_stamp))
 
 typedef dlio::Point PointType;
