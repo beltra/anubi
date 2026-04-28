@@ -13,6 +13,7 @@ ROUTE_GRAPH_FILE=""
 ROBOT_NAME=""
 LIDAR_POINTS_IN_TOPIC="/utlidar/cloud"
 LIDAR_IMU_IN_TOPIC="/unilidar/imu"
+DISTORTION_IMU_TOPIC="/imu/data"
 
 usage() {
   cat <<'EOF'
@@ -33,6 +34,8 @@ Options:
                               Raw pointcloud topic relayed to /lidar/points (default: /utlidar/cloud)
   --lidar-imu-in-topic <topic>
                               Raw LiDAR IMU topic relayed to /lidar/imu (default: /unilidar/imu)
+  --distortion-imu-topic <topic>
+                              IMU topic used for LiDAR correction (default: /imu/data; try /lidar/imu)
   -h, --help                 Show this help
 
 Examples:
@@ -100,6 +103,11 @@ while [[ $# -gt 0 ]]; do
       LIDAR_IMU_IN_TOPIC="$2"
       shift 2
       ;;
+    --distortion-imu-topic)
+      [[ $# -ge 2 ]] || { echo "Missing value for --distortion-imu-topic" >&2; usage; exit 1; }
+      DISTORTION_IMU_TOPIC="$2"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -154,6 +162,7 @@ CMD=(
   use_route_server:="$USE_ROUTE_SERVER"
   lidar_points_input_topic:="$LIDAR_POINTS_IN_TOPIC"
   lidar_imu_input_topic:="$LIDAR_IMU_IN_TOPIC"
+  distortion_imu_topic:="$DISTORTION_IMU_TOPIC"
 )
 
 if [[ -n "$ROUTE_GRAPH_FILE" ]]; then

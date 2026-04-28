@@ -217,10 +217,10 @@ def generate_launch_description():
             "--frame-id", "base_footprint", "--child-frame-id", "base_link",
         ],
     )
-    lidar_stabilized_tf = Node(
+    lidar_level_frame_publisher = Node(
         package="robot_nav",
-        executable="imu_stabilized_tf.py",
-        name="imu_stabilized_tf",
+        executable="lidar_level_frame_publisher",
+        name="lidar_level_frame_publisher",
         output="screen",
         parameters=[{
             "use_sim_time":    use_sim_time,
@@ -395,7 +395,7 @@ def generate_launch_description():
         quadruped_controller_node,
         footprint_to_odom_ekf,
         base_footprint_to_base_link_tf,
-        lidar_stabilized_tf,
+        lidar_level_frame_publisher,
         map_to_odom_tf,
         controller_spawner_js,
         controller_spawner_effort,

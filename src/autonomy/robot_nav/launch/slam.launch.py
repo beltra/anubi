@@ -14,6 +14,7 @@ slam_mode                   : str    'mapping' (default) | 'localization'
 map                         : str    Path to .posegraph file (localization mode)
 autostart                   : bool   (default: true)
 bypass_distortion_corrector : bool   Skip deskew (use in simulation)
+distortion_imu_topic       : str    IMU topic used for deskew/gravity alignment
 """
 
 import os
@@ -74,6 +75,10 @@ def generate_launch_description():
             description="Skip deskew (use in simulation where scans are instantaneous)",
         ),
         DeclareLaunchArgument(
+            "distortion_imu_topic", default_value="/imu/data",
+            description="IMU topic used by distortion_corrector",
+        ),
+        DeclareLaunchArgument(
             "scan_cloud_topic", default_value="/lidar/points_undistorted",
             description="PointCloud2 topic consumed by pointcloud_to_laserscan",
         ),
@@ -87,6 +92,7 @@ def generate_launch_description():
     map_path     = LaunchConfiguration("map")
     autostart    = LaunchConfiguration("autostart")
     bypass_distortion_corrector = LaunchConfiguration("bypass_distortion_corrector")
+    distortion_imu_topic = LaunchConfiguration("distortion_imu_topic")
     scan_cloud_topic = LaunchConfiguration("scan_cloud_topic")
 
     is_mapping       = PythonExpression(["'", slam_mode, "' == 'mapping'"])
@@ -94,12 +100,15 @@ def generate_launch_description():
 
     distortion_corrector = Node(
         package="robot_nav",
-        executable="distortion_corrector.py",
+        executable="distortion_corrector",
         name="distortion_corrector",
         output="screen",
         parameters=[
             distortion_params,
-            {"use_sim_time": use_sim_time},
+            {
+                "use_sim_time": use_sim_time,
+                "imu_topic": distortion_imu_topic,
+            },
         ],
         condition=UnlessCondition(bypass_distortion_corrector),
     )

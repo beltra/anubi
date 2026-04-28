@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """
-cloud_self_filter.py -- Simulation-only self-body filter for LiDAR PointCloud2.
+cloud_self_filter.py -- Debug self-body filter for LiDAR PointCloud2.
 
 The real Unitree L1 has a hardware minimum range of 0.8 m; the Go2 body is always
 within ~0.4 m of the sensor, so self-body returns never appear on hardware.
-Gazebo uses range_min=0.1 m, so body returns must be removed in software.
-
-Also applies gravity alignment (matching distortion_corrector.py) so simulation
-STVL and SLAM receive the same lidar_stabilized representation as the real robot.
+Gazebo uses range_min=0.1 m, so body returns may be removed in software.
+This script is debug-only; the runtime pipeline uses the C++ distortion_corrector.
 """
 
 import math
@@ -45,13 +43,6 @@ class CloudSelfFilter(Node):
         self.declare_parameter(
             "sensor_mount_rpy", [3.14159265358979, -0.26179938779915, 0.0]
         )
-        self.declare_parameter("base_z", 0.28)
-        self.declare_parameter("filter_floor", False)
-        self.declare_parameter("min_world_z", 0.12)
-        self.declare_parameter("rear_floor_adaptive", True)
-        self.declare_parameter("rear_floor_start_x", -0.2)
-        self.declare_parameter("rear_floor_z_per_meter", 0.02)
-        self.declare_parameter("rear_floor_max_extra_z", 0.08)
         # Self-body bounding box in base_link frame.
         # z lower bound must not reach the ground plane or floor returns are deleted.
         self.declare_parameter("robot_min_x", -0.40)
@@ -71,17 +62,6 @@ class CloudSelfFilter(Node):
         self._lidar_z = float(self.get_parameter("lidar_z").value)
         mount_rpy = list(self.get_parameter("sensor_mount_rpy").value)
         self._R_mount = rotation_from_rpy(mount_rpy[0], mount_rpy[1], mount_rpy[2])
-        self._base_z = float(self.get_parameter("base_z").value)
-        self._filter_floor = bool(self.get_parameter("filter_floor").value)
-        self._min_world_z = float(self.get_parameter("min_world_z").value)
-        self._rear_floor_adaptive = bool(self.get_parameter("rear_floor_adaptive").value)
-        self._rear_floor_start_x = float(self.get_parameter("rear_floor_start_x").value)
-        self._rear_floor_z_per_meter = float(
-            self.get_parameter("rear_floor_z_per_meter").value
-        )
-        self._rear_floor_max_extra_z = float(
-            self.get_parameter("rear_floor_max_extra_z").value
-        )
         self._robot_min_x = float(self.get_parameter("robot_min_x").value)
         self._robot_max_x = float(self.get_parameter("robot_max_x").value)
         self._robot_min_y = float(self.get_parameter("robot_min_y").value)
@@ -127,22 +107,6 @@ class CloudSelfFilter(Node):
             return None
         return best
 
-    def _world_z_row(self, imu: Optional[Imu]) -> Optional[np.ndarray]:
-        """Return the world-frame z row of R_world_base from the IMU orientation quaternion."""
-        if imu is None:
-            return None
-        q = imu.orientation
-        w, x, y, z = q.w, q.x, q.y, q.z
-        # Third row of rotation matrix from unit quaternion
-        return np.array(
-            [
-                2.0 * (x * z - y * w),
-                2.0 * (y * z + x * w),
-                1.0 - 2.0 * (x * x + y * y),
-            ],
-            dtype=np.float64,
-        )
-
     def _cloud_cb(self, msg: PointCloud2) -> None:
         n_points = msg.width * msg.height
         if n_points == 0:
@@ -156,8 +120,6 @@ class CloudSelfFilter(Node):
 
         cloud_stamp_sec = stamp_to_sec(msg.header.stamp)
         imu = self._nearest_imu(cloud_stamp_sec)
-        R_z_row = self._world_z_row(imu)
-
         dt_struct = build_pc2_dtype(msg)
         raw = np.frombuffer(msg.data, dtype=dt_struct)
 
@@ -188,32 +150,7 @@ class CloudSelfFilter(Node):
             & (z_b >= self._robot_min_z) & (z_b <= self._robot_max_z)
         )
 
-        floor_mask = np.zeros_like(finite_mask, dtype=bool)
-        if self._filter_floor:
-            world_z = np.full_like(x, np.inf)
-            if np.any(finite_mask):
-                if R_z_row is not None:
-                    world_z[finite_mask] = (
-                        R_z_row[0] * x_b[finite_mask]
-                        + R_z_row[1] * y_b[finite_mask]
-                        + R_z_row[2] * z_b[finite_mask]
-                        + self._base_z
-                    )
-                else:
-                    world_z[finite_mask] = z_b[finite_mask] + self._base_z
-
-            floor_threshold = np.full_like(world_z, self._min_world_z, dtype=np.float64)
-            if self._rear_floor_adaptive:
-                rear_distance = np.maximum(0.0, self._rear_floor_start_x - x_b)
-                rear_extra = np.minimum(
-                    rear_distance * self._rear_floor_z_per_meter,
-                    self._rear_floor_max_extra_z,
-                )
-                floor_threshold = floor_threshold + rear_extra
-
-            floor_mask = finite_mask & (world_z < floor_threshold)
-
-        remove = radius_mask | self_box_mask | floor_mask | (~finite_mask)
+        remove = radius_mask | self_box_mask | (~finite_mask)
 
         out_data = bytearray(msg.data)
         out_arr = np.frombuffer(out_data, dtype=dt_struct)

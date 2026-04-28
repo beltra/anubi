@@ -29,6 +29,7 @@ slam_mode       : str    'mapping' or 'localization' (default: 'mapping')
 use_safety      : bool   Enable velocity_limiter safety gate (default: false)
 use_ekf_fusion  : bool   EKF odom fusion (default: true)
 use_lio         : bool   Enable DLIO LiDAR-inertial odometry (default: false)
+distortion_imu_topic: str IMU topic used by LiDAR correction (default: /imu/data)
 """
 
 import os
@@ -86,6 +87,11 @@ def generate_launch_description():
                               description="Raw LiDAR pointcloud topic to relay to /lidar/points"),
         DeclareLaunchArgument("lidar_imu_input_topic", default_value="/unilidar/imu",
                               description="Raw LiDAR IMU topic to relay to /lidar/imu"),
+        DeclareLaunchArgument(
+            "distortion_imu_topic",
+            default_value="/imu/data",
+            description="IMU topic used by distortion_corrector; set /lidar/imu for timing comparison",
+        ),
         DeclareLaunchArgument("use_safety",   default_value="false",
                               description="Enable velocity_limiter; go2_hw_bridge reads /cmd_vel_safe"),
     ]
@@ -104,6 +110,7 @@ def generate_launch_description():
     use_lio = LaunchConfiguration("use_lio")
     lidar_points_input_topic = LaunchConfiguration("lidar_points_input_topic")
     lidar_imu_input_topic = LaunchConfiguration("lidar_imu_input_topic")
+    distortion_imu_topic = LaunchConfiguration("distortion_imu_topic")
     use_safety   = LaunchConfiguration("use_safety")
 
     hw_bridge_cmd_topic = PythonExpression(
@@ -136,10 +143,10 @@ def generate_launch_description():
             "odom_topic": PythonExpression(["'/odom_raw' if '", use_ekf_fusion, "' == 'true' else '/odom'"]),
         }],
     )
-    lidar_stabilized_tf = Node(
+    lidar_level_frame_publisher = Node(
         package="robot_nav",
-        executable="imu_stabilized_tf.py",
-        name="imu_stabilized_tf",
+        executable="lidar_level_frame_publisher",
+        name="lidar_level_frame_publisher",
         output="screen",
         parameters=[{
             "use_sim_time":    use_sim_time,
@@ -241,6 +248,7 @@ def generate_launch_description():
             "slam_params":  slam_params,
             "slam_mode":    slam_mode,
             "map":          map_path,
+            "distortion_imu_topic": distortion_imu_topic,
         }.items(),
     )
 
@@ -271,7 +279,7 @@ def generate_launch_description():
     return LaunchDescription(args + [
         robot_state_publisher,
         go2_hw_bridge,
-        lidar_stabilized_tf,
+        lidar_level_frame_publisher,
         safety,
         ekf,
         lidar_odom_relay,

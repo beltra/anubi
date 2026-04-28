@@ -10,6 +10,7 @@ Gazebo simulation bringup package for the Go2 autonomy stack.
 
 ```
 go2_sim/sim_champ.launch.py  (Ignition Gazebo + ros_ign_bridge + CHAMP + EKFs)
+    +  distortion_corrector  (/lidar/points -> /lidar/points_undistorted)
     +  slam.launch.py        (pointcloud_to_laserscan + slam_toolbox, use_sim_time=true)
     +  nav2.launch.py        (Nav2 navigation stack, use_sim_time=true)
     +  RViz2                 (optional, reuses robot_nav/rviz/nav2.rviz)
@@ -18,7 +19,7 @@ go2_sim/sim_champ.launch.py  (Ignition Gazebo + ros_ign_bridge + CHAMP + EKFs)
 `go2_hw_bridge` is **not** started. Simulation provides the same navigation-facing
 topics (`/lidar/points`, `/scan`, `/odom`, `/cmd_vel`) through CHAMP + SLAM/Nav2.
 
-TF chain in simulation (identical to real robot):
+TF chain in simulation:
 
 ```
 map ─(slam_toolbox)─► odom ─(CHAMP EKF chain)─► base_footprint
@@ -28,6 +29,10 @@ map ─(slam_toolbox)─► odom ─(CHAMP EKF chain)─► base_footprint
 ```
 
 All Nav2 configuration is shared with the real robot (`robot_nav/`).
+Simulation uses the same processed LiDAR topic contract as hardware. The only
+mount difference is the Fortress gpu_lidar workaround: sim uses a right-side-up
+`lidar_link` with `mount_rotation_mode:=direct`, while hardware uses the real
+upside-down mount with `mount_rotation_mode:=inverse`.
 
 ---
 
