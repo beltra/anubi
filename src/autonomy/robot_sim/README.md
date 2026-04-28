@@ -23,6 +23,7 @@ TF chain in simulation:
 
 ```
 map ─(slam_toolbox)─► odom ─(CHAMP EKF chain)─► base_footprint
+                                                  ├─(lidar_level_frame_publisher)─► lidar_stabilized
                                                   └─(URDF)─► base_link
                                                                   ├──► lidar_link
                                                                   └──► imu_link
@@ -42,15 +43,16 @@ upside-down mount with `mount_rotation_mode:=inverse`.
 source /opt/ros/humble/setup.bash
 source /ws/anubi/install/setup.bash
 
-# Full sim — indoor office world (default), mapping mode, Gazebo GUI + RViz
+# Full sim — indoor office world (default), mapping mode, headless
 ros2 launch robot_sim sim_bringup.launch.py
 
-# Warehouse world, localization with a saved map, no GUI
+# Warehouse world, localization with a saved map, Gazebo GUI + RViz enabled
 ros2 launch robot_sim sim_bringup.launch.py \
     world:=$(ros2 pkg prefix sim_worlds)/share/sim_worlds/worlds/warehouse.world \
     slam_mode:=localization \
     map:=/ws/anubi/src/autonomy/robot_nav/maps/my_map \
-    gui:=false
+    gui:=true \
+    use_rviz:=true
 
 # Nav2-only restart entry point is not provided in the current tree.
 ```
@@ -67,11 +69,11 @@ ros2 launch robot_sim sim_bringup.launch.py \
 | `robot` | `go2` | Robot model: `go2` or `d1` |
 | `slam_mode` | `mapping` | `mapping` or `localization` |
 | `map` | `''` | Path to `.posegraph` file (localization mode only) |
-| `use_rviz` | `true` | Launch RViz2 |
+| `use_rviz` | `false` | Launch RViz2 |
 | `slam_params` | robot_nav default | slam_toolbox params YAML override |
 | `nav_params` | robot_nav default | Nav2 params YAML override |
 | `spawn_z` | `0.05` m | Robot Z spawn height (slight ground clearance) |
-| `gui` | `true` | Show Gazebo gzclient GUI |
+| `gui` | `false` | Show Gazebo gzclient GUI |
 
 ## Obstacle Management
 

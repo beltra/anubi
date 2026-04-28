@@ -62,7 +62,7 @@ def generate_launch_description():
             default_value="indoor_office",
             description="Gazebo world name used in transport topic paths",
         ),
-        DeclareLaunchArgument("gui", default_value="true"),
+        DeclareLaunchArgument("gui", default_value="false"),
         DeclareLaunchArgument("robot_name", default_value="go2"),
         DeclareLaunchArgument("ros_control_file", default_value=default_ros_control),
         DeclareLaunchArgument("world_init_x", default_value="0.0"),
@@ -89,7 +89,7 @@ def generate_launch_description():
         DeclareLaunchArgument("map", default_value=""),
         DeclareLaunchArgument("slam_params", default_value=default_slam_params),
         DeclareLaunchArgument("launch_cloud_filter", default_value="false"),
-        DeclareLaunchArgument("use_rviz", default_value="true"),
+        DeclareLaunchArgument("use_rviz", default_value="false"),
         DeclareLaunchArgument("rviz_config", default_value=default_rviz_config),
     ]
 

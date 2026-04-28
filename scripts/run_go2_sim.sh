@@ -22,8 +22,10 @@ Usage:
 Options:
   --map <path>         Path to slam_toolbox map (.posegraph), required in localization mode
   --world <path>       Override world file (default from sim_bringup.launch.py)
-  --no-gui             Start Gazebo without GUI
-  --no-rviz            Start without RViz
+  --gui                Start Gazebo with GUI
+  --rviz               Start RViz
+  --no-gui             Start Gazebo without GUI (overrides default: start GUI)
+  --no-rviz            Start without RViz (overrides default: start RViz)
   --no-stvl            Disable SpatioTemporalVoxelLayer in Nav2 local costmap
   --use-lio            Enable optional LIO backend (/lidar_odom)
   --no-clean           Do not clean pre-existing ROS/Gazebo processes before launch
@@ -62,8 +64,16 @@ while [[ $# -gt 0 ]]; do
       GUI="false"
       shift
       ;;
+    --gui)
+      GUI="true"
+      shift
+      ;;
     --no-rviz)
       RVIZ="false"
+      shift
+      ;;
+    --rviz)
+      RVIZ="true"
       shift
       ;;
     --no-stvl)
