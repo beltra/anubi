@@ -1,0 +1,99 @@
+# Dynamic obstacle pipeline parameters for the physical Go2.
+
+dynamic_obstacle_preprocessor:
+  ros__parameters:
+    input_topic: /lidar/points_undistorted
+    output_topic: /dynamic_obstacles/points_world
+    fixed_frame: map
+    min_z: 0.18
+    max_z: 2.0
+    voxel_size: 0.16
+    max_points: 4500
+    tf_timeout_sec: 0.08
+    fallback_to_latest_tf: true
+    max_latest_tf_age_sec: 0.05
+
+dynamic_cluster_detector:
+  ros__parameters:
+    input_topic: /dynamic_obstacles/points_world
+    output_topic: /dynamic_obstacles/clusters
+    map_topic: /map
+    use_static_map: true
+    require_static_map: true
+    occupied_threshold: 65
+    static_inflation_radius: 0.35
+    cluster_tolerance: 0.40
+    min_cluster_points: 5
+    max_cluster_points: 900
+    max_clusters: 20
+    association_distance: 0.85
+    min_dynamic_displacement: 0.08
+    min_dynamic_speed: 0.22
+    min_dynamic_hits: 1
+    min_consecutive_dynamic_hits: 1
+    max_track_misses: 5
+    max_cluster_size_xy: 3.2
+    wall_sliver_min_length: 0.75
+    wall_sliver_max_length: 0.0
+    wall_sliver_max_width: 0.16
+    static_map_occupied_ratio_threshold: 0.5
+    static_map_large_cluster_min_length: 1.4
+    static_map_large_cluster_max_length: 2.2
+    static_map_large_cluster_max_width: 1.2
+    static_shape_min_length: 1.4
+    static_shape_max_length: 2.2
+    static_shape_max_width: 1.2
+    shadow_management_enabled: true
+    sensor_frame: lidar_stabilized
+    shadow_tf_timeout_sec: 0.04
+    shadow_persistence_sec: 0.80
+    shadow_angle_margin_rad: 0.08
+    shadow_range_padding: 0.20
+    shadow_max_range: 12.0
+    odom_topic: /odom
+    ego_velocity_rejection: true
+    ego_speed_ratio_threshold: 0.55
+    ego_min_robot_speed: 0.08
+    ego_artifact_min_speed_ratio: 0.35
+    ego_artifact_max_speed_ratio: 1.8
+    ego_artifact_direction_cosine: 0.75
+    filter_out_of_map: true
+
+dynamic_obstacle_tracker:
+  ros__parameters:
+    input_topic: /dynamic_obstacles/clusters
+    output_topic: /dynamic_obstacles/tracks
+    publish_frequency: 8.0
+    prediction_horizon_sec: 1.8
+    prediction_step_sec: 0.25
+    confirmation_hits: 2
+    max_misses: 5
+    max_publish_misses: 2
+    min_publish_confidence: 0.5
+    gating_threshold: 9.21
+    initial_position_variance: 0.10
+    initial_yaw_variance: 0.25
+    initial_speed_variance: 0.25
+    initial_yaw_rate_variance: 0.10
+    measurement_variance: 0.05
+    process_position_variance: 0.025
+    process_yaw_variance: 0.06
+    process_speed_variance: 0.12
+    process_yaw_rate_variance: 0.14
+    input_timeout_sec: 0.75
+
+dynamic_obstacle_costmap_bridge:
+  ros__parameters:
+    input_topic: /dynamic_obstacles/tracks
+    occupancy_topic: /dynamic_obstacles/predicted_occupancy
+    marker_topic: /dynamic_obstacles/markers
+    watchdog_timeout_sec: 0.85
+    occupancy_z: 0.45
+    occupancy_resolution: 0.18
+    footprint_padding: 0.12
+    uncertainty_scale: 0.25
+    max_prediction_padding: 0.30
+    min_footprint_x: 0.40
+    min_footprint_y: 0.40
+    min_track_confidence: 0.5
+    max_points: 4000
