@@ -9,6 +9,7 @@
     Worlds:
       navigation_empty.world — flat 20×15 m room, good for first-run testing
       warehouse.world        — 30×20 m warehouse with shelving rows
+      industrial_dynamic.world — 20×15 m industrial validation world with moving actors
       indoor_office.world    — 20×15 m office with partitions and desks
 
     Obstacle models (in models/):
@@ -17,8 +18,8 @@
       obstacle_wall     — 2.00×0.10×0.80 m wall     (grey)
       obstacle_pallet   — 1.20×0.80×0.14 m pallet   (brown)
 
-    To use: set GAZEBO_MODEL_PATH to share/sim_worlds/models (done by sim_bringup.launch.py).
-    Runtime spawning is handled by sim_scenarios/scenario_manager_node.
+    Primitive-only worlds do not require external model paths. Runtime obstacle
+    spawning is handled by sim_scenarios/scenario_manager_node.
   </description>
   <maintainer email="todo@example.com">Maintainer</maintainer>
   <license>Apache-2.0</license>

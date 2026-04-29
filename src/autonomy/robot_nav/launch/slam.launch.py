@@ -1,8 +1,9 @@
 """
 slam.launch.py — 2D SLAM pipeline using slam_toolbox.
 
-Starts: distortion_corrector -> pointcloud_to_laserscan -> slam_toolbox (mapping or localization)
-        + map_saver + lifecycle_manager_localization
+Starts: distortion_corrector -> pointcloud_to_laserscan -> slam_toolbox (mapping or
+        posegraph localization) OR map_server + AMCL when localization map is a
+        Nav2 YAML occupancy map.
 
 Arguments
 ---------
@@ -11,7 +12,8 @@ slam_params                 : str    Path to slam_toolbox YAML
 scan_params                 : str    Path to pointcloud_to_laserscan YAML
 distortion_params           : str    Path to distortion_corrector YAML
 slam_mode                   : str    'mapping' (default) | 'localization'
-map                         : str    Path to .posegraph file (localization mode)
+map                         : str    Path to .posegraph or Nav2 .yaml map (localization mode)
+localization_params         : str    Nav2 YAML containing amcl/map_server params
 autostart                   : bool   (default: true)
 bypass_distortion_corrector : bool   Skip deskew (use in simulation)
 distortion_imu_topic       : str    IMU topic used for deskew/gravity alignment
@@ -38,13 +40,20 @@ def _validate_localization_inputs(context):
             raise RuntimeError(
                 "slam_mode:=localization requires map:=<path/to/map.posegraph>."
             )
-        # slam_toolbox expects the base path WITHOUT .posegraph extension.
-        # Accept both forms; always check for the .posegraph file.
+        if map_file.endswith((".yaml", ".yml")):
+            if not os.path.isfile(map_file):
+                raise RuntimeError(
+                    f"Localization occupancy map YAML not found: '{map_file}'."
+                )
+            return []
+
+        # slam_toolbox expects the base path WITHOUT .posegraph extension. Accept
+        # both forms; always check for the .posegraph file.
         posegraph = map_file if map_file.endswith(".posegraph") else map_file + ".posegraph"
         if not os.path.isfile(posegraph):
             raise RuntimeError(
                 f"Localization map file not found: '{posegraph}'. "
-                "Provide a valid slam_toolbox .posegraph file path via map:=..."
+                "Provide a valid slam_toolbox .posegraph or Nav2 .yaml map via map:=..."
             )
 
     return []
@@ -59,6 +68,7 @@ def generate_launch_description():
     default_distortion_params = os.path.join(
         robot_nav_share, "config", "distortion_corrector.yaml"
     )
+    default_localization_params = os.path.join(robot_nav_share, "config", "nav2_params.yaml")
 
     args = [
         DeclareLaunchArgument("use_sim_time", default_value="false"),
@@ -68,7 +78,12 @@ def generate_launch_description():
         DeclareLaunchArgument("slam_mode",    default_value="mapping",
                               description="'mapping' or 'localization'"),
         DeclareLaunchArgument("map",          default_value="",
-                              description="Path to .posegraph file for localization mode"),
+                              description="Path to .posegraph or Nav2 .yaml map for localization mode"),
+        DeclareLaunchArgument(
+            "localization_params",
+            default_value=default_localization_params,
+            description="Nav2 params YAML used by AMCL/map_server for .yaml map localization",
+        ),
         DeclareLaunchArgument("autostart",    default_value="true"),
         DeclareLaunchArgument(
             "bypass_distortion_corrector", default_value="false",
@@ -90,6 +105,7 @@ def generate_launch_description():
     distortion_params = LaunchConfiguration("distortion_params")
     slam_mode    = LaunchConfiguration("slam_mode")
     map_path     = LaunchConfiguration("map")
+    localization_params = LaunchConfiguration("localization_params")
     autostart    = LaunchConfiguration("autostart")
     bypass_distortion_corrector = LaunchConfiguration("bypass_distortion_corrector")
     distortion_imu_topic = LaunchConfiguration("distortion_imu_topic")
@@ -97,6 +113,20 @@ def generate_launch_description():
 
     is_mapping       = PythonExpression(["'", slam_mode, "' == 'mapping'"])
     is_localization  = PythonExpression(["'", slam_mode, "' == 'localization'"])
+    is_yaml_localization = PythonExpression([
+        "'",
+        slam_mode,
+        "' == 'localization' and '",
+        map_path,
+        "'.endswith(('.yaml', '.yml'))",
+    ])
+    is_posegraph_localization = PythonExpression([
+        "'",
+        slam_mode,
+        "' == 'localization' and not '",
+        map_path,
+        "'.endswith(('.yaml', '.yml'))",
+    ])
 
     distortion_corrector = Node(
         package="robot_nav",
@@ -156,7 +186,47 @@ def generate_launch_description():
                 "map_file_name": map_file_name,
             },
         ],
-        condition=IfCondition(is_localization),
+        condition=IfCondition(is_posegraph_localization),
+    )
+
+    map_server = Node(
+        package="nav2_map_server",
+        executable="map_server",
+        name="map_server",
+        output="screen",
+        parameters=[
+            localization_params,
+            {
+                "use_sim_time": use_sim_time,
+                "yaml_filename": map_path,
+            },
+        ],
+        condition=IfCondition(is_yaml_localization),
+    )
+
+    amcl = Node(
+        package="nav2_amcl",
+        executable="amcl",
+        name="amcl",
+        output="screen",
+        parameters=[
+            localization_params,
+            {"use_sim_time": use_sim_time},
+        ],
+        condition=IfCondition(is_yaml_localization),
+    )
+
+    lifecycle_manager_amcl = Node(
+        package="nav2_lifecycle_manager",
+        executable="lifecycle_manager",
+        name="lifecycle_manager_amcl",
+        output="screen",
+        parameters=[{
+            "use_sim_time": use_sim_time,
+            "autostart": autostart,
+            "node_names": ["map_server", "amcl"],
+        }],
+        condition=IfCondition(is_yaml_localization),
     )
 
     map_saver = Node(
@@ -191,6 +261,9 @@ def generate_launch_description():
         pointcloud_to_laserscan,
         slam_mapping,
         slam_localization,
+        map_server,
+        amcl,
+        lifecycle_manager_amcl,
         map_saver,
         lifecycle_manager_localization,
     ])

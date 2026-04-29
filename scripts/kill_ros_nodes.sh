@@ -22,6 +22,8 @@ for name in \
   parameter_bridge create \
   robot_state_publisher static_transform_publisher \
   pointcloud_to_laserscan_node velocity_limiter \
+  dynamic_obstacle_preprocessor.py dynamic_cluster_detector.py \
+  dynamic_obstacle_tracker.py dynamic_obstacle_costmap_bridge.py \
   quadruped_controller_node state_estimation_node \
   ekf_node spawner \
   champ champ_base champ_msgs champ_gazebo champ_utils champ_localization champ_navigation champ_teleop champ_description; do
@@ -45,6 +47,8 @@ add_pids < <(pgrep -f 'ros_ign_bridge' || true)
 add_pids < <(pgrep -f 'controller_manager/spawner' || true)
 add_pids < <(pgrep -f 'pointcloud_to_laserscan' || true)
 add_pids < <(pgrep -f 'robot_nav/lib/robot_nav/distortion_corrector' || true)
+add_pids < <(pgrep -f 'robot_nav/lib/robot_nav/dynamic_obstacle_' || true)
+add_pids < <(pgrep -f 'robot_nav/lib/robot_nav/dynamic_cluster_detector' || true)
 add_pids < <(pgrep -f 'velocity_limiter' || true)
 add_pids < <(pgrep -f 'route_server' || true)
 

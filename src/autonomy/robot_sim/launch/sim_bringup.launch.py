@@ -5,19 +5,27 @@ Starts:
   1. go2_sim/sim_champ.launch.py   (Gazebo, CHAMP, bridges, EKF, TF)
   2. distortion_corrector          (/lidar/points -> /lidar/points_undistorted)
   3. robot_nav/slam.launch.py      (optional via start_nav:=true)
-  4. robot_nav/nav2.launch.py      (optional via start_nav:=true)
-  5. RViz2                         (optional)
+  4. robot_nav/dynamic_obstacles.launch.py (optional via use_dynamic_obstacles:=true)
+  5. robot_nav/nav2.launch.py      (optional via start_nav:=true)
+  6. RViz2                         (optional)
 
 Note: sim_champ publishes a fallback static map->odom TF by default.
 SLAM bringup disables it so slam_toolbox is the sole map->odom publisher.
 """
 
+import math
 import os
 
 from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction, TimerAction
+from launch.actions import (
+    DeclareLaunchArgument,
+    ExecuteProcess,
+    IncludeLaunchDescription,
+    OpaqueFunction,
+    TimerAction,
+)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
@@ -29,9 +37,13 @@ def generate_launch_description():
     sim_worlds_share = get_package_share_directory("sim_worlds")
     robot_nav_share = get_package_share_directory("robot_nav")
 
-    default_world = os.path.join(sim_worlds_share, "worlds", "indoor_office.world")
+    default_world = os.path.join(sim_worlds_share, "worlds", "industrial_dynamic.world")
+    default_map = os.path.join(robot_nav_share, "maps", "industrial_dynamic.yaml")
     default_ros_control = os.path.join(go2_sim_share, "config", "ros_control.yaml")
     default_slam_params = os.path.join(robot_nav_share, "config", "slam_toolbox_params.yaml")
+    default_dynamic_params = os.path.join(
+        robot_nav_share, "config", "dynamic_obstacles_sim.yaml"
+    )
     default_rviz_config = os.path.join(robot_nav_share, "rviz", "nav2.rviz")
 
     args = [
@@ -59,7 +71,7 @@ def generate_launch_description():
         DeclareLaunchArgument("world", default_value=default_world),
         DeclareLaunchArgument(
             "world_name",
-            default_value="indoor_office",
+            default_value="industrial_dynamic",
             description="Gazebo world name used in transport topic paths",
         ),
         DeclareLaunchArgument("gui", default_value="false"),
@@ -71,6 +83,16 @@ def generate_launch_description():
         DeclareLaunchArgument("world_init_heading", default_value="0.0"),
         DeclareLaunchArgument("publish_map_to_odom_tf", default_value="false"),
         DeclareLaunchArgument("use_lio", default_value="false"),
+        DeclareLaunchArgument(
+            "use_dynamic_obstacles",
+            default_value="false",
+            description="Launch predictive LiDAR dynamic obstacle pipeline",
+        ),
+        DeclareLaunchArgument(
+            "dynamic_obstacles_params",
+            default_value=default_dynamic_params,
+            description="Dynamic obstacle pipeline parameters",
+        ),
         DeclareLaunchArgument(
             "lio_start_before_nav_sec",
             default_value="4.0",
@@ -85,12 +107,35 @@ def generate_launch_description():
                 "to avoid polluting the map with collapsed-posture observations."
             ),
         ),
-        DeclareLaunchArgument("slam_mode", default_value="mapping"),
-        DeclareLaunchArgument("map", default_value=""),
+        DeclareLaunchArgument("slam_mode", default_value="localization"),
+        DeclareLaunchArgument("map", default_value=default_map),
         DeclareLaunchArgument("slam_params", default_value=default_slam_params),
+        DeclareLaunchArgument(
+            "publish_initial_pose",
+            default_value="true",
+            description="Publish the known spawn pose to AMCL in YAML-map localization mode",
+        ),
+        DeclareLaunchArgument(
+            "initial_pose_delay_sec",
+            default_value="2.0",
+            description="Delay after localization launch before publishing /initialpose",
+        ),
         DeclareLaunchArgument("launch_cloud_filter", default_value="false"),
         DeclareLaunchArgument("use_rviz", default_value="false"),
         DeclareLaunchArgument("rviz_config", default_value=default_rviz_config),
+        DeclareLaunchArgument(
+            "auto_nav_goal",
+            default_value="false",
+            description="Send a NavigateToPose goal after startup for robot-in-motion validation",
+        ),
+        DeclareLaunchArgument(
+            "auto_nav_goal_delay_sec",
+            default_value="38.0",
+            description="Delay before sending the optional validation navigation goal",
+        ),
+        DeclareLaunchArgument("auto_nav_goal_x", default_value="8.0"),
+        DeclareLaunchArgument("auto_nav_goal_y", default_value="0.0"),
+        DeclareLaunchArgument("auto_nav_goal_yaw", default_value="0.0"),
     ]
 
     start_nav = LaunchConfiguration("start_nav")
@@ -100,6 +145,7 @@ def generate_launch_description():
     use_route_server = LaunchConfiguration("use_route_server")
     route_graph_file = LaunchConfiguration("route_graph_file")
     use_lio = LaunchConfiguration("use_lio")
+    use_dynamic_obstacles = LaunchConfiguration("use_dynamic_obstacles")
 
     champ_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -232,12 +278,109 @@ def generate_launch_description():
         }.items(),
     )
 
+    dynamic_obstacles = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(robot_nav_share, "launch", "dynamic_obstacles.launch.py")
+        ),
+        condition=IfCondition(use_dynamic_obstacles),
+        launch_arguments={
+            "use_sim_time": use_sim_time,
+            "dynamic_obstacles_params_file": LaunchConfiguration("dynamic_obstacles_params"),
+        }.items(),
+    )
+
+    def maybe_send_auto_nav_goal(context):
+        if LaunchConfiguration("auto_nav_goal").perform(context).lower() != "true":
+            return []
+
+        x = float(LaunchConfiguration("auto_nav_goal_x").perform(context))
+        y = float(LaunchConfiguration("auto_nav_goal_y").perform(context))
+        yaw = float(LaunchConfiguration("auto_nav_goal_yaw").perform(context))
+        qz = math.sin(yaw / 2.0)
+        qw = math.cos(yaw / 2.0)
+        goal = (
+            "{pose: {header: {frame_id: map}, pose: {"
+            f"position: {{x: {x:.3f}, y: {y:.3f}, z: 0.0}}, "
+            f"orientation: {{z: {qz:.8f}, w: {qw:.8f}}}"
+            "}}}"
+        )
+        return [
+            TimerAction(
+                period=float(LaunchConfiguration("auto_nav_goal_delay_sec").perform(context)),
+                actions=[
+                    ExecuteProcess(
+                        cmd=[
+                            "ros2",
+                            "action",
+                            "send_goal",
+                            "/navigate_to_pose",
+                            "nav2_msgs/action/NavigateToPose",
+                            goal,
+                        ],
+                        output="screen",
+                    )
+                ],
+            )
+        ]
+
+    auto_nav_goal = OpaqueFunction(function=maybe_send_auto_nav_goal)
+
+    def maybe_publish_initial_pose(context):
+        if LaunchConfiguration("publish_initial_pose").perform(context).lower() != "true":
+            return []
+        if LaunchConfiguration("slam_mode").perform(context).lower() != "localization":
+            return []
+        map_path = LaunchConfiguration("map").perform(context)
+        if not map_path.endswith((".yaml", ".yml")):
+            return []
+
+        x = float(LaunchConfiguration("world_init_x").perform(context))
+        y = float(LaunchConfiguration("world_init_y").perform(context))
+        yaw = float(LaunchConfiguration("world_init_heading").perform(context))
+        qz = math.sin(yaw / 2.0)
+        qw = math.cos(yaw / 2.0)
+        pose = (
+            "{header: {frame_id: map}, pose: {pose: {"
+            f"position: {{x: {x:.3f}, y: {y:.3f}, z: 0.0}}, "
+            f"orientation: {{z: {qz:.8f}, w: {qw:.8f}}}"
+            "}, covariance: ["
+            "0.05, 0.0, 0.0, 0.0, 0.0, 0.0, "
+            "0.0, 0.05, 0.0, 0.0, 0.0, 0.0, "
+            "0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "
+            "0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "
+            "0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "
+            "0.0, 0.0, 0.0, 0.0, 0.0, 0.02"
+            "]}}"
+        )
+        return [
+            ExecuteProcess(
+                cmd=[
+                    "ros2",
+                    "topic",
+                    "pub",
+                    "--once",
+                    "/initialpose",
+                    "geometry_msgs/msg/PoseWithCovarianceStamped",
+                    pose,
+                ],
+                output="screen",
+            )
+        ]
+
+    initial_pose = OpaqueFunction(function=maybe_publish_initial_pose)
+
     # SLAM starts after CHAMP has settled into standing pose (nav_delay_sec).
-    # Nav2 starts 10 s after SLAM so slam_toolbox can publish map->odom first.
+    # Dynamic obstacle processing starts after SLAM has a map frame; Nav2 starts
+    # after that so its STVL observation source can subscribe from startup.
     start_nav_stack = TimerAction(
         period=LaunchConfiguration("nav_delay_sec"),
         actions=[
             slam,
+            TimerAction(
+                period=LaunchConfiguration("initial_pose_delay_sec"),
+                actions=[initial_pose],
+            ),
+            TimerAction(period=6.0, actions=[dynamic_obstacles]),
             TimerAction(period=10.0, actions=[nav2]),
         ],
     )
@@ -258,5 +401,6 @@ def generate_launch_description():
         lidar_cloud_processor,
         debug_cloud_filter,
         start_nav_stack,
+        auto_nav_goal,
         rviz,
     ])

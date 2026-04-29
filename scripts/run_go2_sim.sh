@@ -12,6 +12,7 @@ USE_ROUTE_SERVER="false"
 ROUTE_GRAPH_FILE=""
 NAV_DELAY_SEC="20.0"
 USE_LIO="false"
+USE_DYNAMIC_OBSTACLES="false"
 CLEAN_EXISTING="true"
 
 usage() {
@@ -28,6 +29,7 @@ Options:
   --no-rviz            Start without RViz (overrides default: start RViz)
   --no-stvl            Disable SpatioTemporalVoxelLayer in Nav2 local costmap
   --use-lio            Enable optional LIO backend (/lidar_odom)
+  --dynamic-obstacles  Enable predictive dynamic obstacle pipeline and RViz markers
   --no-clean           Do not clean pre-existing ROS/Gazebo processes before launch
   --nav-profile <id>   Nav2 profile: default_safe | narrow_gap_1p0m | forward_static
   --use-route-server   Launch optional Nav2 route_server scaffold
@@ -82,6 +84,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --use-lio)
       USE_LIO="true"
+      shift
+      ;;
+    --dynamic-obstacles)
+      USE_DYNAMIC_OBSTACLES="true"
       shift
       ;;
     --no-clean)
@@ -162,6 +168,7 @@ CMD=(
   use_rviz:="$RVIZ"
   use_stvl:="$USE_STVL"
   use_lio:="$USE_LIO"
+  use_dynamic_obstacles:="$USE_DYNAMIC_OBSTACLES"
   nav_profile:="$NAV_PROFILE"
   use_route_server:="$USE_ROUTE_SERVER"
   nav_delay_sec:="$NAV_DELAY_SEC"

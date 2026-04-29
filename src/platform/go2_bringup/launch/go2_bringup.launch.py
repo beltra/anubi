@@ -8,8 +8,9 @@ Starts (in order):
   4. EKF                    (optional odom fusion; enabled by use_ekf_fusion:=true)
   5. robot_lio              (canonical LiDAR relay + optional DLIO backend)
   6. slam.launch.py         (pointcloud_to_laserscan + slam_toolbox)
-  7. nav2.launch.py         (full Nav2 navigation stack)
-  8. RViz2                  (optional)
+  7. dynamic_obstacles.launch.py (optional predictive obstacle pipeline)
+  8. nav2.launch.py         (full Nav2 navigation stack)
+  9. RViz2                  (optional)
 
 LiDAR topic contract: the Go2 internal ROS 2 bridge publishes raw point cloud on
 /utlidar/cloud. robot_lio relays it to /lidar/points and distortion_corrector
@@ -30,6 +31,7 @@ use_safety      : bool   Enable velocity_limiter safety gate (default: false)
 use_ekf_fusion  : bool   EKF odom fusion (default: true)
 use_lio         : bool   Enable DLIO LiDAR-inertial odometry (default: false)
 distortion_imu_topic: str IMU topic used by LiDAR correction (default: /imu/data)
+use_dynamic_obstacles: bool Enable predictive dynamic obstacle pipeline (default: false)
 """
 
 import os
@@ -58,6 +60,7 @@ def generate_launch_description():
     rviz_config     = os.path.join(robot_nav_share,      "rviz",   "nav2.rviz")
     ekf_params_base = os.path.join(robot_nav_share,      "config", "ekf_fusion_params.yaml")
     ekf_params_lio  = os.path.join(robot_nav_share,      "config", "ekf_fusion_params_lio.yaml")
+    dynamic_params  = os.path.join(robot_nav_share,      "config", "dynamic_obstacles_hw.yaml")
 
     args = [
         DeclareLaunchArgument(
@@ -83,6 +86,10 @@ def generate_launch_description():
                               description="Fuse /odom_raw via EKF and publish /odom"),
         DeclareLaunchArgument("use_lio", default_value="false",
                               description="Enable DLIO LiDAR-inertial odometry backend"),
+        DeclareLaunchArgument("use_dynamic_obstacles", default_value="false",
+                              description="Enable predictive LiDAR dynamic obstacle pipeline"),
+        DeclareLaunchArgument("dynamic_obstacles_params", default_value=dynamic_params,
+                              description="Dynamic obstacle pipeline parameters"),
         DeclareLaunchArgument("lidar_points_input_topic", default_value="/utlidar/cloud",
                               description="Raw LiDAR pointcloud topic to relay to /lidar/points"),
         DeclareLaunchArgument("lidar_imu_input_topic", default_value="/unilidar/imu",
@@ -108,6 +115,7 @@ def generate_launch_description():
     slam_mode    = LaunchConfiguration("slam_mode")
     use_ekf_fusion = LaunchConfiguration("use_ekf_fusion")
     use_lio = LaunchConfiguration("use_lio")
+    use_dynamic_obstacles = LaunchConfiguration("use_dynamic_obstacles")
     lidar_points_input_topic = LaunchConfiguration("lidar_points_input_topic")
     lidar_imu_input_topic = LaunchConfiguration("lidar_imu_input_topic")
     distortion_imu_topic = LaunchConfiguration("distortion_imu_topic")
@@ -268,6 +276,17 @@ def generate_launch_description():
         }.items(),
     )
 
+    dynamic_obstacles = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(robot_nav_share, "launch", "dynamic_obstacles.launch.py")
+        ),
+        launch_arguments={
+            "use_sim_time": use_sim_time,
+            "dynamic_obstacles_params_file": LaunchConfiguration("dynamic_obstacles_params"),
+        }.items(),
+        condition=IfCondition(use_dynamic_obstacles),
+    )
+
     rviz2 = Node(
         package="rviz2",
         executable="rviz2",
@@ -287,6 +306,7 @@ def generate_launch_description():
         lidar_odom_relay,
         lio,
         slam,
+        dynamic_obstacles,
         nav2,
         rviz2,
     ])

@@ -1,4 +1,4 @@
-# Default Nav2 profile: SmacPlannerLattice + MPPI + STVL local costmap.
+# Default Nav2 profile: SmacPlanner2D + RotationShim(MPPI) + STVL local costmap.
 # use_sim_time is rewritten at launch.
 
 amcl:
@@ -41,6 +41,12 @@ amcl:
     z_rand: 0.5
     z_short: 0.05
     scan_topic: scan
+    # set_initial_pose: true
+    # initial_pose:
+    #   x: 0.0
+    #   y: 0.0
+    #   z: 0.0
+    #   yaw: 0.0
 
 map_server:
   ros__parameters:
@@ -62,31 +68,19 @@ planner_server:
     planner_plugins: ["GridBased"]
 
     GridBased:
-      plugin: "nav2_smac_planner/SmacPlannerLattice"
-      tolerance: 0.25
+      # SmacPlanner2D: pure 2D grid A* search.  Produces straight-line
+      # segments that deviate only around obstacles — no lattice-primitive
+      # wiggle.  Heading is left to the controller (MPPI) and the
+      # RotationShimController rotate-in-place behaviors.
+      plugin: "nav2_smac_planner/SmacPlanner2D"
+      tolerance: 0.125                     # tight goal cell tolerance (meters)
       allow_unknown: true
       max_iterations: 1000000
-      max_on_approach_iterations: 1000
       max_planning_time: 5.0
-      analytic_expansion_ratio: 3.5
-      analytic_expansion_max_length: 3.0
-      reverse_penalty: 2.8        # Backward motion is allowed, but only when it meaningfully helps
-      change_penalty: 0.50
-      non_straight_penalty: 2.0
-      cost_penalty: 3.0
-      rotation_penalty: 7.0
-      retrospective_penalty: 0.025
-      lattice_filepath: "./lattice_omni_5.json"
-      lookup_table_size: 20.0
-      cache_obstacle_heuristic: true
-      allow_reverse_expansion: false
-      smooth_path: true
-      smoother:
-        max_iterations: 1000
-        w_smooth: 0.4
-        w_data: 0.2
-        tolerance: 1.0e-10
-        do_refinement: false
+      use_astar: true                      # A* is faster than Dijkstra for single-goal
+      motion_model_for_search: "MOORE"     # 8-connected: allows 45° diagonals for cleaner paths
+      downsample_costmap: false            # keep full resolution for tight gaps
+      cost_travel_multiplier: 2.0          # how much to respect inflation; 2.0 keeps paths clear without excessive detours
 
 controller_server:
   ros__parameters:
@@ -114,32 +108,34 @@ controller_server:
       yaw_goal_tolerance: 0.40
 
     FollowPath:
-      # plugin: "nav2_rotation_shim_controller::RotationShimController"
-      # angular_dist_threshold: 0.45
-      # forward_sampling_distance: 0.45
-      # rotate_to_heading_angular_vel: 1.4
-      # max_angular_accel: 1.2
-      # simulate_ahead_time: 1.0
-      # rotate_to_goal_heading: true
-      # primary_controller: "nav2_mppi_controller::MPPIController"
+      # Bare MPPI with DiffDrive.  RotationShimController was removed because
+      # it stamps TF lookups at clock_->now() with a hardcoded 0.1 s tolerance
+      # that cannot be configured — in sim the TF buffer always lags behind
+      # the sim clock, so the transform permanently fails and the shim never
+      # actually commands rotation (path_updated_ set to false on every cycle).
+      #
+      # Instead, a very high PathAngleCritic weight makes MPPI's cost landscape
+      # heavily penalize any forward motion when the robot's heading is
+      # misaligned with the path.  With DiffDrive (vx, wz only), this naturally
+      # produces rotate-in-place at start and goal without TF fragility.
       plugin: "nav2_mppi_controller::MPPIController"
-      motion_model: "Omni"
-      transform_tolerance: 0.1
+      motion_model: "DiffDrive"
+      transform_tolerance: 0.3
       prune_distance: 1.7
-      time_steps: 40
+      time_steps: 50                       # longer horizon (2.5 s) lets MPPI "see" the rotation
       model_dt: 0.05
-      batch_size: 1500
-      iteration_count: 2
+      batch_size: 2000                     # more samples to explore rotation trajectories
+      iteration_count: 3                     # extra iteration helps converge on rotation
       retry_attempt_limit: 1
-      temperature: 0.5
+      temperature: 0.3                    # sharper selection toward best trajectory
       gamma: 0.015
       reset_period: 1.0
       regenerate_noises: true
       visualize: true
 
       vx_max: 1.5
-      vx_min: -0.6
-      vy_max: 0.3
+      vx_min: -0.8                          # no reverse: forces rotate-in-place when path is behind
+      vy_max: 0.3                          # DiffDrive: no lateral
       vy_min: -0.3
       wz_max: 1.3
       wz_min: -1.3
@@ -147,15 +143,17 @@ controller_server:
       ax_min: -1.0
       ay_max: 0.5
       ay_min: -0.5
-      az_max: 1.0
-      az_min: -1.0
-      vx_std: 0.3
+      az_max: 1.2
+      az_min: -1.2
+      vx_std: 0.25
       vy_std: 0.3
-      wz_std: 0.2
+      wz_std: 1.0                          # very wide rotation noise — ensures MPPI samples
+                                             # near-max rotation (1.3 rad/s) to cover 180° turns
+                                             # within the 2.5 s horizon
 
       critics: ["ConstraintCritic", "ObstaclesCritic", "GoalCritic", "GoalAngleCritic",
                 "PathAlignCritic", "PathFollowCritic", "PathAngleCritic",
-                "PreferForwardCritic", "TwirlingCritic", "VelocityDeadbandCritic"]
+                "PreferForwardCritic", "VelocityDeadbandCritic"]
 
       ConstraintCritic:
         enabled: true
@@ -178,56 +176,51 @@ controller_server:
         enabled: true
         cost_power: 1
         cost_weight: 5.0
-        threshold_to_consider: 1.2
+        threshold_to_consider: 1.4
 
       GoalAngleCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 1.0
-        threshold_to_consider: 0.10
+        cost_weight: 3.0
+        threshold_to_consider: 0.50
 
       PathAlignCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 10.0
+        cost_weight: 14.0
         max_path_occupancy_ratio: 0.05
         trajectory_point_step: 4
-        threshold_to_consider: 0.2
+        threshold_to_consider: 0.4
         offset_from_furthest: 20
         use_path_orientations: false
 
       PathFollowCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 8.0
+        cost_weight: 5.0
         offset_from_furthest: 5
         threshold_to_consider: 1.4
 
       PathAngleCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 4.0
+        cost_weight: 200.0                 # dominant: forces rotation before translation
         offset_from_furthest: 4
-        threshold_to_consider: 0.2
+        threshold_to_consider: 100.0       # always active regardless of distance to path
         max_angle_to_furthest: 1.0
-        forward_preference: true
+        mode: 0                            # penalize heading error to path direction
 
       PreferForwardCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 30.0
+        cost_weight: 5.0
         threshold_to_consider: 0.5
-
-      TwirlingCritic:
-        enabled: true
-        cost_power: 1
-        cost_weight: 10.0
 
       VelocityDeadbandCritic:
         enabled: true
         cost_power: 1
         cost_weight: 35.0
-        deadband_velocities: [0.03, 0.50, 0.02]
+        deadband_velocities: [0.03, 0.03, 0.02]
 
       TrajectoryVisualizer:
         trajectory_step: 5
@@ -251,6 +244,10 @@ local_costmap:
           subscription:
             reliability: best_effort
             durability: volatile
+        /dynamic_obstacles/predicted_occupancy:
+          subscription:
+            reliability: best_effort
+            durability: volatile
 
       # Go2 standing envelope: 0.70 m x 0.31 m
       footprint: "[ [-0.35, -0.155], [-0.35, 0.155], [0.35, 0.155], [0.35, -0.155] ]"
@@ -261,7 +258,7 @@ local_costmap:
       stvl_layer:
         plugin: "spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer"
         enabled: true
-        voxel_decay: 2.0
+        voxel_decay: 0.5
         decay_model: 0
         voxel_size: 0.05
         track_unknown_space: false
@@ -274,7 +271,9 @@ local_costmap:
         transform_tolerance: 0.1
         mapping_mode: false
         map_save_duration: 60.0
-        observation_sources: lidar_mark
+        # lidar_mark is the observed cloud; dynamic_prediction is predicted
+        # occupancy from dynamic_obstacle_costmap_bridge for proactive avoidance.
+        observation_sources: lidar_mark dynamic_prediction
         lidar_mark:
           data_type: PointCloud2
           topic: /lidar/points_undistorted
@@ -293,6 +292,24 @@ local_costmap:
           sensor_origin_frame: lidar_stabilized
           max_z: 2.5
           min_z: -0.10
+        dynamic_prediction:
+          data_type: PointCloud2
+          topic: /dynamic_obstacles/predicted_occupancy
+          marking: true
+          clearing: false
+          obstacle_range: 8.0
+          raytrace_range: 0.0
+          min_obstacle_height: 0.05
+          max_obstacle_height: 1.5
+          expected_update_rate: 0.0
+          observation_persistence: 0.0
+          inf_is_valid: false
+          filter: "voxel"
+          voxel_min_points: 1
+          clear_after_reading: true
+          sensor_origin_frame: map
+          max_z: 1.5
+          min_z: 0.0
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
@@ -315,48 +332,17 @@ global_costmap:
       publish_frequency: 2.0
       transform_tolerance: 0.5
       track_unknown_space: false
-      qos_overrides:
-        /lidar/points_undistorted:
-          subscription:
-            reliability: best_effort
-            durability: volatile
 
       footprint: "[ [-0.35, -0.155], [-0.35, 0.155], [0.35, 0.155], [0.35, -0.155] ]"
       footprint_padding: 0.03
 
-      plugins: ["static_layer", "voxel_layer", "inflation_layer"]
+      # Keep live LiDAR/dynamic obstacle marks out of the non-rolling global
+      # costmap. The local STVL layer handles moving obstacles with decay.
+      plugins: ["static_layer", "inflation_layer"]
 
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: true
-
-      voxel_layer:
-        plugin: "nav2_costmap_2d::VoxelLayer"
-        enabled: true
-        publish_voxel_map: false
-        footprint_clearing_enabled: true
-        origin_z: 0.0
-        z_resolution: 0.05
-        z_voxels: 16
-        min_obstacle_height: 0.15
-        max_obstacle_height: 2.3
-        unknown_threshold: 15
-        mark_threshold: 1
-        combination_method: 1
-        observation_sources: cloud
-        cloud:
-          topic: /lidar/points_undistorted
-          data_type: "PointCloud2"
-          clearing: true
-          marking: true
-          min_obstacle_height: 0.15
-          max_obstacle_height: 2.3
-          obstacle_min_range: 0.15
-          obstacle_max_range: 6.0
-          raytrace_min_range: 0.05
-          raytrace_max_range: 8.0
-          inf_is_valid: false
-          expected_update_rate: 10.0
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"

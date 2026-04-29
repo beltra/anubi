@@ -18,16 +18,21 @@ slam_toolbox:
     use_map_saver: true
     mode: mapping
 
-    # Conservative scan integration for slow indoor robot
-    minimum_travel_distance: 0.15  # [m]
-    minimum_travel_heading: 0.15   # [rad]
-    minimum_time_interval:  0.25   # [s]
+    # Mapping should not memorize every transient object endpoint. Accept scans
+    # only after meaningful motion/time so moving obstacles get fewer votes in
+    # the persistent pose graph.
+    minimum_travel_distance: 0.30  # [m]
+    minimum_travel_heading: 0.25   # [rad]
+    minimum_time_interval:  0.50   # [s]
 
     use_scan_matching:   true
     use_scan_barycenter: true
 
     resolution: 0.05
-    max_laser_range: 25.0
+    # 0.05 m cells and 0.5 deg scans become sparse at long range; limiting the
+    # rasterized range keeps free/occupied evidence dense enough to clear
+    # transient marks while still covering the local indoor map.
+    max_laser_range: 10.0
     min_laser_range: 0.15
 
     do_loop_closing: true
@@ -36,10 +41,16 @@ slam_toolbox:
     loop_match_minimum_response_coarse: 0.35
     loop_match_minimum_response_fine:   0.45
 
-    scan_buffer_size: 20
+    scan_buffer_size: 30
     scan_buffer_maximum_scan_distance: 10.0
-    scan_queue_size: 50
+    scan_queue_size: 1
     throttle_scans: 1
+
+    # Require more than a one-off hit before a cell is called occupied. A moving
+    # obstacle can still appear briefly, but a few later pass-through beams will
+    # return that cell to free instead of leaving black dots in the saved map.
+    min_pass_through: 3
+    occupancy_threshold: 0.30
 
     link_match_minimum_response_fine:   0.1
     link_scan_maximum_distance:         1.5
