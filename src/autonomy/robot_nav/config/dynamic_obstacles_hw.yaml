@@ -29,18 +29,20 @@ dynamic_cluster_detector:
     association_distance: 0.85
     min_dynamic_displacement: 0.08
     min_dynamic_speed: 0.22
+    max_dynamic_speed: 3.0
     min_dynamic_hits: 1
     min_consecutive_dynamic_hits: 1
     max_track_misses: 5
+    min_dynamic_cluster_long_axis: 0.18
     max_cluster_size_xy: 3.2
-    wall_sliver_min_length: 0.75
+    wall_sliver_min_length: 0.50
     wall_sliver_max_length: 0.0
-    wall_sliver_max_width: 0.16
+    wall_sliver_max_width: 0.22
     static_map_occupied_ratio_threshold: 0.5
-    static_map_large_cluster_min_length: 1.4
+    static_map_large_cluster_min_length: 1.0
     static_map_large_cluster_max_length: 2.2
     static_map_large_cluster_max_width: 1.2
-    static_shape_min_length: 1.4
+    static_shape_min_length: 1.0
     static_shape_max_length: 2.2
     static_shape_max_width: 1.2
     shadow_management_enabled: true
@@ -66,7 +68,7 @@ dynamic_obstacle_tracker:
     publish_frequency: 8.0
     prediction_horizon_sec: 1.8
     prediction_step_sec: 0.25
-    confirmation_hits: 2
+    confirmation_hits: 1
     max_misses: 5
     max_publish_misses: 2
     min_publish_confidence: 0.5
@@ -80,6 +82,7 @@ dynamic_obstacle_tracker:
     process_yaw_variance: 0.06
     process_speed_variance: 0.12
     process_yaw_rate_variance: 0.14
+    straight_line_prediction: true
     input_timeout_sec: 0.75
 
 dynamic_obstacle_costmap_bridge:

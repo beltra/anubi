@@ -11,8 +11,8 @@ Launch with `robot_nav/launch/dynamic_obstacles.launch.py`.
 | Node | Input | Output | Purpose |
 |---|---|---|---|
 | `dynamic_obstacle_preprocessor` | `/lidar/points_undistorted` | `/dynamic_obstacles/points_world` | Transforms LiDAR points into the fixed `map` frame at the cloud timestamp, removes floor-height returns, and voxel-downsamples. |
-| `dynamic_cluster_detector` | `/dynamic_obstacles/points_world`, `/map`, TF | `/dynamic_obstacles/clusters` | Removes known static map occupancy, masks LiDAR shadow cones behind confirmed movers, clusters foreground points, and emits moving clusters with world-frame velocity estimates. |
-| `dynamic_obstacle_tracker` | `/dynamic_obstacles/clusters` | `/dynamic_obstacles/tracks` | Maintains persistent tracks, uses gated EKF-style correction, predicts CTRV future poses, and drops stale internal state when the cluster stream times out. |
+| `dynamic_cluster_detector` | `/dynamic_obstacles/points_world`, `/map`, TF | `/dynamic_obstacles/clusters` | Clusters LiDAR points, rejects mapped static structure and shelf-like fragments, masks LiDAR shadow cones behind confirmed movers, and emits moving clusters with world-frame velocity estimates. |
+| `dynamic_obstacle_tracker` | `/dynamic_obstacles/clusters` | `/dynamic_obstacles/tracks` | Maintains persistent tracks, uses gated EKF-style correction, predicts straight-line future poses by default, and drops stale internal state when the cluster stream times out. |
 | `dynamic_obstacle_costmap_bridge` | `/dynamic_obstacles/tracks` | `/dynamic_obstacles/predicted_occupancy`, `/dynamic_obstacles/markers` | Converts predicted paths into a Nav2 `PointCloud2` marking source and RViz markers. |
 
 ## Nav2 Hook
@@ -80,8 +80,8 @@ Hardware parameters: `src/autonomy/robot_nav/config/dynamic_obstacles_hw.yaml`
 Important tuning groups:
 
 - Preprocessor: `fixed_frame`, `min_z`, `max_z`, `voxel_size`, `max_points`, `max_latest_tf_age_sec`
-- Detector: `cluster_tolerance`, `min_cluster_points`, `static_inflation_radius`, `min_dynamic_speed`, `min_dynamic_hits`, `min_consecutive_dynamic_hits`, `ego_velocity_rejection`, `ego_speed_ratio_threshold`, `ego_artifact_min_speed_ratio`, `ego_artifact_max_speed_ratio`, `ego_artifact_direction_cosine`, `shadow_management_enabled`, `shadow_persistence_sec`, `shadow_angle_margin_rad`, `shadow_range_padding`
-- Tracker: `confirmation_hits`, `max_misses`, `max_publish_misses`, `min_publish_confidence`, `gating_threshold`, `prediction_horizon_sec`
+- Detector: `cluster_tolerance`, `min_cluster_points`, `static_inflation_radius`, `min_dynamic_speed`, `max_dynamic_speed`, `min_dynamic_cluster_long_axis`, `min_dynamic_hits`, `min_consecutive_dynamic_hits`, `static_shape_min_length`, `wall_sliver_min_length`, `ego_velocity_rejection`, `ego_speed_ratio_threshold`, `ego_artifact_min_speed_ratio`, `ego_artifact_max_speed_ratio`, `ego_artifact_direction_cosine`, `shadow_management_enabled`, `shadow_persistence_sec`, `shadow_angle_margin_rad`, `shadow_range_padding`
+- Tracker: `confirmation_hits`, `max_misses`, `max_publish_misses`, `min_publish_confidence`, `gating_threshold`, `prediction_horizon_sec`, `straight_line_prediction`
 - Bridge: `watchdog_timeout_sec`, `occupancy_resolution`, `footprint_padding`, `uncertainty_scale`, `max_prediction_padding`, `min_track_confidence`, `max_points`
 
 Hardware defaults use lower point budgets and shorter prediction horizons than simulation to reduce Jetson Orin 8GB load.

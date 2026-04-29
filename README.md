@@ -4,6 +4,15 @@ Minimal, clean, production-oriented ROS 2 Humble autonomy stack for the **Unitre
 quadruped robot.  Navigation uses **Nav2**; localisation uses **slam_toolbox** (2D SLAM).
 Everything is self-contained: no upstream workspace needs to be sourced at runtime.
 
+Problemi:
+- la mappa non viene pulita da scan vuote
+- ostacoli dinamici da tunare
+
+ToDo: 
+- recovery behavior migliore
+- più testing sulla sim automatizzati
+
+
 ---
 
 ## Repository Layout

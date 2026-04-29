@@ -74,6 +74,7 @@ public:
     declare_parameter("process_speed_variance", 0.20);
     declare_parameter("process_yaw_rate_variance", 0.20);
     declare_parameter("yaw_rate_epsilon", 0.05);
+    declare_parameter("straight_line_prediction", true);
     declare_parameter("input_timeout_sec", 0.75);
 
     input_topic_ = get_parameter("input_topic").as_string();
@@ -88,6 +89,7 @@ public:
     gating_threshold_ = get_parameter("gating_threshold").as_double();
     measurement_variance_ = get_parameter("measurement_variance").as_double();
     yaw_rate_epsilon_ = get_parameter("yaw_rate_epsilon").as_double();
+    straight_line_prediction_ = get_parameter("straight_line_prediction").as_bool();
     input_timeout_sec_ = get_parameter("input_timeout_sec").as_double();
 
     initial_position_variance_ = get_parameter("initial_position_variance").as_double();
@@ -335,10 +337,13 @@ private:
         0.0));
     msg.size = vector_msg(track.size);
     msg.speed = static_cast<float>(track.x(3));
-    msg.yaw_rate = static_cast<float>(track.x(4));
+    msg.yaw_rate = static_cast<float>(straight_line_prediction_ ? 0.0 : track.x(4));
     msg.confidence = static_cast<float>(track_confidence(track));
 
     TrackVector prediction = track.x;
+    if (straight_line_prediction_) {
+      prediction(4) = 0.0;
+    }
     TrackMatrix covariance = track.p;
     double t = prediction_step_sec_;
     while (t <= prediction_horizon_sec_ + 1.0e-6) {
@@ -389,6 +394,7 @@ private:
   double gating_threshold_{0.0};
   double measurement_variance_{0.0};
   double yaw_rate_epsilon_{0.0};
+  bool straight_line_prediction_{true};
   double input_timeout_sec_{0.0};
 
   double initial_position_variance_{0.0};

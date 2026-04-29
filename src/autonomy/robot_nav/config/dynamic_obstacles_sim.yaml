@@ -2,98 +2,103 @@
 
 dynamic_obstacle_preprocessor:
   ros__parameters:
-    input_topic: /lidar/points_undistorted
-    output_topic: /dynamic_obstacles/points_world
-    fixed_frame: map
-    min_z: 0.18
-    max_z: 2.0
-    voxel_size: 0.12
-    max_points: 5000
-    tf_timeout_sec: 0.08
-    fallback_to_latest_tf: true
-    max_latest_tf_age_sec: 0.05
+    input_topic: /lidar/points_undistorted  # Source cloud to transform into world frame.
+    output_topic: /dynamic_obstacles/points_world  # Downstream world-frame point cloud topic.
+    fixed_frame: map  # Reference frame used for the transform.
+    min_z: 0.18  # Lower height bound used to keep ground clutter out.
+    max_z: 2.0  # Upper height bound used to keep tall noise out.
+    voxel_size: 0.10  # Downsampling resolution for faster processing.
+    max_points: 4500  # Hard cap on retained points after filtering.
+    tf_timeout_sec: 0.06  # TF wait budget before the transform is treated as stale.
+    fallback_to_latest_tf: false  # Avoid stale TF fallback that can inject motion artifacts.
+    max_latest_tf_age_sec: 0.02  # Kept for reference if fallback is re-enabled.
 
 dynamic_cluster_detector:
   ros__parameters:
-    input_topic: /dynamic_obstacles/points_world
-    output_topic: /dynamic_obstacles/clusters
-    map_topic: /map
-    use_static_map: true
-    require_static_map: true
-    occupied_threshold: 65
-    static_inflation_radius: 0.35
-    cluster_tolerance: 0.35
-    min_cluster_points: 4
-    max_cluster_points: 1000
-    max_clusters: 24
-    association_distance: 0.75
-    min_dynamic_displacement: 0.06
-    min_dynamic_speed: 0.18
-    min_dynamic_hits: 1
-    min_consecutive_dynamic_hits: 1
-    max_track_misses: 6
-    max_cluster_size_xy: 3.2
-    wall_sliver_min_length: 0.75
-    wall_sliver_max_length: 0.0
-    wall_sliver_max_width: 0.16
-    static_map_occupied_ratio_threshold: 0.5
-    static_map_large_cluster_min_length: 1.4
-    static_map_large_cluster_max_length: 2.2
-    static_map_large_cluster_max_width: 1.2
-    static_shape_min_length: 1.4
-    static_shape_max_length: 2.2
-    static_shape_max_width: 1.2
-    shadow_management_enabled: true
-    sensor_frame: lidar_stabilized
-    shadow_tf_timeout_sec: 0.03
-    shadow_persistence_sec: 0.75
-    shadow_angle_margin_rad: 0.06
-    shadow_range_padding: 0.15
-    shadow_max_range: 12.0
-    odom_topic: /odom
-    ego_velocity_rejection: true
-    ego_speed_ratio_threshold: 0.55
-    ego_min_robot_speed: 0.08
-    ego_artifact_min_speed_ratio: 0.35
-    ego_artifact_max_speed_ratio: 1.8
-    ego_artifact_direction_cosine: 0.75
-    filter_out_of_map: true
+    input_topic: /dynamic_obstacles/points_world  # Cloud used for clustering.
+    output_topic: /dynamic_obstacles/clusters  # Cluster output topic.
+    map_topic: /map  # Static map used to reject map-aligned structure.
+    use_static_map: true  # Enable map-aware static/dynamic separation.
+    require_static_map: true  # Force the detector to wait for a map.
+    occupied_threshold: 65  # Occupancy threshold for static-map lookup.
+    static_inflation_radius: 0.35  # Extra static-map padding around occupied cells.
+    cluster_tolerance: 0.30  # Max distance between points inside a cluster.
+    min_cluster_points: 6  # Smallest cluster allowed through.
+    max_cluster_points: 800  # Largest cluster allowed through.
+    max_clusters: 20  # Max cluster count processed per scan.
+    association_distance: 0.85  # Track-to-cluster association gate.
+    min_dynamic_displacement: 0.05  # Minimum motion needed to mark a cluster dynamic.
+    min_dynamic_speed: 0.20  # Minimum speed needed to mark a cluster dynamic.
+    max_dynamic_speed: 3.0  # Reject impossible cluster jumps from bad associations.
+    min_dynamic_hits: 1  # Hits required before a cluster is considered dynamic.
+    min_consecutive_dynamic_hits: 1  # Consecutive dynamic detections required.
+    max_track_misses: 5  # Misses allowed before a cluster track is dropped.
+    min_dynamic_cluster_long_axis: 0.18  # Reject sub-human sparse fragments.
+    max_cluster_size_xy: 3.2  # Maximum planar size accepted for a cluster.
+    wall_sliver_min_length: 0.50  # Minimum length for wall-like sliver rejection.
+    wall_sliver_max_length: 0.0  # Optional upper wall-sliver length limit.
+    wall_sliver_max_width: 0.22  # Maximum width for wall-like sliver rejection.
+    static_map_occupied_ratio_threshold: 0.5  # Occupied-cell ratio that marks a cluster static.
+    static_map_large_cluster_min_length: 1.0  # Lower bound for large static-shape length.
+    static_map_large_cluster_max_length: 2.2  # Upper bound for large static-shape length.
+    static_map_large_cluster_max_width: 1.2  # Upper bound for large static-shape width.
+    static_shape_min_length: 1.0  # Lower bound for static-shape length filtering.
+    static_shape_max_length: 2.2  # Upper bound for static-shape length filtering.
+    static_shape_max_width: 1.2  # Upper bound for static-shape width filtering.
+    shadow_management_enabled: true  # Enable shadow-based suppression of self-occlusions.
+    sensor_frame: lidar_stabilized  # Frame used to reason about sensor shadows.
+    shadow_tf_timeout_sec: 0.025  # TF wait budget for shadow estimation.
+    shadow_persistence_sec: 0.80  # How long a shadow is remembered.
+    shadow_angle_margin_rad: 0.05  # Angular margin around the shadow cone.
+    shadow_range_padding: 0.12  # Extra range added to shadow suppression.
+    shadow_max_range: 18.0  # Maximum range considered for shadow handling.
+    odom_topic: /odom  # Odometry topic used for ego-motion checks.
+    ego_velocity_rejection: true  # Reject clusters likely caused by robot motion.
+    ego_speed_ratio_threshold: 0.80  # Scale used for rotation-induced artifact rejection.
+    ego_min_robot_speed: 0.08  # Minimum robot speed before ego checks engage.
+    ego_artifact_min_speed_ratio: 0.35  # Lower bound for artifact-like relative speed.
+    ego_artifact_max_speed_ratio: 1.8  # Upper bound for artifact-like relative speed.
+    ego_artifact_direction_cosine: 0.90  # Direction alignment threshold for ego-artifact filtering.
+    filter_out_of_map: true  # Drop clusters outside the mapped area.
 
 dynamic_obstacle_tracker:
   ros__parameters:
-    input_topic: /dynamic_obstacles/clusters
-    output_topic: /dynamic_obstacles/tracks
-    publish_frequency: 10.0
-    prediction_horizon_sec: 1.8
-    prediction_step_sec: 0.25
-    confirmation_hits: 2
-    max_misses: 6
-    max_publish_misses: 2
-    min_publish_confidence: 0.5
-    gating_threshold: 9.21
-    initial_position_variance: 0.08
-    initial_yaw_variance: 0.20
-    initial_speed_variance: 0.20
-    initial_yaw_rate_variance: 0.08
-    measurement_variance: 0.04
-    process_position_variance: 0.02
-    process_yaw_variance: 0.05
-    process_speed_variance: 0.10
-    process_yaw_rate_variance: 0.12
-    input_timeout_sec: 0.8
+    input_topic: /dynamic_obstacles/clusters  # Cluster stream used to update tracks.
+    output_topic: /dynamic_obstacles/tracks  # Track output topic.
+    publish_frequency: 12.0  # Track publication rate.
+    prediction_horizon_sec: 1.4  # Future time span predicted for each track.
+    prediction_step_sec: 0.20  # Time step between predicted poses.
+    confirmation_hits: 1  # Hits required before publishing a new track.
+    max_misses: 5  # Misses allowed before a track is deleted.
+    max_publish_misses: 2  # Misses allowed before a track is hidden from output.
+    min_publish_confidence: 0.50  # Minimum history confidence for publishing.
+    history_window: 6  # Number of recent updates used for confidence scoring.
+    gating_threshold: 6.00  # Mahalanobis-style association gate.
+    initial_position_variance: 0.06  # Initial uncertainty on x/y position.
+    initial_yaw_variance: 0.12  # Initial uncertainty on heading.
+    initial_speed_variance: 0.15  # Initial uncertainty on forward speed.
+    initial_yaw_rate_variance: 0.04  # Initial uncertainty on yaw rate.
+    measurement_variance: 0.03  # Measurement noise used in correction.
+    process_position_variance: 0.015  # Process noise on x/y motion.
+    process_yaw_variance: 0.03  # Process noise on heading evolution.
+    process_speed_variance: 0.06  # Process noise on forward speed evolution.
+    process_yaw_rate_variance: 0.02  # Process noise on yaw-rate evolution.
+    yaw_rate_epsilon: 0.08  # Threshold for treating yaw rate as near-zero.
+    straight_line_prediction: true  # Predict future poses with zero yaw rate.
+    input_timeout_sec: 0.6  # Time without input before tracks are cleared.
 
 dynamic_obstacle_costmap_bridge:
   ros__parameters:
-    input_topic: /dynamic_obstacles/tracks
-    occupancy_topic: /dynamic_obstacles/predicted_occupancy
-    marker_topic: /dynamic_obstacles/markers
-    watchdog_timeout_sec: 0.9
-    occupancy_z: 0.45
-    occupancy_resolution: 0.16
-    footprint_padding: 0.10
-    uncertainty_scale: 0.20
-    max_prediction_padding: 0.25
-    min_footprint_x: 0.35
-    min_footprint_y: 0.35
-    min_track_confidence: 0.5
-    max_points: 5000
+    input_topic: /dynamic_obstacles/tracks  # Track stream consumed by the bridge.
+    occupancy_topic: /dynamic_obstacles/predicted_occupancy  # Predicted occupancy output topic.
+    marker_topic: /dynamic_obstacles/markers  # Visualization marker output topic.
+    watchdog_timeout_sec: 0.75  # Time without tracks before the bridge goes stale.
+    occupancy_z: 0.45  # Z height used when projecting occupancy.
+    occupancy_resolution: 0.14  # Grid resolution for predicted occupancy.
+    footprint_padding: 0.08  # Extra padding around the robot footprint.
+    uncertainty_scale: 0.15  # How strongly track uncertainty expands occupancy.
+    max_prediction_padding: 0.18  # Maximum padding applied to predicted occupancy.
+    min_footprint_x: 0.30  # Minimum occupancy footprint length in X.
+    min_footprint_y: 0.30  # Minimum occupancy footprint width in Y.
+    min_track_confidence: 0.50  # Lowest-confidence tracks allowed into the bridge.
+    max_points: 4500  # Maximum number of points used in bridge outputs.

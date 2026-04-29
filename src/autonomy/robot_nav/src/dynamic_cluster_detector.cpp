@@ -73,9 +73,11 @@ public:
     declare_parameter("association_distance", 0.75);
     declare_parameter("min_dynamic_displacement", 0.12);
     declare_parameter("min_dynamic_speed", 0.15);
+    declare_parameter("max_dynamic_speed", 3.0);
     declare_parameter("min_dynamic_hits", 1);
     declare_parameter("max_track_misses", 5);
     declare_parameter("min_cluster_size_xy", 0.08);
+    declare_parameter("min_dynamic_cluster_long_axis", 0.18);
     declare_parameter("max_cluster_size_xy", 3.2);
     declare_parameter("wall_sliver_min_length", 0.75);
     declare_parameter("wall_sliver_max_length", 0.0);
@@ -118,9 +120,11 @@ public:
     association_distance_ = get_parameter("association_distance").as_double();
     min_dynamic_displacement_ = get_parameter("min_dynamic_displacement").as_double();
     min_dynamic_speed_ = get_parameter("min_dynamic_speed").as_double();
+    max_dynamic_speed_ = get_parameter("max_dynamic_speed").as_double();
     min_dynamic_hits_ = std::max(1L, get_parameter("min_dynamic_hits").as_int());
     max_track_misses_ = get_parameter("max_track_misses").as_int();
     min_cluster_size_xy_ = get_parameter("min_cluster_size_xy").as_double();
+    min_dynamic_cluster_long_axis_ = get_parameter("min_dynamic_cluster_long_axis").as_double();
     max_cluster_size_xy_ = get_parameter("max_cluster_size_xy").as_double();
     wall_sliver_min_length_ = get_parameter("wall_sliver_min_length").as_double();
     wall_sliver_max_length_ = get_parameter("wall_sliver_max_length").as_double();
@@ -305,6 +309,9 @@ private:
 
     const double long_axis = std::max(size.x(), size.y());
     const double short_axis = std::min(size.x(), size.y());
+    if (short_axis <= wall_sliver_max_width_) {
+      return true;
+    }
     return long_axis >= static_map_large_cluster_min_length_ &&
            (static_map_large_cluster_max_length_ <= 0.0 ||
            long_axis <= static_map_large_cluster_max_length_) &&
@@ -543,6 +550,9 @@ private:
   {
     const double long_axis = std::max(size.x(), size.y());
     const double short_axis = std::min(size.x(), size.y());
+    if (long_axis < min_dynamic_cluster_long_axis_) {
+      return false;
+    }
     if (max_cluster_size_xy_ > 0.0 && long_axis > max_cluster_size_xy_) {
       return false;
     }
@@ -642,10 +652,12 @@ private:
         bool instant_dynamic =
           displacement.head<2>().norm() >= min_dynamic_displacement_ &&
           speed_xy >= min_dynamic_speed_;
+        if (instant_dynamic && max_dynamic_speed_ > 0.0 && speed_xy > max_dynamic_speed_) {
+          instant_dynamic = false;
+        }
 
         if (instant_dynamic && ego_velocity_rejection_) {
           const double effective_ego_speed = std::max(ego_speed_, ego_map_speed_);
-          const bool ego_moving_linear = effective_ego_speed >= ego_min_robot_speed_;
           const bool ego_rotating = ego_yaw_rate_ >= 0.05;
 
           const bool ego_correlated = velocity_matches_ego_motion(
@@ -657,12 +669,6 @@ private:
             ego_artifact_direction_cosine_);
           if (ego_correlated && (prev.stationary_hits >= 2 || speed_xy <= effective_ego_speed * 1.2)) {
             instant_dynamic = false;
-          }
-
-          if (ego_moving_linear && instant_dynamic) {
-            if (speed_xy < effective_ego_speed * ego_speed_ratio_threshold_) {
-              instant_dynamic = false;
-            }
           }
 
           if (ego_rotating && instant_dynamic) {
@@ -784,9 +790,11 @@ private:
   double association_distance_{0.0};
   double min_dynamic_displacement_{0.0};
   double min_dynamic_speed_{0.0};
+  double max_dynamic_speed_{0.0};
   long min_dynamic_hits_{0};
   long max_track_misses_{0};
   double min_cluster_size_xy_{0.0};
+  double min_dynamic_cluster_long_axis_{0.0};
   double max_cluster_size_xy_{0.0};
   double wall_sliver_min_length_{0.0};
   double wall_sliver_max_length_{0.0};
