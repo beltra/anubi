@@ -77,6 +77,21 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 
 ---
 
+## Dynamic Obstacle Topics
+
+Active only when `use_dynamic_obstacles:=true` is passed to sim or hardware bringup.
+Runtime nodes are C++ executables from `robot_nav`; legacy Python scripts are kept as reference.
+
+| Topic | Type | Publisher | Consumer(s) | Sim | HW | Notes |
+|-------|------|-----------|-------------|-----|----|-------|
+| `/dynamic_obstacles/points_world` | `sensor_msgs/PointCloud2` | `dynamic_obstacle_preprocessor` | `dynamic_cluster_detector`, RViz debug | same | same | Fixed-frame, height-filtered, downsampled LiDAR cloud. Default frame is `map` at the cloud timestamp so static map subtraction and velocity estimation happen in the world frame. |
+| `/dynamic_obstacles/clusters` | `robot_common_interfaces/DynamicObstacleClusterArray` | `dynamic_cluster_detector` | `dynamic_obstacle_tracker` | same | same | Moving foreground clusters with centroid, size, yaw, point count, and world-frame velocity estimate. Ego-motion rejection only suppresses residual TF/viewpoint artifacts. |
+| `/dynamic_obstacles/tracks` | `robot_common_interfaces/DynamicObstacleTrackArray` | `dynamic_obstacle_tracker` | `dynamic_obstacle_costmap_bridge`, RViz debug | same | same | Confirmed persistent tracks with estimated velocity, yaw rate, and predicted future poses. |
+| `/dynamic_obstacles/predicted_occupancy` | `sensor_msgs/PointCloud2` | `dynamic_obstacle_costmap_bridge` | Nav2 local STVL costmap, RViz debug | same | same | Marking-only predicted occupancy cloud. Bridge watchdog publishes empty clouds when tracker data is stale. |
+| `/dynamic_obstacles/markers` | `visualization_msgs/MarkerArray` | `dynamic_obstacle_costmap_bridge` | RViz | same | same | Track boxes, speed labels, and predicted path lines for operator inspection. |
+
+---
+
 ## Simulation-Only Internal Topics
 
 | Topic | Type | Publisher | Consumer(s) | Notes |

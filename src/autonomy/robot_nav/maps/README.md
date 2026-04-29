@@ -2,6 +2,12 @@
 
 Store slam_toolbox posegraph files here.
 
+`industrial_dynamic.yaml` + `industrial_dynamic.pgm` is a manually authored
+static Nav2 occupancy map for `sim_worlds/worlds/industrial_dynamic.world`.
+It uses 0.05 m resolution, origin `[-10.5, -8.0, 0.0]`, and includes only
+static walls, racks, pallets, and fixed barriers. Scripted workers and the
+forklift actor are intentionally omitted.
+
 ## Save current maps (DLIO 3D + Nav2 2D + slam posegraph)
 
 From a running stack (sim or real), run:
@@ -20,7 +26,9 @@ Outputs:
 If `save_pcd` is missing, the script auto-starts a temporary `dlio_map_node` remapped to `/kf_cloud`.
 Use `--dlio-keyframes-topic` if your DLIO keyframe topic is different.
 
-Note: this repository localization flow loads slam_toolbox `.posegraph` maps, not Nav2 YAML maps.
+Note: the simulation localization flow accepts either slam_toolbox `.posegraph`
+maps or Nav2 `.yaml` occupancy maps. Passing a `.yaml` map starts map_server
+and AMCL; passing a posegraph keeps the slam_toolbox localization path.
 
 ## Create a map
 

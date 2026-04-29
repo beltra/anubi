@@ -17,11 +17,31 @@ Robot-agnostic navigation package for Nav2 + slam_toolbox.
 Nav2 /cmd_vel_nav -> velocity_smoother -> /cmd_vel -> collision_monitor -> /cmd_vel_collision_free
 ```
 
+Optional when `use_dynamic_obstacles:=true`:
+
+```
+/lidar/points_undistorted
+  -> dynamic_obstacle_preprocessor (C++)
+  -> /dynamic_obstacles/points_world
+  -> dynamic_cluster_detector (C++)
+  -> /dynamic_obstacles/clusters
+  -> dynamic_obstacle_tracker (C++)
+  -> /dynamic_obstacles/tracks
+  -> dynamic_obstacle_costmap_bridge (C++)
+  -> /dynamic_obstacles/predicted_occupancy + /dynamic_obstacles/markers
+```
+
+`/dynamic_obstacles/points_world` is published in `map` at the cloud timestamp, so
+the detector estimates obstacle velocity in the world frame rather than in the
+robot frame. Ego-motion rejection is only a guardrail for TF drift and
+viewpoint-induced artifacts.
+
 ## Launch files
 
 | File | Purpose |
 |---|---|
 | `launch/slam.launch.py` | Distortion correction, cloud-to-scan conversion, slam_toolbox |
+| `launch/dynamic_obstacles.launch.py` | C++ dynamic obstacle detection, tracking, and Nav2/RViz bridge |
 | `launch/nav2.launch.py` | Nav2 stack + collision monitor |
 | `launch/ekf.launch.py` | Optional EKF |
 | `launch/nav_realrobot.launch.py` | Real robot orchestration (EKF + SLAM + Nav2) |

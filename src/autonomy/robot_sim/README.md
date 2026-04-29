@@ -43,16 +43,23 @@ upside-down mount with `mount_rotation_mode:=inverse`.
 source /opt/ros/humble/setup.bash
 source /ws/anubi/install/setup.bash
 
-# Full sim — indoor office world (default), mapping mode, headless
+# Full sim — industrial dynamic world (default), 2D map localization, headless
 ros2 launch robot_sim sim_bringup.launch.py
 
-# Warehouse world, localization with a saved map, Gazebo GUI + RViz enabled
+# Warehouse world, slam_toolbox localization with a saved posegraph, Gazebo GUI + RViz enabled
 ros2 launch robot_sim sim_bringup.launch.py \
     world:=$(ros2 pkg prefix sim_worlds)/share/sim_worlds/worlds/warehouse.world \
+    world_name:=warehouse \
     slam_mode:=localization \
     map:=/ws/anubi/src/autonomy/robot_nav/maps/my_map \
     gui:=true \
     use_rviz:=true
+
+# Dynamic-obstacle validation, with an optional Nav2 goal sent after startup
+ros2 launch robot_sim sim_bringup.launch.py \
+    use_dynamic_obstacles:=true \
+    auto_nav_goal:=true \
+    auto_nav_goal_delay_sec:=38.0
 
 # Nav2-only restart entry point is not provided in the current tree.
 ```
@@ -65,15 +72,18 @@ ros2 launch robot_sim sim_bringup.launch.py \
 
 | Argument | Default | Description |
 |----------|---------|-------------|
-| `world` | `indoor_office.world` | Path to Gazebo world file |
-| `robot` | `go2` | Robot model: `go2` or `d1` |
-| `slam_mode` | `mapping` | `mapping` or `localization` |
-| `map` | `''` | Path to `.posegraph` file (localization mode only) |
+| `world` | `industrial_dynamic.world` | Path to Gazebo world file |
+| `world_name` | `industrial_dynamic` | Gazebo world name used by spawn and bridge topic paths |
+| `robot_name` | `go2` | Spawned robot entity name |
+| `slam_mode` | `localization` | `mapping` or `localization` |
+| `map` | `industrial_dynamic.yaml` | Path to Nav2 `.yaml` map or slam_toolbox `.posegraph` file in localization mode |
 | `use_rviz` | `false` | Launch RViz2 |
 | `slam_params` | robot_nav default | slam_toolbox params YAML override |
-| `nav_params` | robot_nav default | Nav2 params YAML override |
-| `spawn_z` | `0.05` m | Robot Z spawn height (slight ground clearance) |
+| `world_init_z` | `0.375` m | Robot Z spawn height for CHAMP standing startup |
 | `gui` | `false` | Show Gazebo gzclient GUI |
+| `use_dynamic_obstacles` | `false` | Start the predictive dynamic obstacle pipeline |
+| `auto_nav_goal` | `false` | Send a NavigateToPose goal after startup |
+| `auto_nav_goal_delay_sec` | `38.0` | Delay before the optional validation goal |
 
 ## Obstacle Management
 
