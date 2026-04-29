@@ -33,7 +33,9 @@ slam_toolbox:
     # rasterized range keeps free/occupied evidence dense enough to clear
     # transient marks while still covering the local indoor map.
     max_laser_range: 10.0
-    min_laser_range: 0.15
+    # Keep this just above scan.range_min so slam_toolbox does not clip it and
+    # warn during sensor registration.
+    min_laser_range: 0.21
 
     do_loop_closing: true
     loop_match_minimum_chain_size: 10

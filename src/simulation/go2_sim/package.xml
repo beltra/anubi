@@ -12,16 +12,16 @@
       - Foot contact sensors (Fortress contact sensor syntax)
       - IMU sensor at imu_link (200 Hz, Fortress imu sensor syntax)
       - Unitree L1 LiDAR via sensor_models/l1_lidar macro → /lidar/points (bridged)
-      - ign_ros2_control effort joint trajectory controller (12 joints)
+      - gz_ros2_control effort joint trajectory controller (12 joints)
       - Joint state publisher → /joint_states
 
     Launch:
       ros2 launch go2_sim sim_champ.launch.py
 
     Fortress packages required (ROS 2 Humble):
-      ros-humble-ros-ign-bridge
-      ros-humble-ros-ign-gazebo
-      ros-humble-ign-ros2-control
+      ros-humble-ros-gz-bridge
+      ros-humble-ros-gz-sim
+      ros-humble-gz-ros2-control
       ros-humble-champ-base
       ros-humble-robot-localization
   </description>
@@ -33,9 +33,9 @@
   <!-- Runtime: Fortress simulation bridge and control -->
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>xacro</exec_depend>
-  <exec_depend>ros_ign_bridge</exec_depend>
-  <exec_depend>ros_ign_gazebo</exec_depend>
-  <exec_depend>ign_ros2_control</exec_depend>
+  <exec_depend>ros_gz_bridge</exec_depend>
+  <exec_depend>ros_gz_sim</exec_depend>
+  <exec_depend>gz_ros2_control</exec_depend>
   <exec_depend>joint_trajectory_controller</exec_depend>
   <exec_depend>joint_state_broadcaster</exec_depend>
   <exec_depend>controller_manager</exec_depend>

@@ -16,7 +16,7 @@ pointcloud_to_laserscan:
     angle_increment: 0.00872665  # 0.5 deg — finer than 1 deg to reduce wall dropouts
 
     scan_time: 0.1
-    range_min: 0.15
+    range_min: 0.20
     range_max: 25.0
 
     use_inf: true

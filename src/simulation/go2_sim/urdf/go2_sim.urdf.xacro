@@ -65,10 +65,10 @@
        GAZEBO PLUGINS  (Fortress / ignition:: namespace)
        ==================================================================== -->
 
-  <!-- ign_ros2_control: loads controller_manager, reads ros_control.yaml -->
+  <!-- gz_ros2_control: loads controller_manager, reads ros_control.yaml -->
   <gazebo>
-    <plugin filename="ign_ros2_control-system"
-            name="ign_ros2_control::IgnitionROS2ControlPlugin">
+    <plugin filename="gz_ros2_control-system"
+            name="gz_ros2_control::GazeboSimROS2ControlPlugin">
       <parameters>$(arg robot_controllers)</parameters>
       <robot_param_node>robot_state_publisher</robot_param_node>
     </plugin>

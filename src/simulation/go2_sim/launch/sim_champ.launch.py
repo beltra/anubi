@@ -272,11 +272,11 @@ def generate_launch_description():
         parameters=[{"use_sim_time": use_sim_time}],
     )
 
-    pkg_ros_ign_gazebo = get_package_share_directory("ros_ign_gazebo")
+    pkg_ros_gz_sim = get_package_share_directory("ros_gz_sim")
 
     ign_gazebo_gui = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(pkg_ros_ign_gazebo, "launch", "ign_gazebo.launch.py")
+            os.path.join(pkg_ros_gz_sim, "launch", "gz_sim.launch.py")
         ),
         condition=IfCondition(LaunchConfiguration("gui")),
         launch_arguments={
@@ -286,7 +286,7 @@ def generate_launch_description():
     )
     ign_gazebo_headless = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(pkg_ros_ign_gazebo, "launch", "ign_gazebo.launch.py")
+            os.path.join(pkg_ros_gz_sim, "launch", "gz_sim.launch.py")
         ),
         condition=UnlessCondition(LaunchConfiguration("gui")),
         launch_arguments={
@@ -296,7 +296,7 @@ def generate_launch_description():
     )
 
     gazebo_spawn_robot = Node(
-        package="ros_ign_gazebo",
+        package="ros_gz_sim",
         executable="create",
         output="screen",
         arguments=[
@@ -311,7 +311,7 @@ def generate_launch_description():
     )
 
     gazebo_bridge = Node(
-        package="ros_ign_bridge",
+        package="ros_gz_bridge",
         executable="parameter_bridge",
         name="gazebo_bridge",
         output="screen",

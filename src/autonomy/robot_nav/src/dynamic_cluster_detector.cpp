@@ -320,6 +320,10 @@ private:
     const auto warn_missing_shadow_tf =
       [this, &msg](const std::string & reason)
       {
+        if (!has_shadow_tf_ && startup_shadow_tf_failures_ < startup_shadow_tf_grace_failures_) {
+          ++startup_shadow_tf_failures_;
+          return;
+        }
         const double now = get_clock()->now().seconds();
         if (now - last_shadow_tf_warn_time_sec_ < 2.0) {
           return;
@@ -340,6 +344,7 @@ private:
         sensor_frame_,
         rclcpp::Time(msg.header.stamp),
         tf2::durationFromSec(shadow_tf_timeout_sec_));
+      has_shadow_tf_ = true;
       return Point2(transform.transform.translation.x, transform.transform.translation.y);
     } catch (const tf2::TransformException & primary_error) {
       try {
@@ -351,6 +356,7 @@ private:
         const double age =
           std::abs(stamp_seconds(msg.header.stamp) - stamp_seconds(latest.header.stamp));
         if (age <= 0.05) {
+          has_shadow_tf_ = true;
           return Point2(latest.transform.translation.x, latest.transform.translation.y);
         }
         warn_missing_shadow_tf(
@@ -821,6 +827,9 @@ private:
   std::optional<Point2> last_sensor_xy_;
   std::optional<double> last_sensor_stamp_;
   double last_shadow_tf_warn_time_sec_{0.0};
+  int startup_shadow_tf_failures_{0};
+  const int startup_shadow_tf_grace_failures_{10};
+  bool has_shadow_tf_{false};
 
   tf2_ros::Buffer tf_buffer_;
   tf2_ros::TransformListener tf_listener_;

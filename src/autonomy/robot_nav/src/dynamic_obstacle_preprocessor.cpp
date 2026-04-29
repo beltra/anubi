@@ -201,10 +201,15 @@ private:
     try {
       transform = lookup_transform(*msg);
     } catch (const tf2::TransformException & error) {
+      if (!has_valid_transform_ && startup_tf_failures_ < startup_tf_grace_failures_) {
+        ++startup_tf_failures_;
+        return;
+      }
       warn_throttled(
         std::string("Skipping dynamic obstacle cloud: TF unavailable (") + error.what() + ")");
       return;
     }
+    has_valid_transform_ = true;
 
     const auto points = preprocess_points(
       *msg,
@@ -231,6 +236,9 @@ private:
   bool fallback_to_latest_tf_{false};
   double max_latest_tf_age_sec_{0.0};
   double last_warn_time_sec_{0.0};
+  int startup_tf_failures_{0};
+  const int startup_tf_grace_failures_{10};
+  bool has_valid_transform_{false};
 
   tf2_ros::Buffer tf_buffer_;
   tf2_ros::TransformListener tf_listener_;
