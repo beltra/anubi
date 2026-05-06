@@ -12,7 +12,7 @@
     Works with any robot that satisfies the frame/topic contract defined in
     robot_common_interfaces/README.md.
   </description>
-  <maintainer email="todo@example.com">Maintainer</maintainer>
+  <maintainer email="gabriele.beltrami@talosrobotics.ai">Gabriele Beltrami</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

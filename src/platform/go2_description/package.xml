@@ -8,7 +8,7 @@
     Defines the standard frame tree used by all other packages:
     base_footprint → base_link → lidar_link / imu_link
   </description>
-  <maintainer email="todo@example.com">Maintainer</maintainer>
+  <maintainer email="gabriele.beltrami@talosrobotics.ai">Gabriele Beltrami</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

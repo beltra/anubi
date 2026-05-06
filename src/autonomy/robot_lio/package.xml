@@ -14,7 +14,7 @@
     This package does not own map->odom or odom->base TF by default.
     LIO backend execution is optional and disabled by default.
   </description>
-  <maintainer email="todo@example.com">Maintainer</maintainer>
+  <maintainer email="gabriele.beltrami@talosrobotics.ai">Gabriele Beltrami</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

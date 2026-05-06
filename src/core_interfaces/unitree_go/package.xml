@@ -9,7 +9,7 @@
     and BmsState (battery).
     Copied and simplified from the upstream unitree_pkgs.
   </description>
-  <maintainer email="todo@example.com">Maintainer</maintainer>
+  <maintainer email="gabriele.beltrami@talosrobotics.ai">Gabriele Beltrami</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

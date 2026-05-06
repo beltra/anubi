@@ -20,7 +20,7 @@
     To use: set GAZEBO_MODEL_PATH to share/sim_worlds/models (done by sim_bringup.launch.py).
     Runtime spawning is handled by sim_scenarios/scenario_manager_node.
   </description>
-  <maintainer email="todo@example.com">Maintainer</maintainer>
+  <maintainer email="gabriele.beltrami@talosrobotics.ai">Gabriele Beltrami</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
