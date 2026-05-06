@@ -16,6 +16,8 @@ status_topic           str    RobotStatus topic            (default: /robot_stat
 start_joystick_safety  bool   Launch joystick override node (default: true)
 start_tilt_monitor     bool   Launch tilt estop node       (default: true)
 recovery_ack_key_mask  int    Controller key mask for tilt recovery
+resume_key_mask        int    Controller key mask for Nav2 resume and replan
+abort_key_mask         int    Controller key mask for controlled Nav2 abort
 """
 
 from launch import LaunchDescription
@@ -43,7 +45,8 @@ def generate_launch_description():
         DeclareLaunchArgument('start_joystick_safety', default_value='true'),
         DeclareLaunchArgument('start_tilt_monitor', default_value='true'),
         DeclareLaunchArgument('recovery_ack_key_mask', default_value='0'),
-        DeclareLaunchArgument('resume_nav_on_start', default_value='true'),
+        DeclareLaunchArgument('resume_key_mask', default_value='0'),
+        DeclareLaunchArgument('abort_key_mask', default_value='0'),
     ]
 
     velocity_limiter = Node(
@@ -74,8 +77,8 @@ def generate_launch_description():
             'use_sim_time': LaunchConfiguration('use_sim_time'),
             'joystick_topic': LaunchConfiguration('joystick_topic'),
             'override_topic': LaunchConfiguration('joystick_override_topic'),
-            'start_key_mask': LaunchConfiguration('recovery_ack_key_mask'),
-            'resume_on_start': LaunchConfiguration('resume_nav_on_start'),
+            'resume_key_mask': LaunchConfiguration('resume_key_mask'),
+            'abort_key_mask': LaunchConfiguration('abort_key_mask'),
         }],
     )
 

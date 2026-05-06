@@ -1,6 +1,6 @@
 # Topic Map - Anubi Autonomy Stack
 
-Last updated: 2026-04-26
+Last updated: 2026-05-06
 Branch: `feat/lio`
 
 This document is the authoritative reference for all ROS 2 topics in the anubi stack.
@@ -67,7 +67,9 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 |-------|------|-----------|-------------|-------|
 | `/sportmodestate` | `unitree_go/SportModeState` | Go2 internal bridge | `go2_hw_bridge` | ~50 Hz. Provides position, velocity, IMU, and foot contacts. Source of HW odometry. |
 | `/lowstate` | `unitree_go/LowState` | Go2 internal bridge | `go2_hw_bridge` | Provides battery data (`BmsState.soc`). |
-| `/api/sport/request` | `unitree_api/Request` | `go2_hw_bridge` | Go2 onboard controller | Sport Mode API command channel. `go2_hw_bridge` publishes startup `StandUp` then `ClassicWalk(true)`, plus runtime `Move()` and `StopMove()`. |
+| `/utlidar/cloud` | `sensor_msgs/PointCloud2` | Go2 internal bridge | `robot_lio` relay | Raw LiDAR pointcloud input on the real robot. Relayed to `/lidar/points`. |
+| `/utlidar/imu` | `sensor_msgs/Imu` | Go2 internal bridge | `robot_lio` relay | Raw LiDAR IMU input on the real robot. Relayed to `/lidar/imu` by default. |
+| `/api/sport/request` | `unitree_api/Request` | `go2_hw_bridge` | Go2 onboard controller | Sport Mode API command channel. `go2_hw_bridge` publishes `RecoveryStand`, `StandUp`, `ClassicWalk(true)`, plus runtime `Move()` and `StopMove()`. |
 
 ---
 
@@ -76,8 +78,8 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 | Topic | Type | Publisher | Consumer(s) | Sim | HW | Notes |
 |-------|------|-----------|-------------|-----|----|-------|
 | `/robot_status` | `robot_common_interfaces/RobotStatus` | `go2_hw_bridge` | `velocity_limiter` | absent | published | Published at 1 Hz. Contains hardware estop/watchdog flag and battery percentage. In sim, `go2_hw_bridge` is absent; `velocity_limiter` is configured with `status_topic: ""` (watchdog-only mode). |
-| `/wirelesscontroller` | `unitree_go/WirelessController` | Go2 internal bridge | `joystick_safety`, `tilt_monitor` recovery ack | absent | published | Hardware controller axes and key bitmask. Any active axis/key triggers `/joystick_override`; START bit must be calibrated for tilt recovery. |
-| `/joystick_override` | `std_msgs/Bool` | `joystick_safety` | `velocity_limiter` | absent | published | True while operator input is active; Nav2 goals are canceled on activation and `/cmd_vel_safe` is held at zero. Pressing calibrated START with neutral sticks clears override and resends the latest `/goal_pose`. |
+| `/wirelesscontroller` | `unitree_go/WirelessController` | Go2 internal bridge | `joystick_safety`, `tilt_monitor` recovery ack | absent | published | Hardware controller axes and key bitmask. Any active axis or non-command key triggers `/joystick_override`. Resume and abort key masks are configurable and must be calibrated per controller. |
+| `/joystick_override` | `std_msgs/Bool` | `joystick_safety` | `velocity_limiter` | absent | published | True while operator override is latched. Any operator motion cancels Nav2 and holds `/cmd_vel_safe` at zero. Resume clears override and resends the latest `/goal_pose`; abort clears the active goal and leaves Nav2 idle. |
 | `/safety/tilt_estop` | `std_msgs/Bool` | `tilt_monitor` | `velocity_limiter` | absent | published | Latched true when body roll/pitch exceeds the configured estop threshold; clears only below clear threshold with calibrated controller ack. |
 | `/safety/command_source` | `std_msgs/String` | `velocity_limiter` | operators/diagnostics | same | same | Current final arbiter state: `nav`, `estop`, `tilt_estop`, `joystick_override`, `watchdog`, or `waiting_for_cmd`. |
 

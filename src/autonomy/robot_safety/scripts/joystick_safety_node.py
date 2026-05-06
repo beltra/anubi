@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish joystick override and cancel Nav2 goals on operator input."""
+"""Publish joystick override and manage resume or abort commands."""
 
 import math
 
@@ -8,6 +8,7 @@ from action_msgs.srv import CancelGoal
 from geometry_msgs.msg import PoseStamped
 from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionClient
+from rclpy.duration import Duration
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
@@ -15,25 +16,44 @@ from std_msgs.msg import Bool
 from unitree_go.msg import WirelessController
 
 
-def joystick_active(msg, deadzone):
-    axes = [msg.lx, msg.ly, msg.rx, msg.ry]
-    return any(math.fabs(axis) > deadzone for axis in axes) or msg.keys != 0
-
-
 def axes_active(msg, deadzone):
     axes = [msg.lx, msg.ly, msg.rx, msg.ry]
     return any(math.fabs(axis) > deadzone for axis in axes)
+
+
+def command_key_mask(resume_key_mask, abort_key_mask):
+    return int(resume_key_mask) | int(abort_key_mask)
+
+
+def non_command_keys_active(msg, resume_key_mask, abort_key_mask):
+    ignored = command_key_mask(resume_key_mask, abort_key_mask)
+    return (int(msg.keys) & ~ignored) != 0
+
+
+def joystick_active(msg, deadzone, resume_key_mask, abort_key_mask):
+    return (
+        axes_active(msg, deadzone)
+        or non_command_keys_active(msg, resume_key_mask, abort_key_mask)
+    )
 
 
 def pressed_keys(previous_keys, current_keys):
     return current_keys & ~previous_keys
 
 
-def start_resume_requested(previous_keys, msg, deadzone, start_key_mask):
+def resume_requested(previous_keys, msg, deadzone, resume_key_mask):
     return (
-        start_key_mask != 0
+        resume_key_mask != 0
         and not axes_active(msg, deadzone)
-        and (pressed_keys(previous_keys, int(msg.keys)) & start_key_mask) != 0
+        and (pressed_keys(previous_keys, int(msg.keys)) & resume_key_mask) != 0
+    )
+
+
+def abort_requested(previous_keys, msg, deadzone, abort_key_mask):
+    return (
+        abort_key_mask != 0
+        and not axes_active(msg, deadzone)
+        and (pressed_keys(previous_keys, int(msg.keys)) & abort_key_mask) != 0
     )
 
 
@@ -48,8 +68,8 @@ class JoystickSafety(Node):
         self.declare_parameter('neutral_hold_secs', 2.0)
         self.declare_parameter('watchdog_timeout', 1.0)
         self.declare_parameter('cancel_on_override', True)
-        self.declare_parameter('resume_on_start', True)
-        self.declare_parameter('start_key_mask', '0')
+        self.declare_parameter('resume_key_mask', '0')
+        self.declare_parameter('abort_key_mask', '0')
         self.declare_parameter('goal_pose_topic', '/goal_pose')
         self.declare_parameter('navigate_to_pose_action', 'navigate_to_pose')
         self.declare_parameter(
@@ -66,8 +86,8 @@ class JoystickSafety(Node):
         self._neutral_hold = float(self.get_parameter('neutral_hold_secs').value)
         self._watchdog_timeout = float(self.get_parameter('watchdog_timeout').value)
         self._cancel_on_override = bool(self.get_parameter('cancel_on_override').value)
-        self._resume_on_start = bool(self.get_parameter('resume_on_start').value)
-        self._start_key_mask = int(str(self.get_parameter('start_key_mask').value), 0)
+        self._resume_key_mask = int(str(self.get_parameter('resume_key_mask').value), 0)
+        self._abort_key_mask = int(str(self.get_parameter('abort_key_mask').value), 0)
         goal_pose_topic = self.get_parameter('goal_pose_topic').value
         nav_action_name = self.get_parameter('navigate_to_pose_action').value
         cancel_services = list(self.get_parameter('cancel_services').value)
@@ -97,6 +117,8 @@ class JoystickSafety(Node):
         self._override_active = False
         self._last_keys = 0
         self._resume_requested = False
+        self._abort_requested = False
+        self._abort_hold_until = None
         self._last_goal_pose = None
         self._goal_interrupted = False
         self._publish_override(False)
@@ -104,17 +126,25 @@ class JoystickSafety(Node):
         self.get_logger().info(
             f'joystick_safety: {joystick_topic} -> {override_topic} '
             f'deadzone={self._deadzone:.2f} neutral_hold={self._neutral_hold:.1f}s '
-            f'start_key_mask=0x{self._start_key_mask:04x}'
+            f'resume_key_mask=0x{self._resume_key_mask:04x} '
+            f'abort_key_mask=0x{self._abort_key_mask:04x}'
         )
 
     def _on_joystick(self, msg):
-        if self._override_active and start_resume_requested(
+        if resume_requested(
             self._last_keys,
             msg,
             self._deadzone,
-            self._start_key_mask,
+            self._resume_key_mask,
         ):
             self._resume_requested = True
+        if abort_requested(
+            self._last_keys,
+            msg,
+            self._deadzone,
+            self._abort_key_mask,
+        ):
+            self._abort_requested = True
         self._last_msg = msg
         self._last_msg_time = self.get_clock().now()
         self._last_keys = int(msg.keys)
@@ -125,6 +155,12 @@ class JoystickSafety(Node):
     def _on_timer(self):
         active = self._is_active()
         now = self.get_clock().now()
+
+        if self._abort_requested:
+            self._handle_abort_request(now)
+
+        if not self._override_active and self._resume_requested:
+            self._resume_requested = False
 
         if active:
             self._neutral_since = None
@@ -142,18 +178,21 @@ class JoystickSafety(Node):
         if self._neutral_since is None:
             self._neutral_since = now
 
-        neutral_age = (now - self._neutral_since).nanoseconds * 1e-9
-        clear_by_hold = neutral_age >= self._neutral_hold
-        clear_by_start = self._resume_requested
-        if self._override_active and (clear_by_hold or clear_by_start):
+        if self._override_active and self._resume_requested:
+            if self._abort_hold_until is not None:
+                return
             self._override_active = False
-            resume = clear_by_start and self._resume_on_start
             self._resume_requested = False
             self._publish_override(False)
-            if resume:
-                self._resume_navigation()
-            else:
-                self.get_logger().info('Joystick returned to neutral: Nav2 re-enabled')
+            self._resume_navigation()
+            return
+
+        if self._override_active and self._abort_hold_until is not None:
+            if now >= self._abort_hold_until:
+                self._override_active = False
+                self._abort_hold_until = None
+                self._publish_override(False)
+                self.get_logger().info('Abort command completed: Nav2 remains idle')
 
     def _is_active(self):
         if self._last_msg is None or self._last_msg_time is None:
@@ -163,10 +202,22 @@ class JoystickSafety(Node):
         if age > self._watchdog_timeout:
             return False
 
-        if self._override_active and self._resume_requested:
-            return axes_active(self._last_msg, self._deadzone)
+        return joystick_active(
+            self._last_msg,
+            self._deadzone,
+            self._resume_key_mask,
+            self._abort_key_mask,
+        )
 
-        return joystick_active(self._last_msg, self._deadzone)
+    def _handle_abort_request(self, now):
+        self._abort_requested = False
+        self._resume_requested = False
+        self._goal_interrupted = False
+        self._override_active = True
+        self._publish_override(True)
+        self._abort_hold_until = now + Duration(seconds=self._neutral_hold)
+        self.get_logger().warning('Abort button pressed: canceling Nav2 and stopping robot')
+        self._cancel_nav2_goals()
 
     def _cancel_nav2_goals(self):
         request = CancelGoal.Request()
@@ -180,7 +231,7 @@ class JoystickSafety(Node):
 
     def _resume_navigation(self):
         if not self._goal_interrupted or self._last_goal_pose is None:
-            self.get_logger().info('Joystick START pressed: Nav2 re-enabled')
+            self.get_logger().info('Resume button pressed: Nav2 re-enabled')
             return
         if not self._navigate_client.wait_for_server(timeout_sec=0.1):
             self.get_logger().warning('navigate_to_pose action unavailable; cannot resume')
@@ -190,7 +241,7 @@ class JoystickSafety(Node):
         goal.pose = self._last_goal_pose
         self._navigate_client.send_goal_async(goal)
         self._goal_interrupted = False
-        self.get_logger().info('Joystick START pressed: resent last goal for replanning')
+        self.get_logger().info('Resume button pressed: resent last goal for replanning')
 
     def _publish_override(self, active):
         msg = Bool()

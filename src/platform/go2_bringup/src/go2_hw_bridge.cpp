@@ -47,9 +47,12 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <optional>
 #include <string>
 
+#include "action_msgs/msg/goal_status.hpp"
+#include "action_msgs/msg/goal_status_array.hpp"
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "nav_msgs/msg/odometry.hpp"
@@ -94,8 +97,11 @@ public:
     declare_parameter<double>("max_lateral_vel",       0.3);   // [m/s]
     declare_parameter<double>("max_angular_vel",       1.5);   // [rad/s]
     declare_parameter<bool>("enable_startup_motion_sequence", true);
+    declare_parameter<bool>("enable_goal_motion_sequence", true);
     declare_parameter<double>("startup_standup_delay_sec", 1.0);
     declare_parameter<double>("startup_classic_walk_delay_sec", 3.0);
+    declare_parameter<std::string>(
+      "nav_goal_status_topic", "/navigate_to_pose/_action/status");
 
     state_topic_    = get_parameter("state_topic").as_string();
     lowstate_topic_ = get_parameter("lowstate_topic").as_string();
@@ -116,9 +122,12 @@ public:
     max_ang_        = get_parameter("max_angular_vel").as_double();
     enable_startup_motion_sequence_ =
       get_parameter("enable_startup_motion_sequence").as_bool();
+    enable_goal_motion_sequence_ =
+      get_parameter("enable_goal_motion_sequence").as_bool();
     startup_standup_delay_sec_ = get_parameter("startup_standup_delay_sec").as_double();
     startup_classic_walk_delay_sec_ =
       get_parameter("startup_classic_walk_delay_sec").as_double();
+    nav_goal_status_topic_ = get_parameter("nav_goal_status_topic").as_string();
 
     // ── Publishers ────────────────────────────────────────────────────────
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
@@ -142,6 +151,10 @@ public:
       cmd_vel_topic_, rclcpp::QoS(10),
       std::bind(&Go2HwBridge::on_cmd_vel, this, std::placeholders::_1));
 
+    nav_goal_status_sub_ = create_subscription<action_msgs::msg::GoalStatusArray>(
+      nav_goal_status_topic_, rclcpp::QoS(10),
+      std::bind(&Go2HwBridge::on_nav_goal_status, this, std::placeholders::_1));
+
     // ── Watchdog timer ────────────────────────────────────────────────────
     // Fires at 10 Hz.  If cmd_vel goes stale, sends StopMove to the robot.
     watchdog_timer_ = create_wall_timer(
@@ -154,13 +167,14 @@ public:
       std::bind(&Go2HwBridge::publish_status, this));
 
     // Startup sequence (real robot): StandUp first, then enable ClassicWalk.
-    if (enable_startup_motion_sequence_) {
+    if (enable_startup_motion_sequence_ || enable_goal_motion_sequence_) {
+      startup_motion_sequence_requested_ = enable_startup_motion_sequence_;
       startup_sequence_timer_ = create_wall_timer(
         std::chrono::milliseconds(200),
-        std::bind(&Go2HwBridge::run_startup_motion_sequence, this));
+        std::bind(&Go2HwBridge::run_motion_sequence, this));
       RCLCPP_INFO(
         get_logger(),
-        "  startup sequence enabled: StandUp at +%.1fs, ClassicWalk at +%.1fs (after StandUp)",
+        "  motion sequences enabled: RecoveryStand -> StandUp at +%.1fs -> ClassicWalk at +%.1fs",
         startup_standup_delay_sec_, startup_classic_walk_delay_sec_);
     }
 
@@ -327,9 +341,47 @@ private:
     const float vy   = clamp(static_cast<float>(msg->linear.y),  -max_lat_, max_lat_);
     const float vyaw = clamp(static_cast<float>(msg->angular.z), -max_ang_, max_ang_);
 
+    if (motion_sequence_active_ && !is_zero_command(vx, vy, vyaw)) {
+      RCLCPP_INFO_THROTTLE(
+        get_logger(), *get_clock(), 2000,
+        "Holding nonzero cmd_vel while motion sequence is active");
+      publish_stop_move();
+      watchdog_stop_active_ = false;
+      return;
+    }
+
+    if (is_zero_command(vx, vy, vyaw)) {
+      publish_stop_move();
+      watchdog_stop_active_ = false;
+      return;
+    }
+
     unitree_api::msg::Request req;
     sport_.Move(req, vx, vy, vyaw);
     sport_pub_->publish(req);
+    last_command_was_stop_ = false;
+    watchdog_stop_active_ = false;
+  }
+
+  void on_nav_goal_status(const action_msgs::msg::GoalStatusArray::SharedPtr msg)
+  {
+    if (!enable_goal_motion_sequence_ || goal_motion_sequence_requested_ ||
+      goal_motion_sequence_completed_)
+    {
+      return;
+    }
+
+    for (const auto & status : msg->status_list) {
+      if (status.status == action_msgs::msg::GoalStatus::STATUS_ACCEPTED ||
+        status.status == action_msgs::msg::GoalStatus::STATUS_EXECUTING)
+      {
+        goal_motion_sequence_requested_ = true;
+        RCLCPP_INFO(
+          get_logger(),
+          "First navigation goal accepted: queued RecoveryStand -> StandUp -> ClassicWalk");
+        return;
+      }
+    }
   }
 
   // ── Watchdog ──────────────────────────────────────────────────────────────
@@ -342,29 +394,21 @@ private:
 
     const double age = (now() - *last_cmd_time_).seconds();
     if (age > cmd_timeout_) {
-      if (!stopped_) {
-        unitree_api::msg::Request req;
-        sport_.StopMove(req);
-        sport_pub_->publish(req);
-        stopped_ = true;
+      if (!watchdog_stop_active_) {
+        publish_stop_move();
+        watchdog_stop_active_ = true;
         RCLCPP_WARN(get_logger(),
           "cmd_vel stale (%.2fs > %.2fs) — sent StopMove", age, cmd_timeout_);
       }
     } else {
-      stopped_ = false;
+      watchdog_stop_active_ = false;
     }
   }
 
-  // ── Startup sequence ───────────────────────────────────────────────────────
+  // ── Motion sequence ───────────────────────────────────────────────────────
 
-  void run_startup_motion_sequence()
+  void run_motion_sequence()
   {
-    if (startup_classic_walk_sent_) {
-      return;
-    }
-
-    // Wait for first hardware state sample so startup delays are anchored to an
-    // active bridge and not process launch time.
     if (!has_state_) {
       return;
     }
@@ -378,35 +422,50 @@ private:
       return;
     }
 
-    if (!startup_sequence_anchor_time_.has_value()) {
-      startup_sequence_anchor_time_ = now();
-      RCLCPP_INFO(
-        get_logger(),
-        "Startup motion sequence armed from first state sample: StandUp -> ClassicWalk");
-    }
-
-    const double elapsed = (now() - *startup_sequence_anchor_time_).seconds();
-    if (!startup_standup_sent_ && elapsed >= startup_standup_delay_sec_) {
-      unitree_api::msg::Request req;
-      sport_.StandUp(req);
-      sport_pub_->publish(req);
-      startup_standup_sent_ = true;
-      startup_standup_time_ = now();
-      RCLCPP_INFO(get_logger(), "Sent startup Sport API command: StandUp");
+    if (!motion_sequence_active_) {
+      if (startup_motion_sequence_requested_) {
+        start_motion_sequence(MotionSequenceTrigger::Startup, "startup");
+      } else if (goal_motion_sequence_requested_) {
+        start_motion_sequence(MotionSequenceTrigger::GoalAccepted, "first accepted goal");
+      }
       return;
     }
 
-    if (startup_standup_sent_ && !startup_classic_walk_sent_) {
-      const double since_standup = (now() - *startup_standup_time_).seconds();
+    if (!motion_sequence_recovery_sent_) {
+      unitree_api::msg::Request req;
+      sport_.RecoveryStand(req);
+      sport_pub_->publish(req);
+      last_command_was_stop_ = false;
+      motion_sequence_recovery_sent_ = true;
+      motion_sequence_recovery_time_ = now();
+      RCLCPP_INFO(get_logger(), "Sent motion sequence Sport API command: RecoveryStand");
+      return;
+    }
+
+    if (!motion_sequence_standup_sent_) {
+      const double since_recovery = (now() - *motion_sequence_recovery_time_).seconds();
+      if (since_recovery >= startup_standup_delay_sec_) {
+        unitree_api::msg::Request req;
+        sport_.StandUp(req);
+        sport_pub_->publish(req);
+        last_command_was_stop_ = false;
+        motion_sequence_standup_sent_ = true;
+        motion_sequence_standup_time_ = now();
+        RCLCPP_INFO(get_logger(), "Sent motion sequence Sport API command: StandUp");
+      }
+      return;
+    }
+
+    if (!motion_sequence_classic_walk_sent_) {
+      const double since_standup = (now() - *motion_sequence_standup_time_).seconds();
       if (since_standup >= startup_classic_walk_delay_sec_) {
         unitree_api::msg::Request req;
         sport_.ClassicWalk(req, true);
         sport_pub_->publish(req);
-        startup_classic_walk_sent_ = true;
-        RCLCPP_INFO(get_logger(), "Sent startup Sport API command: ClassicWalk(true)");
-        if (startup_sequence_timer_) {
-          startup_sequence_timer_->cancel();
-        }
+        last_command_was_stop_ = false;
+        motion_sequence_classic_walk_sent_ = true;
+        RCLCPP_INFO(get_logger(), "Sent motion sequence Sport API command: ClassicWalk(true)");
+        finish_motion_sequence();
       }
     }
   }
@@ -441,7 +500,7 @@ private:
           "(check that the Go2 bridge publishes %s)", lowstate_topic_.c_str());
       }
     }
-    status.estop_active = stopped_;
+    status.estop_active = watchdog_stop_active_;
 
     status_pub_->publish(status);
   }
@@ -451,6 +510,60 @@ private:
   static float clamp(float v, double lo, double hi)
   {
     return static_cast<float>(std::max(lo, std::min(hi, static_cast<double>(v))));
+  }
+
+  static bool is_zero_command(float vx, float vy, float vyaw)
+  {
+    return std::abs(vx) < 1e-4f && std::abs(vy) < 1e-4f && std::abs(vyaw) < 1e-4f;
+  }
+
+  void publish_stop_move()
+  {
+    if (last_command_was_stop_) {
+      return;
+    }
+
+    unitree_api::msg::Request req;
+    sport_.StopMove(req);
+    sport_pub_->publish(req);
+    last_command_was_stop_ = true;
+  }
+
+  enum class MotionSequenceTrigger
+  {
+    None,
+    Startup,
+    GoalAccepted,
+  };
+
+  void start_motion_sequence(MotionSequenceTrigger trigger, const std::string & reason)
+  {
+    motion_sequence_trigger_ = trigger;
+    motion_sequence_active_ = true;
+    motion_sequence_recovery_sent_ = false;
+    motion_sequence_standup_sent_ = false;
+    motion_sequence_classic_walk_sent_ = false;
+    motion_sequence_recovery_time_.reset();
+    motion_sequence_standup_time_.reset();
+    publish_stop_move();
+    RCLCPP_INFO(
+      get_logger(),
+      "Starting motion sequence for %s: RecoveryStand -> StandUp -> ClassicWalk",
+      reason.c_str());
+  }
+
+  void finish_motion_sequence()
+  {
+    if (motion_sequence_trigger_ == MotionSequenceTrigger::Startup) {
+      startup_motion_sequence_requested_ = false;
+      startup_motion_sequence_completed_ = true;
+    } else if (motion_sequence_trigger_ == MotionSequenceTrigger::GoalAccepted) {
+      goal_motion_sequence_requested_ = false;
+      goal_motion_sequence_completed_ = true;
+    }
+
+    motion_sequence_active_ = false;
+    motion_sequence_trigger_ = MotionSequenceTrigger::None;
   }
 
   // ── Members ───────────────────────────────────────────────────────────────
@@ -471,8 +584,10 @@ private:
   double cmd_timeout_;
   double max_lin_, max_lat_, max_ang_;
   bool enable_startup_motion_sequence_;
+  bool enable_goal_motion_sequence_;
   double startup_standup_delay_sec_;
   double startup_classic_walk_delay_sec_;
+  std::string nav_goal_status_topic_;
 
   SportClient sport_;
   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
@@ -485,17 +600,26 @@ private:
   rclcpp::Subscription<unitree_go::msg::SportModeState>::SharedPtr state_sub_;
   rclcpp::Subscription<unitree_go::msg::LowState>::SharedPtr lowstate_sub_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
+  rclcpp::Subscription<action_msgs::msg::GoalStatusArray>::SharedPtr nav_goal_status_sub_;
 
   rclcpp::TimerBase::SharedPtr watchdog_timer_;
   rclcpp::TimerBase::SharedPtr status_timer_;
   rclcpp::TimerBase::SharedPtr startup_sequence_timer_;
 
   std::optional<rclcpp::Time> last_cmd_time_;
-  std::optional<rclcpp::Time> startup_sequence_anchor_time_;
-  std::optional<rclcpp::Time> startup_standup_time_;
-  bool stopped_       = false;
-  bool startup_standup_sent_ = false;
-  bool startup_classic_walk_sent_ = false;
+  std::optional<rclcpp::Time> motion_sequence_recovery_time_;
+  std::optional<rclcpp::Time> motion_sequence_standup_time_;
+  bool watchdog_stop_active_ = false;
+  bool last_command_was_stop_ = false;
+  bool startup_motion_sequence_requested_ = false;
+  bool startup_motion_sequence_completed_ = false;
+  bool goal_motion_sequence_requested_ = false;
+  bool goal_motion_sequence_completed_ = false;
+  bool motion_sequence_active_ = false;
+  bool motion_sequence_recovery_sent_ = false;
+  bool motion_sequence_standup_sent_ = false;
+  bool motion_sequence_classic_walk_sent_ = false;
+  MotionSequenceTrigger motion_sequence_trigger_ = MotionSequenceTrigger::None;
   bool has_state_     = false;
   bool has_low_state_ = false;
   unitree_go::msg::SportModeState last_state_;

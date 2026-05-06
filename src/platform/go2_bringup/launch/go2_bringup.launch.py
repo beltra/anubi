@@ -29,7 +29,9 @@ slam_mode       : str    'mapping' or 'localization' (default: 'mapping')
 use_safety      : bool   Enable safety arbiter (default: true)
 use_ekf_fusion  : bool   EKF odom fusion (default: true)
 use_lio         : bool   Enable DLIO LiDAR-inertial odometry (default: false)
-recovery_ack_key_mask : int Controller START key mask for tilt recovery
+  recovery_ack_key_mask : int Controller START key mask for tilt recovery
+  resume_key_mask       : int Controller key mask for Nav2 resume and replan
+  abort_key_mask        : int Controller key mask for controlled Nav2 abort
 """
 
 import os
@@ -85,12 +87,16 @@ def generate_launch_description():
                               description="Enable DLIO LiDAR-inertial odometry backend"),
         DeclareLaunchArgument("lidar_points_input_topic", default_value="/utlidar/cloud",
                               description="Raw LiDAR pointcloud topic to relay to /lidar/points"),
-        DeclareLaunchArgument("lidar_imu_input_topic", default_value="/unilidar/imu",
+        DeclareLaunchArgument("lidar_imu_input_topic", default_value="/utlidar/imu",
                               description="Raw LiDAR IMU topic to relay to /lidar/imu"),
         DeclareLaunchArgument("use_safety",   default_value="true",
                               description="Enable safety arbiter; go2_hw_bridge reads /cmd_vel_safe"),
         DeclareLaunchArgument("recovery_ack_key_mask", default_value="0",
                               description="Controller START key mask for tilt estop recovery"),
+        DeclareLaunchArgument("resume_key_mask", default_value="0",
+                              description="Controller key mask for Nav2 resume and replan"),
+        DeclareLaunchArgument("abort_key_mask", default_value="0",
+                              description="Controller key mask for controlled Nav2 abort"),
     ]
 
     use_sim_time = LaunchConfiguration("use_sim_time")
@@ -109,6 +115,8 @@ def generate_launch_description():
     lidar_imu_input_topic = LaunchConfiguration("lidar_imu_input_topic")
     use_safety   = LaunchConfiguration("use_safety")
     recovery_ack_key_mask = LaunchConfiguration("recovery_ack_key_mask")
+    resume_key_mask = LaunchConfiguration("resume_key_mask")
+    abort_key_mask = LaunchConfiguration("abort_key_mask")
 
     hw_bridge_cmd_topic = PythonExpression(
         ["'/cmd_vel_safe' if '", use_safety, "' == 'true' else '/cmd_vel_collision_free'"]
@@ -166,6 +174,8 @@ def generate_launch_description():
             "cmd_vel_in": "/cmd_vel_collision_free",
             "cmd_vel_out": "/cmd_vel_safe",
             "recovery_ack_key_mask": recovery_ack_key_mask,
+            "resume_key_mask": resume_key_mask,
+            "abort_key_mask": abort_key_mask,
         }.items(),
         condition=IfCondition(use_safety),
     )

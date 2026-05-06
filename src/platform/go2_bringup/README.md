@@ -23,7 +23,9 @@ The central hardware bridge.  Single node that handles both directions:
 - Clamps velocities to configured limits
 - Calls `SportClient::Move(vx, vy, vyaw)` → publishes `unitree_api/Request`
   on `/api/sport/request` (consumed by Go2 onboard controller)
-- Startup sequence (default enabled): `StandUp` once, then `ClassicWalk(true)`
+- Boot sequence (default enabled): `RecoveryStand`, `StandUp`, then `ClassicWalk(true)`
+- First accepted Nav2 goal (default enabled): repeats `RecoveryStand`, `StandUp`, then `ClassicWalk(true)`
+- Sends `StopMove` for zero commands and watchdog stop; holds nonzero commands while a posture sequence is active
 - **Watchdog**: sends `StopMove` if no `/cmd_vel` arrives within `cmd_timeout` seconds
 
 ### Parameters (`config/go2_params.yaml`)
@@ -44,9 +46,11 @@ The central hardware bridge.  Single node that handles both directions:
 | `publish_body_tf` | `true` | Publish TF `base_footprint → base_link` |
 | `standing_height` | `0.28` m | Z offset used in `base_footprint → base_link` |
 | `cmd_timeout` | `0.5` s | Stop if no cmd_vel within this time |
-| `enable_startup_motion_sequence` | `true` | Send startup `StandUp` then `ClassicWalk(true)` on hardware bringup |
-| `startup_standup_delay_sec` | `1.0` s | Delay from first state sample to `StandUp` |
+| `enable_startup_motion_sequence` | `true` | Send startup `RecoveryStand`, `StandUp`, then `ClassicWalk(true)` |
+| `enable_goal_motion_sequence` | `true` | Repeat the same posture sequence on the first accepted Nav2 goal |
+| `startup_standup_delay_sec` | `1.0` s | Delay from `RecoveryStand` to `StandUp` |
 | `startup_classic_walk_delay_sec` | `3.0` s | Delay after `StandUp` before `ClassicWalk(true)` |
+| `nav_goal_status_topic` | `/navigate_to_pose/_action/status` | Nav2 action status topic used to detect the first accepted goal |
 | `max_linear_vel` | `1.0` m/s | Forward/backward limit |
 | `max_lateral_vel` | `0.3` m/s | Lateral limit |
 | `max_angular_vel` | `1.5` rad/s | Rotation limit |

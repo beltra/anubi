@@ -12,8 +12,10 @@ USE_ROUTE_SERVER="false"
 ROUTE_GRAPH_FILE=""
 ROBOT_NAME=""
 LIDAR_POINTS_IN_TOPIC="/utlidar/cloud"
-LIDAR_IMU_IN_TOPIC="/unilidar/imu"
+LIDAR_IMU_IN_TOPIC="/utlidar/imu"
 RECOVERY_ACK_KEY_MASK="0"
+RESUME_KEY_MASK="0"
+ABORT_KEY_MASK="0"
 
 usage() {
   cat <<'EOF'
@@ -33,9 +35,13 @@ Options:
   --lidar-points-in-topic <topic>
                               Raw pointcloud topic relayed to /lidar/points (default: /utlidar/cloud)
   --lidar-imu-in-topic <topic>
-                              Raw LiDAR IMU topic relayed to /lidar/imu (default: /unilidar/imu)
+                              Raw LiDAR IMU topic relayed to /lidar/imu (default: /utlidar/imu)
   --recovery-ack-key-mask <mask>
                               Controller START key mask for tilt recovery (hex or decimal)
+  --resume-key-mask <mask>
+                              Controller key mask for Nav2 resume and replanning
+  --abort-key-mask <mask>
+                              Controller key mask for controlled Nav2 abort
   -h, --help                 Show this help
 
 Examples:
@@ -114,6 +120,16 @@ while [[ $# -gt 0 ]]; do
       RECOVERY_ACK_KEY_MASK="$2"
       shift 2
       ;;
+    --resume-key-mask)
+      [[ $# -ge 2 ]] || { echo "Missing value for --resume-key-mask" >&2; usage; exit 1; }
+      RESUME_KEY_MASK="$2"
+      shift 2
+      ;;
+    --abort-key-mask)
+      [[ $# -ge 2 ]] || { echo "Missing value for --abort-key-mask" >&2; usage; exit 1; }
+      ABORT_KEY_MASK="$2"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -169,6 +185,8 @@ CMD=(
   lidar_points_input_topic:="$LIDAR_POINTS_IN_TOPIC"
   lidar_imu_input_topic:="$LIDAR_IMU_IN_TOPIC"
   recovery_ack_key_mask:="$RECOVERY_ACK_KEY_MASK"
+  resume_key_mask:="$RESUME_KEY_MASK"
+  abort_key_mask:="$ABORT_KEY_MASK"
 )
 
 if [[ -n "$ROUTE_GRAPH_FILE" ]]; then

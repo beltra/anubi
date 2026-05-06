@@ -41,7 +41,7 @@ Nav2 /cmd_vel -> collision_monitor -> /cmd_vel_collision_free -> velocity_limite
 
 ## `joystick_safety` node
 
-Subscribes to `/wirelesscontroller`, publishes `/joystick_override`, and cancels active Nav2 goals when any controller axis or key is active. It remembers the latest `/goal_pose`; pressing the calibrated START key with neutral sticks clears override and resends that goal through `navigate_to_pose`, forcing Nav2 to compute a new path from the current pose. Override also clears without resuming after the controller is neutral for `neutral_hold_secs`.
+Subscribes to `/wirelesscontroller`, publishes `/joystick_override`, and cancels active Nav2 goals when any controller axis or non-command key is active. It remembers the latest `/goal_pose`; pressing the configured resume key with neutral sticks clears override and resends that goal through `navigate_to_pose`, forcing Nav2 to compute a new path from the current pose. Pressing the configured abort key cancels Nav2, holds zero velocity briefly, then clears override and leaves navigation idle.
 
 ---
 
@@ -49,7 +49,11 @@ Subscribes to `/wirelesscontroller`, publishes `/joystick_override`, and cancels
 
 Subscribes to `/imu/data` and publishes latched `/safety/tilt_estop`. Defaults are warn at 20 deg, estop at 30 deg for 0.25 s, and allow recovery below 15 deg after the calibrated controller START key is pressed.
 
-Use `ros2 run robot_safety wireless_key_inspector` on the real robot to find the START key bit, then launch with `recovery_ack_key_mask:=<mask>` or `scripts/run_go2_real.sh --recovery-ack-key-mask <mask>`.
+Use `ros2 run robot_safety wireless_key_inspector` on the real robot to find the controller bitmasks, then launch with:
+
+- `recovery_ack_key_mask:=<mask>` for tilt-estop recovery
+- `resume_key_mask:=<mask>` for Nav2 resume and replan
+- `abort_key_mask:=<mask>` for controlled Nav2 abort
 
 Parameters are set via `safety.launch.py` launch arguments, not `config/safety_params.yaml`.
 

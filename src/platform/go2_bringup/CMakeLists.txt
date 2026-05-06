@@ -6,6 +6,8 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_gtest QUIET)
+find_package(action_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(tf2 REQUIRED)
@@ -46,6 +48,7 @@ ament_target_dependencies(go2_hw_bridge
   unitree_api
   unitree_go
   robot_common_interfaces
+  action_msgs
 )
 
 target_link_libraries(go2_hw_bridge
@@ -67,5 +70,25 @@ install(DIRECTORY
   config
   DESTINATION share/${PROJECT_NAME}
 )
+
+if(BUILD_TESTING AND ament_cmake_gtest_FOUND)
+  ament_add_gtest(test_sport_client
+    test/test_sport_client.cpp
+    src/sport_client.cpp
+  )
+
+  target_include_directories(test_sport_client PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+  )
+
+  ament_target_dependencies(test_sport_client
+    unitree_api
+  )
+
+  target_link_libraries(test_sport_client
+    nlohmann_json::nlohmann_json
+  )
+endif()
 
 ament_package()

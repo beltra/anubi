@@ -19,8 +19,10 @@ go2_hw_bridge:
 
     cmd_timeout: 0.5
     enable_startup_motion_sequence: true
+    enable_goal_motion_sequence: true
     startup_standup_delay_sec: 1.0
     startup_classic_walk_delay_sec: 3.0
+    nav_goal_status_topic: "/navigate_to_pose/_action/status"
 
     max_linear_vel:  1.5
     max_lateral_vel: 0.4
