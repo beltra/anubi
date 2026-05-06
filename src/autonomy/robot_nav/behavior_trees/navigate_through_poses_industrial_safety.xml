@@ -1,45 +1,94 @@
 <!--
-  Industrial-safety recovery tree.
-  It never clears an entire costmap; only a 1 m window around the robot.
+  Quadruped recovery tree for both sim and real Go2 operation.
+  Recovery actions are guarded by the local 2D costmap; TF faults terminate.
 -->
 <root main_tree_to_execute="MainTree">
   <BehaviorTree ID="MainTree">
-    <RecoveryNode number_of_retries="6" name="NavigateRecovery">
-      <PipelineSequence name="NavigateWithReplanning">
-        <RateController hz="0.333">
-          <RecoveryNode number_of_retries="1" name="ComputePathThroughPoses">
-            <ReactiveSequence>
-              <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="0.7"/>
-              <ComputePathThroughPoses goals="{goals}" path="{path}" planner_id="GridBased"/>
-            </ReactiveSequence>
-            <ClearCostmapAroundRobot
-              name="ClearLocalCostmap-PlanContext"
-              service_name="local_costmap/clear_around_local_costmap"
-              reset_distance="1.0"/>
-          </RecoveryNode>
-        </RateController>
-        <RecoveryNode number_of_retries="1" name="FollowPath">
-          <FollowPath path="{path}" controller_id="FollowPath"/>
-          <ClearCostmapAroundRobot
-            name="ClearLocalCostmap-ControlContext"
-            service_name="local_costmap/clear_around_local_costmap"
-            reset_distance="1.0"/>
+    <ReactiveFallback name="TerminalFaultGate">
+      <Sequence name="NavigationWithTf">
+        <TransformAvailable child="base_footprint" parent="map"/>
+        <RecoveryNode number_of_retries="6" name="NavigateRecovery">
+          <ReactiveSequence name="MonitorAndNavigate">
+            <MotionHealthy/>
+            <PipelineSequence name="NavigateWithReplanning">
+              <RateController hz="0.333">
+                <RecoveryNode number_of_retries="1" name="ComputePathThroughPoses">
+                  <ReactiveSequence>
+                    <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="0.7"/>
+                    <ComputePathThroughPoses goals="{goals}" path="{path}" planner_id="GridBased"/>
+                  </ReactiveSequence>
+                  <Sequence name="PlannerLocalRecovery">
+                    <SetRecoveryContext context="planner"/>
+                    <RecoveryDiagnostics stage="planner_local_clear" message="planner recovery: local clear"/>
+                    <ClearCostmapAroundRobot
+                      name="ClearLocalCostmap-PlanContext"
+                      service_name="local_costmap/clear_around_local_costmap"
+                      reset_distance="1.0"/>
+                  </Sequence>
+                </RecoveryNode>
+              </RateController>
+              <RecoveryNode number_of_retries="1" name="FollowPath">
+                <FollowPath path="{path}" controller_id="FollowPath"/>
+                <Sequence name="ControllerLocalRecovery">
+                  <SetRecoveryContext context="controller"/>
+                  <RecoveryDiagnostics stage="controller_local_clear" message="controller recovery: local clear"/>
+                  <ClearCostmapAroundRobot
+                    name="ClearLocalCostmap-ControlContext"
+                    service_name="local_costmap/clear_around_local_costmap"
+                    reset_distance="1.0"/>
+                </Sequence>
+              </RecoveryNode>
+            </PipelineSequence>
+          </ReactiveSequence>
+          <ReactiveFallback name="RecoveryFallback">
+            <GoalUpdated/>
+            <EscalatingRecovery name="EscalatingRecoveryActions">
+              <Sequence name="Stage1LocalClear">
+                <RecoveryDiagnostics stage="stage_1_local_clear" message="recovery stage 1: local clear and replan"/>
+                <ClearCostmapAroundRobot
+                  name="ClearLocalCostmap-Stage1"
+                  service_name="local_costmap/clear_around_local_costmap"
+                  reset_distance="1.0"/>
+              </Sequence>
+              <Sequence name="Stage2EscapeHeading">
+                <RecoveryContextIs context="controller"/>
+                <SelectRecoveryHeading selected_yaw="{escape_yaw}"/>
+                <RecoveryDiagnostics stage="stage_2_guarded_rotation" message="recovery stage 2: guarded rotation"/>
+                <Spin server_name="guarded_spin" spin_dist="{escape_yaw}" time_allowance="8.0"/>
+              </Sequence>
+              <Sequence name="Stage3GuardedBackup">
+                <CheckSectorClear sector="rear"/>
+                <RecoveryDiagnostics stage="stage_3_guarded_backup" message="recovery stage 3: guarded backup"/>
+                <BackUp server_name="guarded_backup" backup_dist="0.15" backup_speed="0.03" time_allowance="8.0"/>
+              </Sequence>
+              <Fallback name="Stage4GuardedLateralStep">
+                <Sequence name="StepLeft">
+                  <CheckSectorClear sector="left"/>
+                  <RecoveryDiagnostics stage="stage_4_lateral_left" message="recovery stage 4: guarded left step"/>
+                  <GuardedLateralStep direction="left" step_dist="0.15" step_speed="0.03" time_allowance="8.0"/>
+                </Sequence>
+                <Sequence name="StepRight">
+                  <CheckSectorClear sector="right"/>
+                  <RecoveryDiagnostics stage="stage_4_lateral_right" message="recovery stage 4: guarded right step"/>
+                  <GuardedLateralStep direction="right" step_dist="0.15" step_speed="0.03" time_allowance="8.0"/>
+                </Sequence>
+              </Fallback>
+              <Sequence name="Stage5BroadClear">
+                <RecoveryDiagnostics stage="stage_5_broad_clear" message="recovery stage 5: broad local clear and primary planner retry"/>
+                <ClearCostmapAroundRobot
+                  name="ClearLocalCostmap-Stage5"
+                  service_name="local_costmap/clear_around_local_costmap"
+                  reset_distance="2.0"/>
+              </Sequence>
+            </EscalatingRecovery>
+          </ReactiveFallback>
         </RecoveryNode>
-      </PipelineSequence>
-      <ReactiveFallback name="RecoveryFallback">
-        <GoalUpdated/>
-        <RoundRobin name="RecoveryActions">
-          <Sequence name="ClearingActions">
-            <ClearCostmapAroundRobot
-              name="ClearLocalCostmap-Subtree"
-              service_name="local_costmap/clear_around_local_costmap"
-              reset_distance="1.0"/>
-          </Sequence>
-          <Spin spin_dist="1.57"/>
-          <Wait wait_duration="5"/>
-          <BackUp backup_dist="0.15" backup_speed="0.03"/>
-        </RoundRobin>
-      </ReactiveFallback>
-    </RecoveryNode>
+      </Sequence>
+      <RecoveryDiagnostics
+        stage="terminal_abort"
+        message="navigation aborted after guarded recovery or TF/localization fault"
+        level="2"
+        fail="true"/>
+    </ReactiveFallback>
   </BehaviorTree>
 </root>

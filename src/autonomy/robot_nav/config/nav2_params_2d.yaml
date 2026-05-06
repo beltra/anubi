@@ -180,8 +180,8 @@ local_costmap:
       global_frame: odom
       robot_base_frame: base_footprint
       rolling_window: true
-      width:  20.0
-      height: 20.0
+      width:  20
+      height: 20
       resolution: 0.05
       update_frequency:  10.0
       publish_frequency: 5.0
@@ -345,6 +345,19 @@ bt_navigator:
     # Default Nav2 BT - handles replanning and recovery automatically
     default_nav_to_pose_bt_xml: "/opt/ros/humble/share/nav2_bt_navigator/behavior_trees/navigate_to_pose_w_replanning_and_recovery.xml"
     default_nav_through_poses_bt_xml: "/opt/ros/humble/share/nav2_bt_navigator/behavior_trees/navigate_through_poses_w_replanning_and_recovery.xml"
+    recovery:
+      costmap_topic: "local_costmap/costmap_raw"  # nav2_msgs/Costmap, local 2D obstacle source
+      diagnostics_topic: "recovery/diagnostics"  # diagnostic_msgs/DiagnosticArray
+      cmd_vel_topic: "cmd_vel"  # geometry_msgs/Twist before collision_monitor
+      sector_count: 8  # bins around robot, valid range 4 to 36
+      inner_radius_m: 0.15  # ignore cells inside robot body, valid range 0.0 to outer_radius_m
+      outer_radius_m: 1.25  # sampled recovery radius, valid range 0.5 to local costmap radius
+      occupied_cost_threshold: 253  # nav2 cost value treated as blocked, valid range 1 to 255
+      unknown_is_occupied: false  # true is safer in unmapped local space
+      blocked_fraction_threshold: 0.20  # occupied fraction that blocks a sector, valid range 0.0 to 1.0
+      stuck_cmd_speed_threshold_mps: 0.04  # command magnitude that starts stuck timing
+      stuck_odom_speed_threshold_mps: 0.015  # observed odom speed considered moving
+      stuck_duration_s: 2.0  # seconds before proactive recovery triggers
     # Plugin list verified against libraries present in ros-humble-navigation2.
     # Checked via: find /opt/ros/humble/lib -name "libnav2*bt*" | sort
     plugin_lib_names:
@@ -391,6 +404,7 @@ bt_navigator:
       - nav2_planner_selector_bt_node
       - nav2_smoother_selector_bt_node
       - nav2_progress_checker_selector_bt_node
+      - robot_nav_recovery_bt_nodes
 
 # behavior_server  (recovery behaviours)
 behavior_server:
@@ -409,7 +423,7 @@ behavior_server:
     costmap_topic: local_costmap/costmap_raw
     footprint_topic: local_costmap/published_footprint
     cycle_frequency: 10.0
-    behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait"]
+    behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait", "guarded_spin", "guarded_backup", "guarded_lateral_step"]
     spin:
       plugin: "nav2_behaviors/Spin"
     backup:
@@ -420,6 +434,18 @@ behavior_server:
       plugin: "nav2_behaviors/Wait"
     assisted_teleop:
       plugin: "nav2_behaviors/AssistedTeleop"
+    guarded_spin:
+      plugin: "robot_nav_recovery/GuardedSpin"
+    guarded_backup:
+      plugin: "robot_nav_recovery/GuardedBackUp"
+      acceleration_limit: 0.10      # m/s^2, valid range 0.0 to gait limit
+      deceleration_limit: -0.10     # m/s^2, valid range -gait limit to 0.0
+      minimum_speed: 0.02           # m/s, valid range 0.0 to backup speed
+    guarded_lateral_step:
+      plugin: "robot_nav_recovery/GuardedLateralStep"
+      acceleration_limit: 0.08      # m/s^2, valid range 0.0 to gait limit
+      deceleration_limit: -0.08     # m/s^2, valid range -gait limit to 0.0
+      minimum_speed: 0.02           # m/s, valid range 0.0 to lateral speed
 
 # waypoint_follower
 waypoint_follower:

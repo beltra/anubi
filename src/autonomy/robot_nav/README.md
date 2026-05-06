@@ -40,6 +40,25 @@ Nav2 /cmd_vel_nav -> velocity_smoother -> /cmd_vel -> collision_monitor -> /cmd_
 | `config/distortion_corrector.yaml` | Single-node LiDAR self-filtering, trunk stabilization, and optional HW deskew |
 | `config/collision_monitor_params.yaml` | Collision monitor zones and sources |
 
+## Quadruped recovery
+
+`robot_nav` uses the `robot_nav_recovery` package for the default
+single-goal and through-poses Nav2 behavior trees. The tree replaces blind spin
+and blind backup recovery with staged, local-costmap-guarded actions:
+
+1. clear a small local window and replan,
+2. choose the least-obstructed escape sector and rotate with collision checks,
+3. back up only when the rear sector is clear,
+4. step left or right with non-zero `linear.y` only when the side sector is clear,
+5. clear a broader local window and retry the primary planner,
+6. publish terminal diagnostics and abort.
+
+Planner and controller failures set separate recovery context in the BT layer.
+TF or localization faults publish diagnostics and terminate in v1 instead of
+starting automatic relocalization. Tuning lives in each `nav2_params*.yaml`
+under `bt_navigator.ros__parameters.recovery` and guarded behavior limits live
+under `behavior_server.ros__parameters.guarded_*`.
+
 ## LiDAR processing
 
 `/lidar/points` is the raw sensor topic. It is still displayed through TF in
