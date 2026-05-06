@@ -1,5 +1,5 @@
 """
-sim_bringup.launch.py — Full Gazebo Fortress + CHAMP + Nav2 simulation bringup for Go2.
+sim_bringup.launch.py -- Full Gazebo Fortress + CHAMP + Nav2 simulation bringup for Go2.
 
 Starts:
   1. go2_sim/sim_champ.launch.py   (Gazebo, CHAMP, bridges, EKF, TF)
@@ -88,6 +88,11 @@ def generate_launch_description():
         DeclareLaunchArgument("slam_mode", default_value="mapping"),
         DeclareLaunchArgument("map", default_value=""),
         DeclareLaunchArgument("slam_params", default_value=default_slam_params),
+        DeclareLaunchArgument(
+            "distortion_imu_topic",
+            default_value="/imu/data",
+            description="IMU topic used by distortion_corrector",
+        ),
         DeclareLaunchArgument("launch_cloud_filter", default_value="false"),
         DeclareLaunchArgument("use_rviz", default_value="false"),
         DeclareLaunchArgument("rviz_config", default_value=default_rviz_config),
@@ -180,6 +185,7 @@ def generate_launch_description():
             "deskew_enabled": False,
             "use_twist": False,
             "use_imu": True,
+            "imu_topic": LaunchConfiguration("distortion_imu_topic"),
             "imu_timeout_sec": 0.25,
             "filter_self": True,
             "gravity_align": True,

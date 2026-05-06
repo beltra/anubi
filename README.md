@@ -164,7 +164,7 @@ Script options:
 The Unitree Go2 internal software must publish:
 - `/sportmodestate`  (`unitree_go/SportModeState`)
 - `/utlidar/cloud`  (`sensor_msgs/PointCloud2`)
-- `/unilidar/imu`  (`sensor_msgs/Imu`)
+- `/utlidar/imu`  (`sensor_msgs/Imu`)
 
 And subscribe to:
 - `/api/sport/request`  (`unitree_api/Request`)

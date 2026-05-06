@@ -12,6 +12,8 @@ USE_ROUTE_SERVER="false"
 ROUTE_GRAPH_FILE=""
 NAV_DELAY_SEC="20.0"
 USE_LIO="false"
+ROBOT_NAME=""
+DISTORTION_IMU_TOPIC="/imu/data"
 CLEAN_EXISTING="true"
 
 usage() {
@@ -33,7 +35,10 @@ Options:
   --use-route-server   Launch optional Nav2 route_server scaffold
   --route-graph-file <path>
                        Route graph GeoJSON file for route_server experiments
-  --nav-delay <sec>    Delay before Nav2 stack starts (default: 20.0)
+  --robot-name <name>  Optional simulation robot/entity name
+  --distortion-imu-topic <topic>
+                       IMU topic used for LiDAR correction (default: /imu/data; try /lidar/imu)
+  --nav-delay <sec>    Delay before SLAM starts; Nav2 starts 10 s later (default: 20.0)
   -h, --help           Show this help
 
 Examples:
@@ -102,6 +107,16 @@ while [[ $# -gt 0 ]]; do
       ROUTE_GRAPH_FILE="$2"
       shift 2
       ;;
+    --robot-name)
+      [[ $# -ge 2 ]] || { echo "Missing value for --robot-name" >&2; usage; exit 1; }
+      ROBOT_NAME="$2"
+      shift 2
+      ;;
+    --distortion-imu-topic)
+      [[ $# -ge 2 ]] || { echo "Missing value for --distortion-imu-topic" >&2; usage; exit 1; }
+      DISTORTION_IMU_TOPIC="$2"
+      shift 2
+      ;;
     --nav-delay)
       [[ $# -ge 2 ]] || { echo "Missing value for --nav-delay" >&2; usage; exit 1; }
       NAV_DELAY_SEC="$2"
@@ -165,6 +180,7 @@ CMD=(
   nav_profile:="$NAV_PROFILE"
   use_route_server:="$USE_ROUTE_SERVER"
   nav_delay_sec:="$NAV_DELAY_SEC"
+  distortion_imu_topic:="$DISTORTION_IMU_TOPIC"
 )
 
 if [[ -n "$ROUTE_GRAPH_FILE" ]]; then
@@ -177,6 +193,10 @@ fi
 
 if [[ -n "$WORLD_PATH" ]]; then
   CMD+=(world:="$WORLD_PATH")
+fi
+
+if [[ -n "$ROBOT_NAME" ]]; then
+  CMD+=(robot_name:="$ROBOT_NAME")
 fi
 
 echo "Starting GO2 simulation stack..."

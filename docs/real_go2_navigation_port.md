@@ -19,6 +19,7 @@ The Go2-specific bridge remains the only publisher of Unitree Sport API commands
 - Resume resends the last `/goal_pose` through `navigate_to_pose`, forcing Nav2 to replan from the current pose.
 - Abort cancels Nav2, holds zero output briefly, then clears override and leaves navigation idle.
 - `scripts/run_go2_real.sh` adds `--resume-key-mask` and `--abort-key-mask`.
+- `scripts/run_go2_real.sh` accepts the shared `--nav-delay`, `--nav-profile`, `--use-lio`, `--no-stvl`, `--use-route-server`, `--route-graph-file`, `--robot-name`, and `--distortion-imu-topic` options used by the simulation wrapper where the option applies to real hardware.
 
 ## Safety Behavior
 

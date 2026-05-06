@@ -10,6 +10,7 @@ USE_LIO="false"
 NAV_PROFILE="default_safe"
 USE_ROUTE_SERVER="false"
 ROUTE_GRAPH_FILE=""
+NAV_DELAY_SEC="0.0"
 ROBOT_NAME=""
 LIDAR_POINTS_IN_TOPIC="/utlidar/cloud"
 LIDAR_IMU_IN_TOPIC="/utlidar/imu"
@@ -32,6 +33,7 @@ Options:
   --nav-profile <id>         Nav2 profile: default_safe | narrow_gap_1p0m | forward_static
   --use-route-server         Launch optional Nav2 route_server scaffold
   --route-graph-file <path>  Route graph GeoJSON file for route_server experiments
+  --nav-delay <sec>          Delay before SLAM and Nav2 start (default: 0.0)
   --robot-name <name>        Optional Nav2 namespace
   --lidar-points-in-topic <topic>
                               Raw pointcloud topic relayed to /lidar/points (default: /utlidar/cloud)
@@ -101,6 +103,11 @@ while [[ $# -gt 0 ]]; do
     --route-graph-file)
       [[ $# -ge 2 ]] || { echo "Missing value for --route-graph-file" >&2; usage; exit 1; }
       ROUTE_GRAPH_FILE="$2"
+      shift 2
+      ;;
+    --nav-delay)
+      [[ $# -ge 2 ]] || { echo "Missing value for --nav-delay" >&2; usage; exit 1; }
+      NAV_DELAY_SEC="$2"
       shift 2
       ;;
     --robot-name)
@@ -190,6 +197,7 @@ CMD=(
   use_lio:="$USE_LIO"
   nav_profile:="$NAV_PROFILE"
   use_route_server:="$USE_ROUTE_SERVER"
+  nav_delay_sec:="$NAV_DELAY_SEC"
   lidar_points_input_topic:="$LIDAR_POINTS_IN_TOPIC"
   lidar_imu_input_topic:="$LIDAR_IMU_IN_TOPIC"
   distortion_imu_topic:="$DISTORTION_IMU_TOPIC"

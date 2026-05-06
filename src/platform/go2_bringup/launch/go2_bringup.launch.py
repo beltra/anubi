@@ -24,6 +24,7 @@ rviz            : bool   Launch RViz2 (default: true)
 nav_profile     : str    Nav2 profile: default_safe | narrow_gap_1p0m | forward_static
 use_route_server: bool   Launch optional Nav2 route_server scaffold (default: false)
 route_graph_file: str    Route graph GeoJSON file for route_server experiments
+nav_delay_sec  : float  Delay before SLAM and Nav2 start (default: 0.0)
 slam_params     : str    Override slam_toolbox params file
 slam_mode       : str    'mapping' or 'localization' (default: 'mapping')
 use_safety      : bool   Enable safety arbiter (default: true)
@@ -40,7 +41,7 @@ import os
 from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo, OpaqueFunction, TimerAction
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration, PythonExpression
@@ -79,6 +80,8 @@ def generate_launch_description():
                               description="Launch optional Nav2 route_server scaffold"),
         DeclareLaunchArgument("route_graph_file", default_value="",
                               description="Route graph GeoJSON file for route_server experiments"),
+        DeclareLaunchArgument("nav_delay_sec", default_value="0.0",
+                              description="Delay before SLAM and Nav2 start"),
         DeclareLaunchArgument("slam_params",  default_value=default_slam),
         DeclareLaunchArgument("slam_mode",    default_value="mapping",
                               description="'mapping' or 'localization'"),
@@ -113,6 +116,7 @@ def generate_launch_description():
     nav_profile  = LaunchConfiguration("nav_profile")
     use_route_server = LaunchConfiguration("use_route_server")
     route_graph_file = LaunchConfiguration("route_graph_file")
+    nav_delay_sec = LaunchConfiguration("nav_delay_sec")
     slam_params  = LaunchConfiguration("slam_params")
     slam_mode    = LaunchConfiguration("slam_mode")
     use_ekf_fusion = LaunchConfiguration("use_ekf_fusion")
@@ -293,6 +297,11 @@ def generate_launch_description():
         condition=IfCondition(rviz),
     )
 
+    delayed_nav_stack = TimerAction(
+        period=nav_delay_sec,
+        actions=[slam, nav2],
+    )
+
     return LaunchDescription(args + [
         robot_state_publisher,
         go2_hw_bridge,
@@ -301,7 +310,6 @@ def generate_launch_description():
         ekf,
         lidar_odom_relay,
         lio,
-        slam,
-        nav2,
+        delayed_nav_stack,
         rviz2,
     ])
