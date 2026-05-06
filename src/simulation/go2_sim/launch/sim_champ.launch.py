@@ -179,7 +179,7 @@ def generate_launch_description():
 
         if use_lio.perform(context).lower() == "true":
             ekf_params.extend([
-                {"odom1": "/lidar_odom"},
+                {"odom1": "/lidar_odom_reliable"},
                 {"odom1_config": [True, True, False,
                                   False, False, True,
                                   True, True, False,
@@ -203,6 +203,23 @@ def generate_launch_description():
 
     footprint_to_odom_ekf = OpaqueFunction(function=maybe_create_ekf)
 
+    lidar_odom_relay = Node(
+        package="robot_nav",
+        executable="lidar_odom_relay.py",
+        name="lidar_odom_relay",
+        output="screen",
+        parameters=[{
+            "use_sim_time": use_sim_time,
+            "input_topic": "/lidar_odom",
+            "output_topic": "/lidar_odom_reliable",
+            "pose_cov": [0.03, 0.03, 0.05, 0.03, 0.03, 0.02],
+            "twist_cov": [0.02, 0.02, 0.05, 0.02, 0.02, 0.02],
+            "max_pos_speed": 1.5,
+            "max_scale": 100.0,
+        }],
+        condition=IfCondition(use_lio),
+    )
+
     # Static base_footprint->base_link: sim uses fixed z-only (no roll/pitch) because
     # CHAMP two_d_mode doesn't model body tilt. Does not affect Nav2 or SLAM accuracy
     # with gravity-aligned point clouds.
@@ -217,10 +234,10 @@ def generate_launch_description():
             "--frame-id", "base_footprint", "--child-frame-id", "base_link",
         ],
     )
-    lidar_stabilized_tf = Node(
+    lidar_level_frame_publisher = Node(
         package="robot_nav",
-        executable="imu_stabilized_tf.py",
-        name="imu_stabilized_tf",
+        executable="lidar_level_frame_publisher",
+        name="lidar_level_frame_publisher",
         output="screen",
         parameters=[{
             "use_sim_time":    use_sim_time,
@@ -394,8 +411,9 @@ def generate_launch_description():
         velocity_limiter,
         quadruped_controller_node,
         footprint_to_odom_ekf,
+        lidar_odom_relay,
         base_footprint_to_base_link_tf,
-        lidar_stabilized_tf,
+        lidar_level_frame_publisher,
         map_to_odom_tf,
         controller_spawner_js,
         controller_spawner_effort,

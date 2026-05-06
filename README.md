@@ -38,7 +38,7 @@ src/
 ### TF tree (full chain)
 
 ```
-map --(slam_toolbox)--> odom --(EKF)--> base_footprint --(imu_stabilized_tf)--> lidar_stabilized
+map --(slam_toolbox)--> odom --(EKF)--> base_footprint --(lidar_level_frame_publisher)--> lidar_stabilized
                                              |
                                              +--(URDF)--> base_link
                                                               +--> lidar_link
@@ -54,13 +54,13 @@ Go2 hardware
   |       +--> go2_hw_bridge --> /odom_raw
   |                                +--> EKF --> /odom + TF(odom -> base_footprint)
   |
-  +-- /lidar/points  [PointCloud2]
-          +--> robot_lio --> /lidar/imu + /lidar_odom (optional, LIO backend)
-          |
-          +--> distortion_corrector (HW) / cloud_self_filter (sim)
-                   +--> /lidar/points_undistorted  [frame: lidar_stabilized]
-                            +--> pointcloud_to_laserscan --> /scan --> slam_toolbox --> /map
-                            +--> Nav2 STVL costmap (direct PointCloud2)
+  +-- /utlidar/cloud + /unilidar/imu
+          +--> robot_lio relay --> /lidar/points + /lidar/imu
+                                      |
+                                      +--> distortion_corrector (C++, sim and HW)
+                                               +--> /lidar/points_undistorted  [frame: lidar_stabilized]
+                                                        +--> pointcloud_to_laserscan --> /scan --> slam_toolbox --> /map
+                                                        +--> Nav2 STVL costmap + collision_monitor
 
 Nav2 --> /cmd_vel --> collision_monitor --> /cmd_vel_collision_free
     +--> [velocity_limiter safety arbiter] --> /cmd_vel_safe
@@ -89,7 +89,8 @@ All packages are in this workspace; no upstream workspace needed at runtime.
 > **Assumption A1:** The Go2 robot's internal ROS2 bridge is running and publishing:
 > - `/sportmodestate` -- `unitree_go/SportModeState` (proprioceptive state, ~50 Hz)
 > - `/lowstate` -- `unitree_go/LowState` (low-level state; used for battery data)
-> - `/lidar/points` -- `sensor_msgs/PointCloud2` (3D LiDAR)
+> - `/utlidar/cloud` -- `sensor_msgs/PointCloud2` (3D LiDAR, relayed to `/lidar/points`)
+> - `/unilidar/imu` -- `sensor_msgs/Imu` (LiDAR IMU, relayed to `/lidar/imu`)
 >
 > `/lowstate` is used only for battery reporting in `RobotStatus`.  If the bridge
 > does not publish it, navigation still works but `battery_soc` and `battery_voltage`
@@ -162,12 +163,15 @@ Script options:
 
 The Unitree Go2 internal software must publish:
 - `/sportmodestate`  (`unitree_go/SportModeState`)
-- `/lidar/points`  (`sensor_msgs/PointCloud2`)
+- `/utlidar/cloud`  (`sensor_msgs/PointCloud2`)
+- `/unilidar/imu`  (`sensor_msgs/Imu`)
 
 And subscribe to:
 - `/api/sport/request`  (`unitree_api/Request`)
 
 Refer to the Unitree Go2 ROS 2 SDK documentation for activating the bridge.
+`robot_lio` relays the LiDAR topics into the stack as `/lidar/points` and
+`/lidar/imu`.
 
 ### Step 2 -- Map the environment (first time only)
 
@@ -230,15 +234,16 @@ The simulation layer is fully implemented. **No hardware required.**
 source /opt/ros/humble/setup.bash
 source /ws/anubi/install/setup.bash
 
-# Full simulation -- office world (default), mapping mode, with GUI and RViz
+# Full simulation -- office world (default), mapping mode, headless by default
 ros2 launch robot_sim sim_bringup.launch.py
 
-# Warehouse world, localization with a saved map, no GUI
+# Warehouse world, localization with a saved map, Gazebo GUI + RViz enabled
 ros2 launch robot_sim sim_bringup.launch.py \
     world:=$(ros2 pkg prefix sim_worlds)/share/sim_worlds/worlds/warehouse.world \
     slam_mode:=localization \
     map:=/ws/anubi/src/autonomy/robot_nav/maps/my_map \
-    gui:=false
+    gui:=true \
+    use_rviz:=true
 ```
 
 ### Runtime obstacle management
@@ -305,13 +310,13 @@ Ordered by current value to the project. Difficulty is a rough implementation es
 | 9 | M | Safety | Add speed-limit publishers for zones and degraded state | Feed Nav2's `/speed_limit` from route metadata, narrow spaces, low localization confidence, or safety degradation. This allows smoother risk-aware motion instead of only stop/slow/normal behavior. |
 | 10 | M | Validation | Add launch smoke tests for sim and real contracts | Use `launch_testing` or scripted smoke tests to start core launch files and assert required topics, lifecycle nodes, and TF links from `docs/topic_map.md`. This catches broken launch wiring early. |
 | 11 | L | Validation | Add CI for build, unit tests, launch checks, and lint | Create GitHub Actions or another CI runner for `colcon build`, `colcon test`, Python linting, C++ linting, and non-GUI launch checks. This turns the workspace into a repeatable engineering artifact instead of a local-only stack. |
-| 12 | M | Validation | Expand unit tests for custom nodes | Add tests for `velocity_limiter`, `lidar_odom_relay`, `distortion_corrector`, `imu_stabilized_tf`, `scenario_manager`, and `go2_hw_bridge` parameter behavior. This protects the custom integration logic that ROS packages will not test for you. |
+| 12 | M | Validation | Expand unit tests for custom nodes | Add tests for `velocity_limiter`, `lidar_odom_relay`, `distortion_corrector`, `lidar_level_frame_publisher`, `scenario_manager`, and `go2_hw_bridge` parameter behavior. This protects the custom integration logic that ROS packages will not test for you. |
 | 13 | M | Validation | Add a topic-map contract checker | Write a script that compares launch/config references against `docs/topic_map.md` and flags undocumented topic or TF changes. This reinforces the repo's stated source of truth. |
 | 14 | M | Validation | Add rosbag-based replay tests | Record short sim and real bags for odom, IMU, LiDAR, TF, and commands, then replay them through perception/localization/safety nodes. This enables deterministic debugging of failures seen on the robot. |
 | 15 | M | Localization | Harden localization mode and map lifecycle | Clarify when to use slam_toolbox localization versus AMCL/map_server, add validation for `.posegraph`, `.data`, `.yaml`, and `.pgm` assets, and document migration between mapping and localization runs. This reduces map workflow confusion. |
 | 16 | L | Localization | Calibrate and validate LIO fusion | Turn optional DLIO into a measured feature: tune covariances, test degeneration cases, log reliability scale, and decide when EKF should consume or ignore `/lidar_odom_reliable`. This can improve odometry while avoiding over-trusting bad scan matches. |
 | 17 | M | Perception | Finish dynamic obstacle tracking | Replace the placeholder `dynamic_obstacle_tracker.py` with clustering, velocity estimation, and projected obstacle points for local costmaps. This improves behavior around moving people, forklifts, and carts. |
-| 18 | M | Perception | Add point cloud quality metrics | Publish counts/rates for raw, filtered, stale-dropped, floor-filtered, and scan-converted clouds. This makes LiDAR degradation, self-filter mistakes, and simulation/hardware differences much easier to diagnose. |
+| 18 | M | Perception | Add point cloud quality metrics | Publish counts/rates for raw, self-filtered, deskewed, passthrough, and scan-converted clouds. This makes LiDAR degradation, self-filter mistakes, and simulation/hardware differences much easier to diagnose. |
 | 19 | M | Navigation | Benchmark and select Nav2 profiles systematically | Extend `run_mppi_suite.sh` into a profile comparison suite for `default_safe`, `narrow_gap_1p0m`, `forward_static`, and 2D fallback profiles. This makes planner/controller tuning evidence-based. |
 | 20 | L | Navigation | Complete route-server workflows | Add route graph authoring examples, loader validation, RViz visualization, and scenario tests for `use_route_server:=true`. This brings the project closer to industrial site navigation over preferred lanes and checkpoints. |
 | 21 | L | Navigation | Add waypoint missions and task execution | Build first-class waypoint/mission files for patrols, inspections, waits, and route constraints. This moves the stack from single-goal demos toward repeatable industrial workflows. |

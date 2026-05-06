@@ -10,6 +10,7 @@ Gazebo simulation bringup package for the Go2 autonomy stack.
 
 ```
 go2_sim/sim_champ.launch.py  (Ignition Gazebo + ros_ign_bridge + CHAMP + EKFs)
+    +  distortion_corrector  (/lidar/points -> /lidar/points_undistorted)
     +  slam.launch.py        (pointcloud_to_laserscan + slam_toolbox, use_sim_time=true)
     +  nav2.launch.py        (Nav2 navigation stack, use_sim_time=true)
     +  RViz2                 (optional, reuses robot_nav/rviz/nav2.rviz)
@@ -18,16 +19,21 @@ go2_sim/sim_champ.launch.py  (Ignition Gazebo + ros_ign_bridge + CHAMP + EKFs)
 `go2_hw_bridge` is **not** started. Simulation provides the same navigation-facing
 topics (`/lidar/points`, `/scan`, `/odom`, `/cmd_vel`) through CHAMP + SLAM/Nav2.
 
-TF chain in simulation (identical to real robot):
+TF chain in simulation:
 
 ```
 map ─(slam_toolbox)─► odom ─(CHAMP EKF chain)─► base_footprint
+                                                  ├─(lidar_level_frame_publisher)─► lidar_stabilized
                                                   └─(URDF)─► base_link
                                                                   ├──► lidar_link
                                                                   └──► imu_link
 ```
 
 All Nav2 configuration is shared with the real robot (`robot_nav/`).
+Simulation uses the same processed LiDAR topic contract as hardware. The only
+mount difference is the Fortress gpu_lidar workaround: sim uses a right-side-up
+`lidar_link` with `mount_rotation_mode:=direct`, while hardware uses the real
+upside-down mount with `mount_rotation_mode:=inverse`.
 
 ---
 
@@ -37,15 +43,16 @@ All Nav2 configuration is shared with the real robot (`robot_nav/`).
 source /opt/ros/humble/setup.bash
 source /ws/anubi/install/setup.bash
 
-# Full sim — indoor office world (default), mapping mode, Gazebo GUI + RViz
+# Full sim — indoor office world (default), mapping mode, headless
 ros2 launch robot_sim sim_bringup.launch.py
 
-# Warehouse world, localization with a saved map, no GUI
+# Warehouse world, localization with a saved map, Gazebo GUI + RViz enabled
 ros2 launch robot_sim sim_bringup.launch.py \
     world:=$(ros2 pkg prefix sim_worlds)/share/sim_worlds/worlds/warehouse.world \
     slam_mode:=localization \
     map:=/ws/anubi/src/autonomy/robot_nav/maps/my_map \
-    gui:=false
+    gui:=true \
+    use_rviz:=true
 
 # Nav2-only restart entry point is not provided in the current tree.
 ```
@@ -62,11 +69,11 @@ ros2 launch robot_sim sim_bringup.launch.py \
 | `robot` | `go2` | Robot model: `go2` or `d1` |
 | `slam_mode` | `mapping` | `mapping` or `localization` |
 | `map` | `''` | Path to `.posegraph` file (localization mode only) |
-| `use_rviz` | `true` | Launch RViz2 |
+| `use_rviz` | `false` | Launch RViz2 |
 | `slam_params` | robot_nav default | slam_toolbox params YAML override |
 | `nav_params` | robot_nav default | Nav2 params YAML override |
 | `spawn_z` | `0.05` m | Robot Z spawn height (slight ground clearance) |
-| `gui` | `true` | Show Gazebo gzclient GUI |
+| `gui` | `false` | Show Gazebo gzclient GUI |
 
 ## Obstacle Management
 

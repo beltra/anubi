@@ -29,9 +29,10 @@ slam_mode       : str    'mapping' or 'localization' (default: 'mapping')
 use_safety      : bool   Enable safety arbiter (default: true)
 use_ekf_fusion  : bool   EKF odom fusion (default: true)
 use_lio         : bool   Enable DLIO LiDAR-inertial odometry (default: false)
-  recovery_ack_key_mask : int Controller START key mask for tilt recovery
-  resume_key_mask       : int Controller key mask for Nav2 resume and replan
-  abort_key_mask        : int Controller key mask for controlled Nav2 abort
+distortion_imu_topic: str IMU topic used by LiDAR correction (default: /imu/data)
+recovery_ack_key_mask : int Controller START key mask for tilt recovery
+resume_key_mask       : int Controller key mask for Nav2 resume and replan
+abort_key_mask        : int Controller key mask for controlled Nav2 abort
 """
 
 import os
@@ -89,6 +90,11 @@ def generate_launch_description():
                               description="Raw LiDAR pointcloud topic to relay to /lidar/points"),
         DeclareLaunchArgument("lidar_imu_input_topic", default_value="/utlidar/imu",
                               description="Raw LiDAR IMU topic to relay to /lidar/imu"),
+        DeclareLaunchArgument(
+            "distortion_imu_topic",
+            default_value="/imu/data",
+            description="IMU topic used by distortion_corrector; set /lidar/imu for timing comparison",
+        ),
         DeclareLaunchArgument("use_safety",   default_value="true",
                               description="Enable safety arbiter; go2_hw_bridge reads /cmd_vel_safe"),
         DeclareLaunchArgument("recovery_ack_key_mask", default_value="0",
@@ -113,6 +119,7 @@ def generate_launch_description():
     use_lio = LaunchConfiguration("use_lio")
     lidar_points_input_topic = LaunchConfiguration("lidar_points_input_topic")
     lidar_imu_input_topic = LaunchConfiguration("lidar_imu_input_topic")
+    distortion_imu_topic = LaunchConfiguration("distortion_imu_topic")
     use_safety   = LaunchConfiguration("use_safety")
     recovery_ack_key_mask = LaunchConfiguration("recovery_ack_key_mask")
     resume_key_mask = LaunchConfiguration("resume_key_mask")
@@ -148,10 +155,10 @@ def generate_launch_description():
             "odom_topic": PythonExpression(["'/odom_raw' if '", use_ekf_fusion, "' == 'true' else '/odom'"]),
         }],
     )
-    lidar_stabilized_tf = Node(
+    lidar_level_frame_publisher = Node(
         package="robot_nav",
-        executable="imu_stabilized_tf.py",
-        name="imu_stabilized_tf",
+        executable="lidar_level_frame_publisher",
+        name="lidar_level_frame_publisher",
         output="screen",
         parameters=[{
             "use_sim_time":    use_sim_time,
@@ -209,9 +216,11 @@ def generate_launch_description():
             "input_topic":  "/lidar_odom",
             "output_topic": "/lidar_odom_reliable",
             # pose diagonal [x, y, z, roll, pitch, yaw] in m^2 / rad^2
-            "pose_cov":  [0.005, 0.005, 0.05, 0.005, 0.005, 0.002],
+            "pose_cov":  [0.03, 0.03, 0.05, 0.03, 0.03, 0.02],
             # twist diagonal [vx, vy, vz, vroll, vpitch, vyaw]
-            "twist_cov": [0.01, 0.01, 0.05, 0.005, 0.005, 0.005],
+            "twist_cov": [0.02, 0.02, 0.05, 0.02, 0.02, 0.02],
+            "max_pos_speed": 1.5,
+            "max_scale": 100.0,
         }],
         condition=IfCondition(use_lio),
     )
@@ -256,6 +265,7 @@ def generate_launch_description():
             "slam_params":  slam_params,
             "slam_mode":    slam_mode,
             "map":          map_path,
+            "distortion_imu_topic": distortion_imu_topic,
         }.items(),
     )
 
@@ -286,7 +296,7 @@ def generate_launch_description():
     return LaunchDescription(args + [
         robot_state_publisher,
         go2_hw_bridge,
-        lidar_stabilized_tf,
+        lidar_level_frame_publisher,
         safety,
         ekf,
         lidar_odom_relay,

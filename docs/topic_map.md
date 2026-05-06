@@ -1,7 +1,7 @@
 # Topic Map - Anubi Autonomy Stack
 
 Last updated: 2026-05-06
-Branch: `feat/lio`
+Branch: `feat/sim2real`
 
 This document is the authoritative reference for all ROS 2 topics in the anubi stack.
 "Sim name" and "HW name" columns are filled only when the two differ.
@@ -12,10 +12,10 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 
 | Topic | Type | Publisher | Consumer(s) | Sim | HW | Notes |
 |-------|------|-----------|-------------|-----|----|-------|
-| `/lidar/points` | `sensor_msgs/PointCloud2` | gazebo_bridge (sim) / `robot_lio` relay of `/utlidar/cloud` (HW) | `cloud_self_filter` (sim), `distortion_corrector` (HW), `dlio_odom_node` (opt.) | same | same | Frame: `lidar_link`. Rate: 10 Hz. Raw sensor output - **not consumed directly by Nav2 or SLAM**. |
-| `/lidar/points_undistorted` | `sensor_msgs/PointCloud2` | `cloud_self_filter` (sim) / `distortion_corrector` (HW) | `pointcloud_to_laserscan`, Nav2 STVL costmap | same | same | Frame: `lidar_stabilized`. Gravity-aligned processed cloud. Input to all downstream consumers. |
-| `/scan` | `sensor_msgs/LaserScan` | `pointcloud_to_laserscan` | `slam_toolbox`, `obstacle_layer` | same | same | Derived from `/lidar/points` horizontal slice (+/-10 mm around equator). |
-| `/imu/data` | `sensor_msgs/Imu` | gazebo_bridge (sim) / `go2_hw_bridge` (HW) | EKF (`footprint_to_odom_ekf` in sim, `ekf_filter_node` on HW) | published | published | Body IMU in `imu_link`. Not the LiDAR IMU. |
+| `/lidar/points` | `sensor_msgs/PointCloud2` | gazebo_bridge (sim) / `robot_lio` relay of `/utlidar/cloud` (HW) | `distortion_corrector`, `dlio_odom_node` (opt.) | same | same | Frame: `lidar_link`. Raw sensor output; RViz fixed frame `map` applies TF, so a real flat floor should still look flat in `map`. **Not consumed directly by Nav2 or SLAM**. |
+| `/lidar/points_undistorted` | `sensor_msgs/PointCloud2` | `distortion_corrector` | `pointcloud_to_laserscan`, Nav2 STVL costmap, `collision_monitor` | same | same | Frame: `lidar_stabilized` when IMU state is available. Single processed cloud: self-filtered, trunk-stabilized, and optionally deskewed on HW. No ground/floor removal. Input to all downstream consumers. |
+| `/scan` | `sensor_msgs/LaserScan` | `pointcloud_to_laserscan` | `slam_toolbox`, `obstacle_layer` | same | same | Derived from `/lidar/points_undistorted` horizontal slice (+/-12 cm around equator). |
+| `/imu/data` | `sensor_msgs/Imu` | gazebo_bridge (sim) / `go2_hw_bridge` (HW) | EKF (`footprint_to_odom_ekf` in sim, `ekf_filter_node` on HW), `distortion_corrector` | published | published | Body IMU in `imu_link`. Default correction IMU. Set `distortion_imu_topic:=/lidar/imu` to compare LiDAR IMU timing. |
 | `/lidar/imu` | `sensor_msgs/Imu` | `robot_lio` relay (sim/HW) | optional LIO backend | same | same | Canonical LiDAR-integrated IMU topic for LIO. |
 | `/joint_states` | `sensor_msgs/JointState` | `joint_state_publisher_system` (sim only) | `robot_state_publisher`, CHAMP | published | absent | SIM-ONLY. HW uses Sport Mode API; no joint-level state is published on real robot. |
 
@@ -40,9 +40,9 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 | `map -> odom` | `slam_toolbox` | same | same | Published by slam_toolbox during active SLAM. Static identity fallback available via `publish_map_to_odom_tf:=true` launch arg (for testing without SLAM). |
 | `odom -> base_footprint` | EKF (`footprint_to_odom_ekf` in sim / `ekf_filter_node` on HW) | same | same | EKF owns this TF in both environments. |
 | `base_footprint -> base_link` | `static_transform_publisher` (sim) / `go2_hw_bridge` (HW) | same | same | Sim uses fixed standing-height offset; HW includes body roll/pitch plus standing height. |
-| `base_link -> lidar_link` | URDF / `robot_state_publisher` | same | same | xyz=(0.28945, 0, -0.046825), rpy=(pi, -0.26180, 0). Sensor is mounted **upside-down** with ~15 deg forward pitch. |
+| `base_link -> lidar_link` | URDF / `robot_state_publisher` | rpy=(0, -0.26180, 0) | rpy=(pi, -0.26180, 0) | xyz=(0.28945, 0, -0.046825). Sim uses a right-side-up Fortress workaround; HW is upside-down with ~15 deg forward pitch. |
 | `base_link -> imu_link` | URDF / `robot_state_publisher` | same | same | Identity (co-located with base_link). |
-| `base_footprint -> lidar_stabilized` | `imu_stabilized_tf` node | same | same | Dynamic TF at IMU rate. Gravity-levelled LiDAR frame: tracks physical LiDAR position while holding zero roll/pitch. Used as frame_id for undistorted clouds when gravity_align is enabled. |
+| `base_footprint -> lidar_stabilized` | `lidar_level_frame_publisher` | same | same | Dynamic TF at IMU rate. Gravity-levelled LiDAR frame: tracks physical LiDAR position while holding zero roll/pitch. Used as frame_id for undistorted clouds when gravity_align is enabled. |
 | `lidar_link -> lidar_imu_link` | URDF / `robot_state_publisher` (sim) / `robot_lio` static TF (HW) | URDF | robot_lio TF | Unitree UniLidar IMU offset: xyz=(-0.007698, -0.014655, 0.00667). Sim: always in URDF. HW: published by `robot_lio` (always included from `go2_bringup`; absent when using `go2_hardware.launch.py` alone). |
 
 ---
@@ -82,6 +82,7 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 | `/joystick_override` | `std_msgs/Bool` | `joystick_safety` | `velocity_limiter` | absent | published | True while operator override is latched. Any operator motion cancels Nav2 and holds `/cmd_vel_safe` at zero. Resume clears override and resends the latest `/goal_pose`; abort clears the active goal and leaves Nav2 idle. |
 | `/safety/tilt_estop` | `std_msgs/Bool` | `tilt_monitor` | `velocity_limiter` | absent | published | Latched true when body roll/pitch exceeds the configured estop threshold; clears only below clear threshold with calibrated controller ack. |
 | `/safety/command_source` | `std_msgs/String` | `velocity_limiter` | operators/diagnostics | same | same | Current final arbiter state: `nav`, `estop`, `tilt_estop`, `joystick_override`, `watchdog`, or `waiting_for_cmd`. |
+| `/diagnostics/lidar_correction` | `diagnostic_msgs/DiagnosticArray` | `distortion_corrector` when `publish_diagnostics:=true` | operators / diagnostics tools | opt-in | opt-in | Lightweight counters/timing only: deskew applied, gravity alignment applied, nearest IMU/odom age, processing time, processed/passthrough counts, and self-filter count. Disabled by default. |
 
 ---
 

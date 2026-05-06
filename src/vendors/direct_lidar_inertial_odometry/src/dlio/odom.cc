@@ -13,7 +13,9 @@
 #include "dlio/odom.h"
 #include "dlio/utils.h"
 
+#include <algorithm>
 #include <queue>
+#include <limits>
 
 #include "rclcpp/qos.hpp"
 
@@ -526,6 +528,9 @@ void dlio::OdomNode::getScanFromROS(const sensor_msgs::msg::PointCloud2::SharedP
     } else if (field.name == "timestamp" && original_scan_->points[0].timestamp > 1e14) {
       this->sensor = dlio::SensorType::LIVOX;
       break;
+    } else if (field.name == "time_stamp") {
+      this->sensor = dlio::SensorType::UNITREE;
+      break;
     }
   }
 
@@ -647,6 +652,35 @@ void dlio::OdomNode::deskewPointcloud() {
       { return p1.value().timestamp != p2.value().timestamp; };
     extract_point_time = [&sweep_ref_time](boost::range::index_value<PointType&, long> pt)
       { return pt.value().timestamp * 1e-9f; };
+  } else if (this->sensor == dlio::SensorType::UNITREE) {
+    double min_value = std::numeric_limits<double>::infinity();
+    double max_abs = 0.0;
+    for (const auto & point : this->original_scan->points) {
+      const double value = point.time_stamp;
+      if (std::isfinite(value)) {
+        min_value = std::min(min_value, value);
+        max_abs = std::max(max_abs, std::abs(value));
+      }
+    }
+
+    double scale = 1.0;
+    if (max_abs <= 1.0) {
+      scale = 1.0;
+    } else if (max_abs <= 1e3) {
+      scale = 1e-3;
+    } else if (max_abs <= 1e6) {
+      scale = 1e-6;
+    } else {
+      scale = 1e-9;
+    }
+
+    point_time_cmp = [](const PointType& p1, const PointType& p2)
+      { return p1.time_stamp < p2.time_stamp; };
+    point_time_neq = [](boost::range::index_value<PointType&, long> p1,
+                        boost::range::index_value<PointType&, long> p2)
+      { return p1.value().time_stamp != p2.value().time_stamp; };
+    extract_point_time = [min_value, scale, &sweep_ref_time](boost::range::index_value<PointType&, long> pt)
+      { return sweep_ref_time + (pt.value().time_stamp - min_value) * scale; };
   }
 
   // copy points into deskewed_scan_ in order of timestamp

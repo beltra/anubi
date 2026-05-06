@@ -3,7 +3,7 @@ sim_bringup.launch.py — Full Gazebo Fortress + CHAMP + Nav2 simulation bringup
 
 Starts:
   1. go2_sim/sim_champ.launch.py   (Gazebo, CHAMP, bridges, EKF, TF)
-  2. cloud_self_filter.py          (/lidar/points -> /lidar/points_undistorted, sim only)
+  2. distortion_corrector          (/lidar/points -> /lidar/points_undistorted)
   3. robot_nav/slam.launch.py      (optional via start_nav:=true)
   4. robot_nav/nav2.launch.py      (optional via start_nav:=true)
   5. RViz2                         (optional)
@@ -62,7 +62,7 @@ def generate_launch_description():
             default_value="indoor_office",
             description="Gazebo world name used in transport topic paths",
         ),
-        DeclareLaunchArgument("gui", default_value="true"),
+        DeclareLaunchArgument("gui", default_value="false"),
         DeclareLaunchArgument("robot_name", default_value="go2"),
         DeclareLaunchArgument("ros_control_file", default_value=default_ros_control),
         DeclareLaunchArgument("world_init_x", default_value="0.0"),
@@ -89,7 +89,7 @@ def generate_launch_description():
         DeclareLaunchArgument("map", default_value=""),
         DeclareLaunchArgument("slam_params", default_value=default_slam_params),
         DeclareLaunchArgument("launch_cloud_filter", default_value="false"),
-        DeclareLaunchArgument("use_rviz", default_value="true"),
+        DeclareLaunchArgument("use_rviz", default_value="false"),
         DeclareLaunchArgument("rviz_config", default_value=default_rviz_config),
     ]
 
@@ -164,12 +164,10 @@ def generate_launch_description():
 
     lio = OpaqueFunction(function=maybe_include_lio)
 
-    # Simulation only: real L1 has 0.8 m hardware min range, body never appears.
-    # Gazebo uses range_min=0.1 m, so body returns must be filtered in software.
-    nav_cloud_filter = Node(
+    lidar_cloud_processor = Node(
         package="robot_nav",
-        executable="cloud_self_filter.py",
-        name="cloud_self_filter",
+        executable="distortion_corrector",
+        name="distortion_corrector",
         output="screen",
         parameters=[{
             "use_sim_time": use_sim_time,
@@ -178,8 +176,16 @@ def generate_launch_description():
             # Sim mounts L1 right-side-up (rpy=0,-0.262,0) to work around a Fortress
             # gpu_lidar rendering bug; real hardware uses sensor_mount_rpy=[pi,-0.262,0].
             "sensor_mount_rpy": [0.0, -0.26179938779915, 0.0],
+            "mount_rotation_mode": "direct",
+            "deskew_enabled": False,
+            "use_twist": False,
+            "use_imu": True,
+            "imu_timeout_sec": 0.25,
+            "filter_self": True,
             "gravity_align": True,
             "gravity_align_frame": "lidar_stabilized",
+            "publish_diagnostics": False,
+            "output_stamp_mode": "input",
         }],
         condition=IfCondition(start_nav),
     )
@@ -249,7 +255,7 @@ def generate_launch_description():
     return LaunchDescription(args + [
         champ_sim,
         lio,
-        nav_cloud_filter,
+        lidar_cloud_processor,
         debug_cloud_filter,
         start_nav_stack,
         rviz,

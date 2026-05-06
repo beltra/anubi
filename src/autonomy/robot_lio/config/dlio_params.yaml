@@ -11,15 +11,17 @@
   ros__parameters:
     use_sim_time: false
     publish_tf: false
+    map/waitUntilMove: true
 
     frames/odom: odom
     frames/baselink: base_link
     frames/lidar: dlio_lidar_link
     frames/imu: dlio_imu_link
 
-    adaptive: true
+    adaptive: false
     pointcloud/deskew: true
     pointcloud/voxelize: true
+    odom/preprocessing/voxelFilter/res: 0.25
 
     odom/computeTimeOffset: true
     odom/imu/approximateGravity: true
@@ -28,10 +30,14 @@
     odom/imu/calibration/time: 3.0
     odom/imu/bufferSize: 5000
 
-    # Keyframe thresholds: build a new submap keyframe every 20 cm or ~20 deg.
-    # DLIO defaults (0.5 m, 5 rad) are too coarse for indoor L1 LiDAR trajectories.
+    odom/gicp/minNumPoints: 64
+    odom/gicp/kCorrespondences: 16
+    odom/gicp/maxCorrespondenceDistance: 0.5
+
+    # Keyframe thresholds: build a new submap keyframe every 20 cm or 20 deg.
+    # DLIO compares rotation in degrees, so 20.0 means 20 degrees.
     odom/keyframe/threshD: 0.20
-    odom/keyframe/threshR: 0.349
+    odom/keyframe/threshR: 20.0
 
     # base_link -> lidar_link; URDF rpy (pi, -pi/12, 0)
     # R = Ry(-pi/12) * Rx(pi)

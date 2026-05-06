@@ -6,7 +6,7 @@ Robot-agnostic navigation package for Nav2 + slam_toolbox.
 
 ```
 /lidar/points (PointCloud2)
-  -> distortion_corrector
+  -> distortion_corrector (C++)
   -> /lidar/points_undistorted
   -> pointcloud_to_laserscan
   -> /scan (LaserScan)
@@ -37,8 +37,20 @@ Nav2 /cmd_vel_nav -> velocity_smoother -> /cmd_vel -> collision_monitor -> /cmd_
 | `config/nav2_params_navfn.yaml` | STVL + NavFn profile |
 | `config/slam_toolbox_params.yaml` | SLAM tuning |
 | `config/scan_from_cloud.yaml` | PointCloud2 -> LaserScan conversion |
-| `config/distortion_corrector.yaml` | Point cloud deskew and gravity alignment |
+| `config/distortion_corrector.yaml` | Single-node LiDAR self-filtering, trunk stabilization, and optional HW deskew |
 | `config/collision_monitor_params.yaml` | Collision monitor zones and sources |
+
+## LiDAR processing
+
+`/lidar/points` is the raw sensor topic. It is still displayed through TF in
+RViz, so with fixed frame `map` a flat floor should appear flat even when the
+physical `lidar_link` is pitched.
+
+`distortion_corrector` is the only runtime processor for `/lidar/points`.
+It publishes `/lidar/points_undistorted`, removes robot self-detections when
+configured, stabilizes the cloud against trunk roll/pitch when IMU state is
+available, and optionally deskews on the real robot. It does not remove ground
+or floor points.
 
 ## SLAM modes
 

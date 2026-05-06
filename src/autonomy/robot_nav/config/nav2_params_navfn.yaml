@@ -228,7 +228,7 @@ local_costmap:
           filter: "voxel"
           voxel_min_points: 2       # require 2 hits before marking - rejects single-point ghost returns
           clear_after_reading: true
-          sensor_origin_frame: lidar_stabilized  # gravity-levelled frame; imu_stabilized_tf tracks physical sensor position
+          sensor_origin_frame: lidar_stabilized  # gravity-levelled frame; lidar_level_frame_publisher tracks physical sensor position
           max_z: 2.5    # STVL voxel volume upper bound (m above lidar_link origin; covers standing humans)
           min_z: 0.0    # STVL voxel volume lower bound (ground plane, no below-ground voxels)
 

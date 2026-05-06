@@ -6,10 +6,10 @@
       pantograph_leg : false
       odom_scaler: 0.9
       max_linear_velocity_x : 1.5
-      max_linear_velocity_y : 0.4    # matches go2_params.yaml max_lateral_vel
-      max_angular_velocity_z : 1.3   # slightly higher yaw rate, still below Go2 sustained limit of ~1.5 rad/s
+      max_linear_velocity_y : 0.5
+      max_angular_velocity_z : 1.3   # Go2 limit  1.5 rad/s
       com_x_translation: -0.03
       swing_height : 0.035
-      stance_depth : 0.00
-      stance_duration : 0.20
+      stance_depth : 0.01
+      stance_duration : 0.15
       nominal_height : 0.280  # must match standing_height in go2_description/urdf/go2.urdf.xacro

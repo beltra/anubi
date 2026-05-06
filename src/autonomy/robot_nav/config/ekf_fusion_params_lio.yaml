@@ -12,10 +12,9 @@
 #                                 Angular velocity (vyaw) excluded: Go2 active balance control
 #                                 produces a non-zero gyro bias at rest, which integrates into
 #                                 a continuous yaw drift between 10 Hz DLIO updates.
-#   imu0                        : NOT USED in LIO mode. Raw IMU vyaw bias (from active balance
-#                                 control) was causing the map to rotate when the robot is still.
-#                                 DLIO already fuses the LiDAR IMU internally; double-fusing
-#                                 the body IMU on top degrades rather than improves the estimate.
+#   imu0                        : NOT USED in LIO mode. Raw IMU vyaw bias was causing the map to rotate
+#                                 when the robot is still. DLIO already fuses the LiDAR IMU internally;
+#                                 double-fusing the body IMU on top degrades rather than improves the estimate.
 #   odom1 (/lidar_odom_reliable): DLIO output with adaptive covariances (via lidar_odom_relay).
 #                                 Primary source for position, heading, and angular velocity.
 #                                 Covariances scale with reliability signals (velocity consistency,

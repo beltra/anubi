@@ -66,8 +66,8 @@ def generate_launch_description():
         ),
         Node(
             package="robot_nav",
-            executable="imu_stabilized_tf.py",
-            name="imu_stabilized_tf",
+            executable="lidar_level_frame_publisher",
+            name="lidar_level_frame_publisher",
             output="screen",
             parameters=[{
                 "use_sim_time":    use_sim_time,

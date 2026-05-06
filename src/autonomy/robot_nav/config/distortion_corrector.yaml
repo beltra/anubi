@@ -10,9 +10,11 @@ distortion_corrector:
     use_twist: true
     use_imu: true
     use_3d_distortion_correction: true
+    deskew_enabled: true
 
     # L1 upside-down mount: roll=pi, pitch=-15 deg (Rx(pi) * Ry(-pi/12))
     sensor_mount_rpy: [3.14159265358979, -0.26179938779915, 0.0]
+    mount_rotation_mode: inverse
 
     scan_period: 0.1  # L1 rotates at 10 Hz
 
@@ -23,28 +25,32 @@ distortion_corrector:
     # cw because Rx(pi) upside-down mount flips arctan2(y,x), reversing apparent scan direction
     azimuth_direction: cw
 
-    passthrough_on_missing_state: true
-    state_timeout_sec: 0.25
+    imu_timeout_sec: 0.25
+    odom_timeout_sec: 0.25
 
-    # Drop stale clouds to avoid feeding old data into SLAM and costmaps
-    drop_stale_clouds: true
-    max_input_delay_sec: 0.25
+    publish_diagnostics: false
+    diagnostics_topic: /diagnostics/lidar_correction
 
     # Preserve input timestamp so downstream TF lookups use the acquisition time.
     # Using "now" caused 13-20 ms shifts that smeared the SLAM map.
     output_stamp_mode: input
 
-    # Gravity alignment: rotate deskewed points to lidar_stabilized (R_body @ R_mount_inv).
-    # Requires imu_stabilized_tf.py to broadcast the lidar_stabilized TF.
+    # Gravity alignment: rotate deskewed points to lidar_stabilized.
+    # Requires lidar_level_frame_publisher to broadcast the lidar_stabilized TF.
     gravity_align: true
     gravity_align_frame: lidar_stabilized
 
-    # Floor filter: drop points below min_world_z to suppress gait-induced floor returns.
-    # Disabled by default; enable for environments where floor sweeps are a problem.
-    filter_floor: false
-    min_world_z: 0.12
+    # Self-filter removes robot-body returns; it does not remove ground/floor.
+    filter_self: true
+    robot_min_x: -0.40
+    robot_max_x: 0.36
+    robot_min_y: -0.20
+    robot_max_y: 0.20
+    robot_min_z: -0.25
+    robot_max_z: 0.10
+    min_radius: 0.12
+
     # Sensor position in base_link frame (from go2_description URDF)
     sensor_x_in_base: 0.28945
     sensor_y_in_base: 0.0
     sensor_z_in_base: -0.046825
-    base_z_nominal: 0.28
