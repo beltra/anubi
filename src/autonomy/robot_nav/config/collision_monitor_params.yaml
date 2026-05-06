@@ -18,7 +18,7 @@ collision_monitor:
 
     CautionZone:
       type: "polygon"
-      points: [0.78, 0.42, 0.78, -0.42, -0.62, -0.42, -0.62, 0.42]
+      points: [0.80, 0.50, 0.80, -0.50, -0.80, -0.50, -0.80, 0.50]
       action_type: "slowdown"
       slowdown_ratio: 0.90
       max_points: 5
@@ -28,7 +28,7 @@ collision_monitor:
 
     SlowZone:
       type: "polygon"
-      points: [0.60, 0.32, 0.60, -0.32, -0.48, -0.32, -0.48, 0.32]
+      points: [0.60, 0.40, 0.60, -0.40, -0.50, -0.40, -0.50, 0.40]
       action_type: "slowdown"
       slowdown_ratio: 0.70
       max_points: 3
@@ -38,7 +38,7 @@ collision_monitor:
 
     StopZone:
       type: "polygon"
-      points: [0.47, 0.24, 0.47, -0.24, -0.38, -0.24, -0.38, 0.24]
+      points: [0.42, 0.22, 0.42, -0.22, -0.42, -0.22, -0.42, 0.22]
       action_type: "stop"
       max_points: 2
       visualize: True

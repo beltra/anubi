@@ -32,3 +32,6 @@ Thumbs.db
 *.codex
 *.claude
 *.pytest_cache
+
+# Local git worktrees
+.worktrees/

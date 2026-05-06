@@ -26,7 +26,7 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 | Topic | Type | Publisher | Consumer(s) | Sim | HW | Notes |
 |-------|------|-----------|-------------|-----|----|-------|
 | `/odom_raw` | `nav_msgs/Odometry` | CHAMP odom bridge (sim) / `go2_hw_bridge` (HW) | EKF fusion node | same | same | Raw body odometry input to EKF. |
-| `/lidar_odom` | `nav_msgs/Odometry` | optional LIO backend (via `robot_lio`) | `lidar_odom_relay` | optional | optional | Disabled by default (`use_lio:=false`). All-zero covariances (DLIO limitation) — never feed directly to the EKF. |
+| `/lidar_odom` | `nav_msgs/Odometry` | optional LIO backend (via `robot_lio`) | `lidar_odom_relay` | optional | optional | Disabled by default (`use_lio:=false`). All-zero covariances (DLIO limitation) - never feed directly to the EKF. |
 | `/lidar_odom_reliable` | `nav_msgs/Odometry` | `lidar_odom_relay` | EKF fusion node | optional | optional | `/lidar_odom` with injected diagonal covariances. Active only when `use_lio:=true`. This is the topic the EKF consumes. |
 | `/odom` | `nav_msgs/Odometry` | `footprint_to_odom_ekf` (sim) / `ekf_filter_node` (HW) | `slam_toolbox`, Nav2 | same | same | Fused odometry output. frame_id=`odom`, child_frame_id=`base_footprint`. |
 | `/map` | `nav_msgs/OccupancyGrid` | `slam_toolbox` | Nav2 global costmap `StaticLayer`, RViz | same | same | Published during mapping mode; used as localization reference in localization mode and by STVL profiles for map-backed global planning. |
@@ -83,6 +83,7 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 | `/safety/tilt_estop` | `std_msgs/Bool` | `tilt_monitor` | `velocity_limiter` | absent | published | Latched true when body roll/pitch exceeds the configured estop threshold; clears only below clear threshold with calibrated controller ack. |
 | `/safety/command_source` | `std_msgs/String` | `velocity_limiter` | operators/diagnostics | same | same | Current final arbiter state: `nav`, `estop`, `tilt_estop`, `joystick_override`, `watchdog`, or `waiting_for_cmd`. |
 | `/diagnostics/lidar_correction` | `diagnostic_msgs/DiagnosticArray` | `distortion_corrector` when `publish_diagnostics:=true` | operators / diagnostics tools | opt-in | opt-in | Lightweight counters/timing only: deskew applied, gravity alignment applied, nearest IMU/odom age, processing time, processed/passthrough counts, and self-filter count. Disabled by default. |
+| `/recovery/diagnostics` | `diagnostic_msgs/DiagnosticArray` | `robot_nav_recovery` BT nodes in `bt_navigator` | operators / diagnostics tools | same | same | Structured Nav2 recovery stage events and terminal TF/localization or recovery-exhaustion diagnostics. |
 
 ---
 
@@ -104,7 +105,8 @@ These follow standard Nav2 Humble topic naming; listed here for completeness.
 | `/goal_pose` | `geometry_msgs/PoseStamped` | Nav2 goal input (RViz -> Nav2). |
 | `/plan` | `nav_msgs/Path` | Global planner output. |
 | `/local_plan` | `nav_msgs/Path` | Local planner trajectory (MPPI by default). |
-| `/costmap_raw` | `nav2_msgs/Costmap` | Raw costmap for debugging. |
+| `/local_costmap/costmap_raw` | `nav2_msgs/Costmap` | Local 2D costmap used by guarded recovery sector checks and behavior collision checking. |
+| `/costmap_raw` | `nav2_msgs/Costmap` | Raw costmap for debugging when remapped by a Nav2 component. |
 | `/cmd_vel_nav` | `geometry_msgs/Twist` | Nav2 controller output before velocity smoothing (see Command Topics above). |
 | `/speed_limit` | `nav2_msgs/SpeedLimit` | Optional controller speed-limit input. No default publisher. |
 

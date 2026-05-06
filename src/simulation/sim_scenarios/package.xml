@@ -18,7 +18,7 @@
 
     Scenario YAML files: share/sim_scenarios/scenarios/
   </description>
-  <maintainer email="todo@example.com">Maintainer</maintainer>
+  <maintainer email="gabriele.beltrami@talosrobotics.ai">Gabriele Beltrami</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_python</buildtool_depend>

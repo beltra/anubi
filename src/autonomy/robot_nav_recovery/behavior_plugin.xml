@@ -1,0 +1,20 @@
+<library path="robot_nav_recovery_behaviors">
+  <class
+    name="robot_nav_recovery/GuardedSpin"
+    type="robot_nav_recovery::GuardedSpin"
+    base_class_type="nav2_core::Behavior">
+    <description>Spin recovery with continuous local costmap collision checking.</description>
+  </class>
+  <class
+    name="robot_nav_recovery/GuardedBackUp"
+    type="robot_nav_recovery::GuardedBackUp"
+    base_class_type="nav2_core::Behavior">
+    <description>Backup recovery guarded by local costmap collision checking.</description>
+  </class>
+  <class
+    name="robot_nav_recovery/GuardedLateralStep"
+    type="robot_nav_recovery::GuardedLateralStep"
+    base_class_type="nav2_core::Behavior">
+    <description>Lateral step recovery guarded by local costmap collision checking.</description>
+  </class>
+</library>
