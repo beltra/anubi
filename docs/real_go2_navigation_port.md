@@ -8,7 +8,7 @@ This port makes the real Go2 Nav2 stack operational with the final command chain
 
 `Nav2 -> velocity_smoother -> collision_monitor -> velocity_limiter -> go2_hw_bridge -> /api/sport/request`
 
-The Go2-specific bridge remains the only publisher of Unitree Sport API commands. The safety layer owns operator preemption and goal recovery. Real-robot LiDAR IMU input now defaults to `/utlidar/imu`.
+The Go2-specific bridge remains the only publisher of Unitree Sport API commands. The safety layer owns operator preemption and goal recovery. Real-robot LiDAR pointcloud input now defaults to `/utlidar/cloud` with frame `utlidar_lidar`; `robot_lio` aliases that frame to `lidar_link`. Real-robot LiDAR IMU input defaults to `/utlidar/imu`.
 
 ## What Changed
 

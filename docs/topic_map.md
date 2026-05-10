@@ -1,6 +1,6 @@
 # Topic Map - Anubi Autonomy Stack
 
-Last updated: 2026-05-06
+Last updated: 2026-05-07
 Branch: `feat/sim2real`
 
 This document is the authoritative reference for all ROS 2 topics in the anubi stack.
@@ -12,9 +12,10 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 
 | Topic | Type | Publisher | Consumer(s) | Sim | HW | Notes |
 |-------|------|-----------|-------------|-----|----|-------|
-| `/lidar/points` | `sensor_msgs/PointCloud2` | gazebo_bridge (sim) / `robot_lio` relay of `/utlidar/cloud` (HW) | `distortion_corrector`, `dlio_odom_node` (opt.) | same | same | Frame: `lidar_link`. Raw sensor output; RViz fixed frame `map` applies TF, so a real flat floor should still look flat in `map`. **Not consumed directly by Nav2 or SLAM**. |
-| `/lidar/points_undistorted` | `sensor_msgs/PointCloud2` | `distortion_corrector` | `pointcloud_to_laserscan`, Nav2 STVL costmap, `collision_monitor` | same | same | Frame: `lidar_stabilized` when IMU state is available. Single processed cloud: self-filtered, trunk-stabilized, and optionally deskewed on HW. No ground/floor removal. Input to all downstream consumers. |
-| `/scan` | `sensor_msgs/LaserScan` | `pointcloud_to_laserscan` | `slam_toolbox`, `obstacle_layer` | same | same | Derived from `/lidar/points_undistorted` horizontal slice (+/-12 cm around equator). |
+| `/lidar/points` | `sensor_msgs/PointCloud2` | gazebo_bridge (sim) / `robot_lio` relay of `/utlidar/cloud` (HW) | `distortion_corrector`, `dlio_odom_node` (opt.) | frame: `lidar_link` | frame: `utlidar_lidar` by default | Raw sensor output. HW keeps the driver `frame_id` and publishes an identity `lidar_link -> utlidar_lidar` TF alias; the HW `lidar_link` orientation is set to the measured Unitree driver frame. **Not consumed directly by Nav2 or SLAM**. |
+| `/lidar/points_undistorted` | `sensor_msgs/PointCloud2` | `distortion_corrector` | `scan_cloud_accumulator` (HW), Nav2 STVL costmap, `collision_monitor` | same | same | Frame: `lidar_stabilized` when IMU state is available. Single processed cloud: self-filtered, trunk-stabilized, and optionally deskewed on HW. No ground/floor removal. |
+| `/lidar/points_scan_accumulated` | `sensor_msgs/PointCloud2` | `scan_cloud_accumulator` (HW real bringup) | `pointcloud_to_laserscan` | absent | published | Short rolling window of `/lidar/points_undistorted` frames. Used only to densify `/scan` for the non-repetitive Unitree L1 pattern. Nav2 STVL and collision monitoring still consume the latest corrected cloud directly. |
+| `/scan` | `sensor_msgs/LaserScan` | `pointcloud_to_laserscan` | `slam_toolbox`, `obstacle_layer` | same | same | Sim derives directly from `/lidar/points_undistorted`; HW derives from `/lidar/points_scan_accumulated` to avoid sparse radial scans from single non-repetitive L1 frames. |
 | `/imu/data` | `sensor_msgs/Imu` | gazebo_bridge (sim) / `go2_hw_bridge` (HW) | EKF (`footprint_to_odom_ekf` in sim, `ekf_filter_node` on HW), `distortion_corrector` | published | published | Body IMU in `imu_link`. Default correction IMU. Set `distortion_imu_topic:=/lidar/imu` to compare LiDAR IMU timing. |
 | `/lidar/imu` | `sensor_msgs/Imu` | `robot_lio` relay (sim/HW) | optional LIO backend | same | same | Canonical LiDAR-integrated IMU topic for LIO. |
 | `/joint_states` | `sensor_msgs/JointState` | `joint_state_publisher_system` (sim only) | `robot_state_publisher`, CHAMP | published | absent | SIM-ONLY. HW uses Sport Mode API; no joint-level state is published on real robot. |
@@ -40,7 +41,8 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 | `map -> odom` | `slam_toolbox` | same | same | Published by slam_toolbox during active SLAM. Static identity fallback available via `publish_map_to_odom_tf:=true` launch arg (for testing without SLAM). |
 | `odom -> base_footprint` | EKF (`footprint_to_odom_ekf` in sim / `ekf_filter_node` on HW) | same | same | EKF owns this TF in both environments. |
 | `base_footprint -> base_link` | `static_transform_publisher` (sim) / `go2_hw_bridge` (HW) | same | same | Sim uses fixed standing-height offset; HW includes body roll/pitch plus standing height. |
-| `base_link -> lidar_link` | URDF / `robot_state_publisher` | rpy=(0, -0.26180, 0) | rpy=(pi, -0.26180, 0) | xyz=(0.28945, 0, -0.046825). Sim uses a right-side-up Fortress workaround; HW is upside-down with ~15 deg forward pitch. |
+| `base_link -> lidar_link` | URDF / `robot_state_publisher` | rpy=(0, -0.26180, 0) | rpy=(0, 2.88000, 0) | xyz=(0.28945, 0, -0.046825). Sim uses a right-side-up Fortress workaround; HW orientation is derived from matching `/utlidar/cloud` to `/utlidar/cloud_base`. |
+| `lidar_link -> utlidar_lidar` | `robot_lio` static TF (HW default) | absent | identity | Driver frame alias for real `/utlidar/cloud` pointclouds. Identity is valid because HW `lidar_link` matches the measured driver frame. `scripts/run_go2_real.sh --lidar-points-frame <frame>` changes the child frame when the driver reports a different name. |
 | `base_link -> imu_link` | URDF / `robot_state_publisher` | same | same | Identity (co-located with base_link). |
 | `base_footprint -> lidar_stabilized` | `lidar_level_frame_publisher` | same | same | Dynamic TF at IMU rate. Gravity-levelled LiDAR frame: tracks physical LiDAR position while holding zero roll/pitch. Used as frame_id for undistorted clouds when gravity_align is enabled. |
 | `lidar_link -> lidar_imu_link` | URDF / `robot_state_publisher` (sim) / `robot_lio` static TF (HW) | URDF | robot_lio TF | Unitree UniLidar IMU offset: xyz=(-0.007698, -0.014655, 0.00667). Sim: always in URDF. HW: published by `robot_lio` (always included from `go2_bringup`; absent when using `go2_hardware.launch.py` alone). |
@@ -67,7 +69,7 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 |-------|------|-----------|-------------|-------|
 | `/sportmodestate` | `unitree_go/SportModeState` | Go2 internal bridge | `go2_hw_bridge` | ~50 Hz. Provides position, velocity, IMU, and foot contacts. Source of HW odometry. |
 | `/lowstate` | `unitree_go/LowState` | Go2 internal bridge | `go2_hw_bridge` | Provides battery data (`BmsState.soc`). |
-| `/utlidar/cloud` | `sensor_msgs/PointCloud2` | Go2 internal bridge | `robot_lio` relay | Raw LiDAR pointcloud input on the real robot. Relayed to `/lidar/points`. |
+| `/utlidar/cloud` | `sensor_msgs/PointCloud2` | Go2 internal bridge | `robot_lio` relay | Raw LiDAR pointcloud input on the real robot. Default frame: `utlidar_lidar`. Relayed to `/lidar/points` with the header preserved. |
 | `/utlidar/imu` | `sensor_msgs/Imu` | Go2 internal bridge | `robot_lio` relay | Raw LiDAR IMU input on the real robot. Relayed to `/lidar/imu` by default. |
 | `/api/sport/request` | `unitree_api/Request` | `go2_hw_bridge` | Go2 onboard controller | Sport Mode API command channel. `go2_hw_bridge` publishes `RecoveryStand`, `StandUp`, `ClassicWalk(true)`, plus runtime `Move()` and `StopMove()`. |
 

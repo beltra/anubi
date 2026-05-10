@@ -1,6 +1,6 @@
 # Launch Script Parity
 
-Date: 2026-05-06
+Date: 2026-05-07
 
 ## Scope
 
@@ -25,10 +25,14 @@ Both scripts accept:
 
 Simulation keeps `--nav-delay` at `20.0` seconds because CHAMP needs spawn and stand-up time before SLAM samples the LiDAR. Real hardware keeps `--nav-delay` at `0.0` seconds to preserve the previous default startup behavior.
 
+Real hardware defaults the raw LiDAR pointcloud input to `/utlidar/cloud` with frame `utlidar_lidar`. `robot_lio` relays the cloud to `/lidar/points` and publishes an identity `lidar_link -> utlidar_lidar` TF alias; the hardware `lidar_link` orientation is the measured Unitree driver frame.
+
 Real hardware defaults the raw LiDAR IMU input to `/utlidar/imu`. The `robot_lio` relay publishes the canonical `/lidar/imu` topic for LIO consumers.
 
 ## Mode-Specific Arguments
 
 Simulation-only options are `--world`, `--gui`, `--no-gui`, and `--no-clean`.
 
-Real-only options are `--no-safety`, `--use-safety`, `--lidar-points-in-topic`, `--lidar-imu-in-topic`, `--recovery-ack-key-mask`, `--resume-key-mask`, and `--abort-key-mask`.
+Real-only options are `--no-safety`, `--use-safety`, `--lidar-points-in-topic`, `--lidar-points-frame`, `--lidar-imu-in-topic`, `--recovery-ack-key-mask`, `--resume-key-mask`, `--abort-key-mask`, `--record-rosbag`, `--rosbag-dir`, and `--rosbag-topics`.
+
+`--record-rosbag` starts `ros2 bag record` as a background sibling of the launch and traps SIGINT/SIGTERM to flush metadata. The default topic set covers offline perception replay (relayed LiDAR cloud + IMU, processed clouds, body IMU, sport-mode state, odometry, TF, robot description, map, status). The recorder uses `scripts/rosbag_qos_overrides.yaml` so it subscribes to `/tf_static`, `/robot_description`, and `/map` with TRANSIENT_LOCAL durability and captures their latched samples.

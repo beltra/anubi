@@ -38,7 +38,7 @@
 ## Current Launch Contracts
 - Shared wrapper options include `--map`, `--no-rviz`, `--use-lio`, `--no-stvl`, `--nav-profile`, `--use-route-server`, `--route-graph-file`, `--robot-name`, `--distortion-imu-topic`, and `--nav-delay`.
 - Sim-only wrapper options include `--world`, `--gui`, `--no-gui`, and `--no-clean`.
-- Real-only wrapper options include `--no-safety`, `--use-safety`, `--lidar-points-in-topic`, `--lidar-imu-in-topic`, `--recovery-ack-key-mask`, `--resume-key-mask`, and `--abort-key-mask`.
+- Real-only wrapper options include `--no-safety`, `--use-safety`, `--lidar-points-in-topic`, `--lidar-imu-in-topic`, `--recovery-ack-key-mask`, `--resume-key-mask`, `--abort-key-mask`, `--record-rosbag`, `--rosbag-dir`, and `--rosbag-topics`.
 - Sim `--nav-delay` defaults to `20.0` seconds and Nav2 starts 10 seconds after SLAM; real `--nav-delay` defaults to `0.0` seconds and delays SLAM/Nav2 together.
 
 ## Launch/Process Maintenance Rule

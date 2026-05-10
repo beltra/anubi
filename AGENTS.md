@@ -25,7 +25,7 @@
 ## Current Launch Contracts
 - Shared wrapper options include `--map`, `--no-rviz`, `--use-lio`, `--no-stvl`, `--nav-profile`, `--use-route-server`, `--route-graph-file`, `--robot-name`, `--distortion-imu-topic`, and `--nav-delay`.
 - Sim-only wrapper options include `--world`, `--gui`, `--no-gui`, and `--no-clean`.
-- Real-only wrapper options include `--no-safety`, `--use-safety`, `--lidar-points-in-topic`, `--lidar-imu-in-topic`, `--recovery-ack-key-mask`, `--resume-key-mask`, and `--abort-key-mask`.
+- Real-only wrapper options include `--no-safety`, `--use-safety`, `--lidar-points-in-topic`, `--lidar-points-frame`, `--lidar-imu-in-topic`, `--recovery-ack-key-mask`, `--resume-key-mask`, `--abort-key-mask`, `--record-rosbag`, `--rosbag-dir`, and `--rosbag-topics`.
 - `scripts/run_go2_sim.sh` keeps `--nav-delay` default `20.0`; SLAM starts after that delay and Nav2 starts 10 seconds later.
 - `scripts/run_go2_real.sh` keeps `--nav-delay` default `0.0`; SLAM and Nav2 start together after that delay.
 
