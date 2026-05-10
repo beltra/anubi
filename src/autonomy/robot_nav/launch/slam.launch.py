@@ -1,5 +1,5 @@
 """
-slam.launch.py — 2D SLAM pipeline using slam_toolbox.
+slam.launch.py -- 2D SLAM pipeline using slam_toolbox.
 
 Starts: distortion_corrector -> pointcloud_to_laserscan -> slam_toolbox (mapping or localization)
         + map_saver + lifecycle_manager_localization
@@ -15,6 +15,7 @@ map                         : str    Path to .posegraph file (localization mode)
 autostart                   : bool   (default: true)
 bypass_distortion_corrector : bool   Skip deskew (use in simulation)
 distortion_imu_topic       : str    IMU topic used for deskew/gravity alignment
+accumulate_scan_cloud       : bool   Accumulate non-repetitive LiDAR frames before /scan
 """
 
 import os
@@ -82,6 +83,17 @@ def generate_launch_description():
             "scan_cloud_topic", default_value="/lidar/points_undistorted",
             description="PointCloud2 topic consumed by pointcloud_to_laserscan",
         ),
+        DeclareLaunchArgument(
+            "accumulate_scan_cloud", default_value="false",
+            description="Accumulate short non-repetitive LiDAR windows before /scan",
+        ),
+        DeclareLaunchArgument(
+            "scan_accumulated_cloud_topic",
+            default_value="/lidar/points_scan_accumulated",
+            description="Accumulated PointCloud2 topic consumed by pointcloud_to_laserscan",
+        ),
+        DeclareLaunchArgument("scan_accumulation_window_sec", default_value="0.75"),
+        DeclareLaunchArgument("scan_accumulation_max_frames", default_value="12"),
     ]
 
     use_sim_time = LaunchConfiguration("use_sim_time")
@@ -94,6 +106,14 @@ def generate_launch_description():
     bypass_distortion_corrector = LaunchConfiguration("bypass_distortion_corrector")
     distortion_imu_topic = LaunchConfiguration("distortion_imu_topic")
     scan_cloud_topic = LaunchConfiguration("scan_cloud_topic")
+    accumulate_scan_cloud = LaunchConfiguration("accumulate_scan_cloud")
+    scan_accumulated_cloud_topic = LaunchConfiguration("scan_accumulated_cloud_topic")
+    scan_accumulation_window_sec = LaunchConfiguration("scan_accumulation_window_sec")
+    scan_accumulation_max_frames = LaunchConfiguration("scan_accumulation_max_frames")
+    scan_input_topic = PythonExpression([
+        "'", scan_accumulated_cloud_topic, "' if '", accumulate_scan_cloud,
+        "' == 'true' else '", scan_cloud_topic, "'",
+    ])
 
     is_mapping       = PythonExpression(["'", slam_mode, "' == 'mapping'"])
     is_localization  = PythonExpression(["'", slam_mode, "' == 'localization'"])
@@ -113,6 +133,21 @@ def generate_launch_description():
         condition=UnlessCondition(bypass_distortion_corrector),
     )
 
+    scan_cloud_accumulator = Node(
+        package="robot_nav",
+        executable="cloud_accumulator.py",
+        name="scan_cloud_accumulator",
+        output="screen",
+        parameters=[{
+            "use_sim_time": use_sim_time,
+            "input_topic": scan_cloud_topic,
+            "output_topic": scan_accumulated_cloud_topic,
+            "accumulation_window_sec": scan_accumulation_window_sec,
+            "max_frames": scan_accumulation_max_frames,
+        }],
+        condition=IfCondition(accumulate_scan_cloud),
+    )
+
     pointcloud_to_laserscan = Node(
         package="pointcloud_to_laserscan",
         executable="pointcloud_to_laserscan_node",
@@ -123,7 +158,7 @@ def generate_launch_description():
             {"use_sim_time": use_sim_time},
         ],
         remappings=[
-            ("cloud_in", scan_cloud_topic),
+            ("cloud_in", scan_input_topic),
             ("scan",     "/scan"),
         ],
     )
@@ -188,6 +223,7 @@ def generate_launch_description():
     return LaunchDescription(args + [
         OpaqueFunction(function=_validate_localization_inputs),
         distortion_corrector,
+        scan_cloud_accumulator,
         pointcloud_to_laserscan,
         slam_mapping,
         slam_localization,

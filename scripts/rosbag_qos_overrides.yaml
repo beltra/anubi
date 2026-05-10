@@ -1,0 +1,21 @@
+# QoS overrides for `ros2 bag record` started by scripts/run_go2_real.sh.
+# Latched (TRANSIENT_LOCAL) publishers send their last sample once to new
+# subscribers; without these overrides, the default VOLATILE subscriber misses
+# the latched sample and the recording is unusable for offline replay
+# (empty /tf_static breaks all geometric reasoning; missing /robot_description
+# breaks URDF-aware tools; missing /map breaks localization replay).
+/tf_static:
+  history: keep_last
+  depth: 10
+  reliability: reliable
+  durability: transient_local
+/robot_description:
+  history: keep_last
+  depth: 1
+  reliability: reliable
+  durability: transient_local
+/map:
+  history: keep_last
+  depth: 1
+  reliability: reliable
+  durability: transient_local

@@ -39,9 +39,9 @@ class CloudSelfFilter(Node):
         self.declare_parameter("lidar_x", 0.28945)
         self.declare_parameter("lidar_y", 0.0)
         self.declare_parameter("lidar_z", -0.046825)
-        # Static mount rotation base_link -> lidar_link (Go2 + L1: upside-down, -15 deg pitch)
+        # Real /utlidar/cloud frame; inverse maps raw LiDAR points into base axes.
         self.declare_parameter(
-            "sensor_mount_rpy", [3.14159265358979, -0.26179938779915, 0.0]
+            "sensor_mount_rpy", [0.0, -2.88000012056847, 0.0]
         )
         # Self-body bounding box in base_link frame.
         # z lower bound must not reach the ground plane or floor returns are deleted.

@@ -10,10 +10,11 @@ distortion_corrector:
     use_twist: true
     use_imu: true
     use_3d_distortion_correction: true
-    deskew_enabled: true
+    deskew_enabled: false
 
-    # L1 upside-down mount: roll=pi, pitch=-15 deg (Rx(pi) * Ry(-pi/12))
-    sensor_mount_rpy: [3.14159265358979, -0.26179938779915, 0.0]
+    # Real /utlidar/cloud frame from matching /utlidar/cloud to /utlidar/cloud_base.
+    # raw->base is Ry(2.88000012056847); inverse mode stores base->raw here.
+    sensor_mount_rpy: [0.0, -2.88000012056847, 0.0]
     mount_rotation_mode: inverse
 
     scan_period: 0.1  # L1 rotates at 10 Hz

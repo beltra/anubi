@@ -12,8 +12,9 @@ Starts (in order):
   8. RViz2                  (optional)
 
 LiDAR topic contract: the Go2 internal ROS 2 bridge publishes raw point cloud on
-/utlidar/cloud. robot_lio relays it to /lidar/points and distortion_corrector
-publishes /lidar/points_undistorted for SLAM and costmaps.
+/utlidar/cloud with driver frame utlidar_lidar. robot_lio relays it to
+/lidar/points, publishes the lidar_link -> utlidar_lidar alias, and
+distortion_corrector publishes /lidar/points_undistorted for SLAM and costmaps.
 
 Arguments
 ---------
@@ -30,6 +31,7 @@ slam_mode       : str    'mapping' or 'localization' (default: 'mapping')
 use_safety      : bool   Enable safety arbiter (default: true)
 use_ekf_fusion  : bool   EKF odom fusion (default: true)
 use_lio         : bool   Enable DLIO LiDAR-inertial odometry (default: false)
+lidar_points_frame: str  Frame stamped on the raw LiDAR pointcloud (default: utlidar_lidar)
 distortion_imu_topic: str IMU topic used by LiDAR correction (default: /imu/data)
 recovery_ack_key_mask : int Controller START key mask for tilt recovery
 resume_key_mask       : int Controller key mask for Nav2 resume and replan
@@ -91,6 +93,11 @@ def generate_launch_description():
                               description="Enable DLIO LiDAR-inertial odometry backend"),
         DeclareLaunchArgument("lidar_points_input_topic", default_value="/utlidar/cloud",
                               description="Raw LiDAR pointcloud topic to relay to /lidar/points"),
+        DeclareLaunchArgument(
+            "lidar_points_frame",
+            default_value="utlidar_lidar",
+            description="Frame stamped on the raw LiDAR pointcloud from the hardware driver",
+        ),
         DeclareLaunchArgument("lidar_imu_input_topic", default_value="/utlidar/imu",
                               description="Raw LiDAR IMU topic to relay to /lidar/imu"),
         DeclareLaunchArgument(
@@ -122,6 +129,7 @@ def generate_launch_description():
     use_ekf_fusion = LaunchConfiguration("use_ekf_fusion")
     use_lio = LaunchConfiguration("use_lio")
     lidar_points_input_topic = LaunchConfiguration("lidar_points_input_topic")
+    lidar_points_frame = LaunchConfiguration("lidar_points_frame")
     lidar_imu_input_topic = LaunchConfiguration("lidar_imu_input_topic")
     distortion_imu_topic = LaunchConfiguration("distortion_imu_topic")
     use_safety   = LaunchConfiguration("use_safety")
@@ -184,6 +192,7 @@ def generate_launch_description():
             "use_sim_time": use_sim_time,
             "cmd_vel_in": "/cmd_vel_collision_free",
             "cmd_vel_out": "/cmd_vel_safe",
+            "nav_namespace": robot_name,
             "recovery_ack_key_mask": recovery_ack_key_mask,
             "resume_key_mask": resume_key_mask,
             "abort_key_mask": abort_key_mask,
@@ -251,6 +260,8 @@ def generate_launch_description():
                     "start_lidar_points_relay": "true",
                     "start_lidar_imu_relay": "true",
                     "lidar_points_input_topic": lidar_points_input_topic,
+                    "lidar_points_frame": lidar_points_frame,
+                    "publish_lidar_points_frame_tf": "true",
                     "lidar_imu_input_topic": lidar_imu_input_topic,
                     # lidar_link->lidar_imu_link is in go2.urdf.xacro; do not republish
                     "publish_lidar_imu_tf": "false",
@@ -270,6 +281,7 @@ def generate_launch_description():
             "slam_mode":    slam_mode,
             "map":          map_path,
             "distortion_imu_topic": distortion_imu_topic,
+            "accumulate_scan_cloud": "true",
         }.items(),
     )
 
@@ -282,6 +294,9 @@ def generate_launch_description():
             "namespace":    robot_name,
             "use_stvl":     use_stvl,
             "nav_profile":  nav_profile,
+            # Prevent ekf.launch.py's generic params_file argument from leaking
+            # into nav2.launch.py and replacing the selected Nav2 profile YAML.
+            "params_file":   "",
             "use_route_server": use_route_server,
             "route_graph_file": route_graph_file,
         }.items(),

@@ -50,9 +50,9 @@
   <xacro:property name="lidar_x" value="0.28945"/>
   <xacro:property name="lidar_y" value="0.0"/>
   <xacro:property name="lidar_z" value="-0.046825"/>
-  <!-- Real Go2 mount: Unitree L1 is upside-down with ~15deg forward pitch. -->
-  <xacro:property name="lidar_r" value="3.14159265358979"/>
-  <xacro:property name="lidar_p" value="-0.26179938779915"/>
+  <!-- Real Unitree driver frame measured from /utlidar/cloud to /utlidar/cloud_base. -->
+  <xacro:property name="lidar_r" value="0.0"/>
+  <xacro:property name="lidar_p" value="2.88000012056847"/>
   <xacro:property name="lidar_yaw" value="0.0"/>
 
   <!-- =======================================================================
@@ -134,8 +134,7 @@
   </link>
 
   <!-- =======================================================================
-       lidar_link  -  Unitree L1 LiDAR optical/spinning centre
-       +X forward, +Y left, +Z up  (standard ROS sensor convention)
+       lidar_link  -  Unitree L1 raw pointcloud frame on real hardware
   ============================================================================ -->
   <joint name="base_link_to_lidar" type="fixed">
     <parent link="base_link"/>

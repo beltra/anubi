@@ -2,7 +2,7 @@
 lio.launch.py -- Robot-agnostic LIO integration wrapper.
 
 Normalizes sensor topics to canonical names (/lidar/points, /lidar/imu),
-publishes the static lidar_link -> lidar_imu_link TF,
+publishes optional sensor-frame compatibility TFs,
 and optionally starts the DLIO odometry node (/lidar_odom).
 
 By default use_lio:=false, so this launch acts as a topic/TF relay only.
@@ -41,6 +41,12 @@ def generate_launch_description():
         DeclareLaunchArgument("start_lidar_imu_relay", default_value="false"),
         DeclareLaunchArgument("lidar_points_input_topic", default_value="/lidar/points"),
         DeclareLaunchArgument("lidar_points_topic", default_value="/lidar/points"),
+        DeclareLaunchArgument("lidar_points_frame", default_value="lidar_link"),
+        DeclareLaunchArgument(
+            "publish_lidar_points_frame_tf",
+            default_value="false",
+            description="Publish identity lidar_frame -> lidar_points_frame TF for driver frame aliases",
+        ),
         DeclareLaunchArgument("lidar_imu_input_topic", default_value="/lidar/imu"),
         DeclareLaunchArgument("lidar_imu_topic", default_value="/lidar/imu"),
         DeclareLaunchArgument("lidar_odom_topic", default_value="/lidar_odom"),
@@ -79,6 +85,31 @@ def generate_launch_description():
         output="screen",
         arguments=[lidar_points_input_topic, lidar_points_topic],
         condition=IfCondition(LaunchConfiguration("start_lidar_points_relay")),
+    )
+
+    lidar_points_frame_tf = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="lidar_points_frame_alias_tf",
+        output="screen",
+        arguments=[
+            "--x", "0.0",
+            "--y", "0.0",
+            "--z", "0.0",
+            "--roll", "0.0",
+            "--pitch", "0.0",
+            "--yaw", "0.0",
+            "--frame-id", LaunchConfiguration("lidar_frame"),
+            "--child-frame-id", LaunchConfiguration("lidar_points_frame"),
+        ],
+        condition=IfCondition(
+            PythonExpression([
+                "'", LaunchConfiguration("publish_lidar_points_frame_tf"),
+                "' == 'true' and '", LaunchConfiguration("lidar_points_frame"),
+                "' != '' and '", LaunchConfiguration("lidar_points_frame"),
+                "' != '", LaunchConfiguration("lidar_frame"), "'",
+            ])
+        ),
     )
 
     imu_relay = Node(
@@ -157,6 +188,7 @@ def generate_launch_description():
 
     return LaunchDescription(args + [
         pointcloud_relay,
+        lidar_points_frame_tf,
         imu_relay,
         lidar_imu_tf,
         dlio_odom_node,

@@ -134,7 +134,7 @@ controller_server:
       visualize: true
 
       vx_max: 1.5
-      vx_min: -0.8                          # no reverse: forces rotate-in-place when path is behind
+      vx_min: -0.2                          # no reverse: forces rotate-in-place when path is behind
       vy_max: 0.3                          # DiffDrive: no lateral
       vy_min: -0.3
       wz_max: 1.3
@@ -204,7 +204,7 @@ controller_server:
       PathAngleCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 200.0                 # dominant: forces rotation before translation
+        cost_weight: 150.0                 # dominant: forces rotation before translation
         offset_from_furthest: 4
         threshold_to_consider: 100.0       # always active regardless of distance to path
         max_angle_to_furthest: 1.0
@@ -213,7 +213,7 @@ controller_server:
       PreferForwardCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 5.0
+        cost_weight: 50.0
         threshold_to_consider: 0.5
 
       VelocityDeadbandCritic:
@@ -483,7 +483,7 @@ velocity_smoother:
     feedback: "OPEN_LOOP"
     # [vx, vy, wz] limits consistent with gait.yaml
     max_velocity: [1.5, 0.3, 1.3]
-    min_velocity: [-0.6, -0.3, -1.3]
+    min_velocity: [-0.2, -0.3, -1.3]
     max_accel: [1.0, 0.5, 1.0]
     max_decel: [-1.0, -0.5, -1.0]
     odom_topic: "odom"

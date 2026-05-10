@@ -1,5 +1,5 @@
 """
-nav_realrobot.launch.py — Full navigation stack for the real robot.
+nav_realrobot.launch.py -- Full navigation stack for the real robot.
 
 Starts: ekf.launch.py -> slam.launch.py -> nav2.launch.py
 
@@ -55,6 +55,7 @@ def generate_launch_description():
             "use_sim_time": "false",
             "slam_mode":    slam_mode,
             "map":          map_path,
+            "accumulate_scan_cloud": "true",
         }.items(),
     )
 
@@ -62,7 +63,11 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(robot_nav_share, "launch", "nav2.launch.py")
         ),
-        launch_arguments={"use_sim_time": "false"}.items(),
+        launch_arguments={
+            "use_sim_time": "false",
+            # Keep ekf.launch.py's params_file argument from leaking into Nav2.
+            "params_file": "",
+        }.items(),
     )
 
     return LaunchDescription(args + [ekf, slam, nav2])

@@ -13,7 +13,10 @@ from unitree_go.msg import WirelessController
 
 
 def parse_key_mask(value):
-    return int(str(value), 0)
+    """Parse launch-provided key masks as decimal ints or hex strings."""
+    if isinstance(value, str):
+        return int(value, 0)
+    return int(value)
 
 
 def should_clear_tilt_estop(latched, current_tilt, clear_tilt, ack_mask, pressed_keys):
@@ -37,7 +40,7 @@ class TiltMonitor(Node):
         self.declare_parameter('estop_tilt_deg', 30.0)
         self.declare_parameter('clear_tilt_deg', 15.0)
         self.declare_parameter('estop_hold_sec', 0.25)
-        self.declare_parameter('recovery_ack_key_mask', '0')
+        self.declare_parameter('recovery_ack_key_mask', 0)
 
         imu_topic = self.get_parameter('imu_topic').value
         joystick_topic = self.get_parameter('joystick_topic').value

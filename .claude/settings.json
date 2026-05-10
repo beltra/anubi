@@ -19,7 +19,9 @@
       "Bash(rosdep:*)",
       "Bash(vcs:*)",
       "Bash(source:*)",
-      "Bash(pytest:*)"
+      "Bash(pytest:*)",
+      "Bash(ign topic:*)",
+      "Bash(dpkg -l:*)"
     ],
       "deny": [
         "Bash(sudo:*)",

@@ -37,6 +37,7 @@ install(TARGETS
 )
 
 install(PROGRAMS
+  scripts/cloud_accumulator.py
   scripts/cloud_self_filter.py
   scripts/lidar_odom_relay.py
   DESTINATION lib/${PROJECT_NAME}

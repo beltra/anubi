@@ -36,36 +36,38 @@ def test_joystick_active_uses_axes_and_non_command_keys():
     assert joystick.joystick_active(command_key, 0.05, 0x0008, 0x0010) is False
 
 
-def test_resume_requires_resume_key_and_neutral_axes():
+def test_resume_requires_resume_key_edge():
     msg = SimpleNamespace(lx=0.0, ly=0.0, rx=0.0, ry=0.0, keys=0x0008)
-    assert joystick.resume_requested(0, msg, 0.05, 0x0008)
+    assert joystick.resume_requested(0, msg, 0x0008)
 
     held = SimpleNamespace(lx=0.0, ly=0.0, rx=0.0, ry=0.0, keys=0x0008)
-    assert not joystick.resume_requested(0x0008, held, 0.05, 0x0008)
+    assert not joystick.resume_requested(0x0008, held, 0x0008)
 
     moving = SimpleNamespace(lx=0.0, ly=0.2, rx=0.0, ry=0.0, keys=0x0008)
-    assert not joystick.resume_requested(0, moving, 0.05, 0x0008)
+    assert joystick.resume_requested(0, moving, 0x0008)
 
     no_mask = SimpleNamespace(lx=0.0, ly=0.0, rx=0.0, ry=0.0, keys=0x0008)
-    assert not joystick.resume_requested(0, no_mask, 0.05, 0)
+    assert not joystick.resume_requested(0, no_mask, 0)
 
 
-def test_abort_requires_abort_key_and_neutral_axes():
+def test_abort_requires_abort_key_edge():
     msg = SimpleNamespace(lx=0.0, ly=0.0, rx=0.0, ry=0.0, keys=0x0010)
-    assert joystick.abort_requested(0, msg, 0.05, 0x0010)
+    assert joystick.abort_requested(0, msg, 0x0010)
 
     held = SimpleNamespace(lx=0.0, ly=0.0, rx=0.0, ry=0.0, keys=0x0010)
-    assert not joystick.abort_requested(0x0010, held, 0.05, 0x0010)
+    assert not joystick.abort_requested(0x0010, held, 0x0010)
 
     moving = SimpleNamespace(lx=0.0, ly=0.0, rx=0.2, ry=0.0, keys=0x0010)
-    assert not joystick.abort_requested(0, moving, 0.05, 0x0010)
+    assert joystick.abort_requested(0, moving, 0x0010)
 
     no_mask = SimpleNamespace(lx=0.0, ly=0.0, rx=0.0, ry=0.0, keys=0x0010)
-    assert not joystick.abort_requested(0, no_mask, 0.05, 0)
+    assert not joystick.abort_requested(0, no_mask, 0)
 
 
 def test_command_key_mask_combines_resume_and_abort():
     assert joystick.command_key_mask(0x0008, 0x0010) == 0x0018
+    assert joystick.parse_key_mask("0x0008") == 8
+    assert joystick.parse_key_mask(8) == 8
     msg = SimpleNamespace(lx=0.0, ly=0.0, rx=0.0, ry=0.0, keys=0x0018)
     assert joystick.non_command_keys_active(msg, 0x0008, 0x0010) is False
     msg.keys = 0x001c
@@ -84,6 +86,7 @@ def test_tilt_roll_pitch_and_recovery_ack():
     assert not tilt.should_clear_tilt_estop(True, math.radians(20.0), clear_tilt, 0x0008, 0x0008)
     assert not tilt.should_clear_tilt_estop(True, math.radians(10.0), clear_tilt, 0, 0x0008)
     assert tilt.parse_key_mask("0x0008") == 8
+    assert tilt.parse_key_mask(8) == 8
 
 
 def test_velocity_limiter_priority_order():
@@ -113,6 +116,9 @@ def test_real_launch_and_script_default_to_safety():
     assert "--no-safety" in script
     assert "recovery_ack_key_mask" in launch
     assert "recovery_ack_key_mask" in script
+    assert 'default_value="utlidar_lidar"' in launch
+    assert 'LIDAR_POINTS_FRAME="utlidar_lidar"' in script
+    assert "--lidar-points-frame" in script
     assert 'default_value="/utlidar/imu"' in launch
     assert 'LIDAR_IMU_IN_TOPIC="/utlidar/imu"' in script
     assert "resume_key_mask" in launch

@@ -13,6 +13,7 @@ publish_rate           float  Output publish rate in Hz    (default: 20.0)
 cmd_vel_in             str    Input command topic          (default: /cmd_vel_collision_free)
 cmd_vel_out            str    Output command topic         (default: /cmd_vel_safe)
 status_topic           str    RobotStatus topic            (default: /robot_status)
+nav_namespace          str    Nav2 namespace prefix        (default: '')
 start_joystick_safety  bool   Launch joystick override node (default: true)
 start_tilt_monitor     bool   Launch tilt estop node       (default: true)
 recovery_ack_key_mask  int    Controller key mask for tilt recovery
@@ -38,6 +39,7 @@ def generate_launch_description():
         DeclareLaunchArgument('cmd_vel_in',    default_value='/cmd_vel_collision_free'),
         DeclareLaunchArgument('cmd_vel_out',   default_value='/cmd_vel_safe'),
         DeclareLaunchArgument('status_topic',  default_value='/robot_status'),
+        DeclareLaunchArgument('nav_namespace', default_value=''),
         DeclareLaunchArgument('joystick_topic', default_value='/wirelesscontroller'),
         DeclareLaunchArgument('joystick_override_topic', default_value='/joystick_override'),
         DeclareLaunchArgument('tilt_estop_topic', default_value='/safety/tilt_estop'),
@@ -79,6 +81,7 @@ def generate_launch_description():
             'override_topic': LaunchConfiguration('joystick_override_topic'),
             'resume_key_mask': LaunchConfiguration('resume_key_mask'),
             'abort_key_mask': LaunchConfiguration('abort_key_mask'),
+            'nav_namespace': LaunchConfiguration('nav_namespace'),
         }],
     )
 

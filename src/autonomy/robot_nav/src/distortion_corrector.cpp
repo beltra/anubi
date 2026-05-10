@@ -254,7 +254,7 @@ private:
     declare_parameter<bool>("use_3d_distortion_correction", true);
     declare_parameter<double>("scan_period", 0.1);
     declare_parameter<std::vector<double>>(
-      "sensor_mount_rpy", {3.14159265358979, -0.26179938779915, 0.0});
+      "sensor_mount_rpy", {0.0, -2.88000012056847, 0.0});
     declare_parameter<std::string>("mount_rotation_mode", "inverse");
     declare_parameter<std::string>("timestamp_field_name", "");
     declare_parameter<std::vector<std::string>>(

@@ -25,6 +25,21 @@ def command_key_mask(resume_key_mask, abort_key_mask):
     return int(resume_key_mask) | int(abort_key_mask)
 
 
+def parse_key_mask(value):
+    """Parse launch-provided key masks as decimal ints or hex strings."""
+    if isinstance(value, str):
+        return int(value, 0)
+    return int(value)
+
+
+def scope_ros_name(namespace, name):
+    namespace = str(namespace).strip('/')
+    name = str(name).lstrip('/')
+    if namespace:
+        return f'/{namespace}/{name}'
+    return f'/{name}'
+
+
 def non_command_keys_active(msg, resume_key_mask, abort_key_mask):
     ignored = command_key_mask(resume_key_mask, abort_key_mask)
     return (int(msg.keys) & ~ignored) != 0
@@ -41,18 +56,16 @@ def pressed_keys(previous_keys, current_keys):
     return current_keys & ~previous_keys
 
 
-def resume_requested(previous_keys, msg, deadzone, resume_key_mask):
+def resume_requested(previous_keys, msg, resume_key_mask):
     return (
         resume_key_mask != 0
-        and not axes_active(msg, deadzone)
         and (pressed_keys(previous_keys, int(msg.keys)) & resume_key_mask) != 0
     )
 
 
-def abort_requested(previous_keys, msg, deadzone, abort_key_mask):
+def abort_requested(previous_keys, msg, abort_key_mask):
     return (
         abort_key_mask != 0
-        and not axes_active(msg, deadzone)
         and (pressed_keys(previous_keys, int(msg.keys)) & abort_key_mask) != 0
     )
 
@@ -68,8 +81,9 @@ class JoystickSafety(Node):
         self.declare_parameter('neutral_hold_secs', 2.0)
         self.declare_parameter('watchdog_timeout', 1.0)
         self.declare_parameter('cancel_on_override', True)
-        self.declare_parameter('resume_key_mask', '0')
-        self.declare_parameter('abort_key_mask', '0')
+        self.declare_parameter('resume_key_mask', 0)
+        self.declare_parameter('abort_key_mask', 0)
+        self.declare_parameter('nav_namespace', '')
         self.declare_parameter('goal_pose_topic', '/goal_pose')
         self.declare_parameter('navigate_to_pose_action', 'navigate_to_pose')
         self.declare_parameter(
@@ -86,11 +100,16 @@ class JoystickSafety(Node):
         self._neutral_hold = float(self.get_parameter('neutral_hold_secs').value)
         self._watchdog_timeout = float(self.get_parameter('watchdog_timeout').value)
         self._cancel_on_override = bool(self.get_parameter('cancel_on_override').value)
-        self._resume_key_mask = int(str(self.get_parameter('resume_key_mask').value), 0)
-        self._abort_key_mask = int(str(self.get_parameter('abort_key_mask').value), 0)
+        self._resume_key_mask = parse_key_mask(self.get_parameter('resume_key_mask').value)
+        self._abort_key_mask = parse_key_mask(self.get_parameter('abort_key_mask').value)
+        nav_namespace = self.get_parameter('nav_namespace').value
         goal_pose_topic = self.get_parameter('goal_pose_topic').value
         nav_action_name = self.get_parameter('navigate_to_pose_action').value
         cancel_services = list(self.get_parameter('cancel_services').value)
+
+        goal_pose_topic = scope_ros_name(nav_namespace, goal_pose_topic)
+        nav_action_name = scope_ros_name(nav_namespace, nav_action_name)
+        cancel_services = [scope_ros_name(nav_namespace, service) for service in cancel_services]
 
         latched_qos = QoSProfile(
             depth=1,
@@ -126,6 +145,7 @@ class JoystickSafety(Node):
         self.get_logger().info(
             f'joystick_safety: {joystick_topic} -> {override_topic} '
             f'deadzone={self._deadzone:.2f} neutral_hold={self._neutral_hold:.1f}s '
+            f'nav_namespace={str(nav_namespace).strip("/") or "<none>"} '
             f'resume_key_mask=0x{self._resume_key_mask:04x} '
             f'abort_key_mask=0x{self._abort_key_mask:04x}'
         )
@@ -134,14 +154,12 @@ class JoystickSafety(Node):
         if resume_requested(
             self._last_keys,
             msg,
-            self._deadzone,
             self._resume_key_mask,
         ):
             self._resume_requested = True
         if abort_requested(
             self._last_keys,
             msg,
-            self._deadzone,
             self._abort_key_mask,
         ):
             self._abort_requested = True

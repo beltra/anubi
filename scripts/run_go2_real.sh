@@ -13,11 +13,43 @@ ROUTE_GRAPH_FILE=""
 NAV_DELAY_SEC="0.0"
 ROBOT_NAME=""
 LIDAR_POINTS_IN_TOPIC="/utlidar/cloud"
+LIDAR_POINTS_FRAME="utlidar_lidar"
 LIDAR_IMU_IN_TOPIC="/utlidar/imu"
 DISTORTION_IMU_TOPIC="/imu/data"
-RECOVERY_ACK_KEY_MASK="0"
-RESUME_KEY_MASK="0"
-ABORT_KEY_MASK="0"
+RECOVERY_ACK_KEY_MASK="0x0010"
+RESUME_KEY_MASK="0x0010"
+ABORT_KEY_MASK="0x0020"
+RECORD_ROSBAG="false"
+ROSBAG_DIR="${HOME}/rosbags/go2_real"
+ROSBAG_TOPICS_OVERRIDE=""
+ROSBAG_QOS_OVERRIDES_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/rosbag_qos_overrides.yaml"
+
+# Curated default topic set for offline perception replay.
+# Skips raw /utlidar/{cloud,imu} because robot_lio relays them identically to
+# /lidar/points and /lidar/imu, which is what the perception stack consumes.
+# Latched topics (/tf_static, /robot_description, /map) rely on the QoS overrides
+# YAML so the recorder subscribes with TRANSIENT_LOCAL durability.
+DEFAULT_ROSBAG_TOPICS=(
+  /lidar/points
+  /lidar/imu
+  /lidar/points_undistorted
+  /lidar/points_scan_accumulated
+  /scan
+  /imu/data
+  /sportmodestate
+  /lowstate
+  /odom_raw
+  /odom
+  /lidar_odom
+  /lidar_odom_reliable
+  /joint_states
+  /tf
+  /tf_static
+  /robot_description
+  /map
+  /robot_status
+  /wirelesscontroller
+)
 
 usage() {
   cat <<'EOF'
@@ -37,6 +69,8 @@ Options:
   --robot-name <name>        Optional Nav2 namespace
   --lidar-points-in-topic <topic>
                               Raw pointcloud topic relayed to /lidar/points (default: /utlidar/cloud)
+  --lidar-points-frame <frame>
+                              Raw pointcloud frame_id to alias to lidar_link (default: utlidar_lidar)
   --lidar-imu-in-topic <topic>
                               Raw LiDAR IMU topic relayed to /lidar/imu (default: /utlidar/imu)
   --distortion-imu-topic <topic>
@@ -47,6 +81,15 @@ Options:
                               Controller key mask for Nav2 resume and replanning
   --abort-key-mask <mask>
                               Controller key mask for controlled Nav2 abort
+  --record-rosbag            Record a rosbag of perception-relevant topics in the
+                              background. Output goes under --rosbag-dir as
+                              go2_real_<mode>_<timestamp>. LiDAR pointclouds at
+                              the L1 native rate use ~50-100 MB/min of disk.
+  --rosbag-dir <path>        Output directory for rosbag recordings
+                              (default: $HOME/rosbags/go2_real)
+  --rosbag-topics "<list>"   Space-separated topic list to record instead of the
+                              curated perception default. QoS overrides for
+                              /tf_static, /robot_description, /map still apply.
   -h, --help                 Show this help
 
 Examples:
@@ -120,6 +163,11 @@ while [[ $# -gt 0 ]]; do
       LIDAR_POINTS_IN_TOPIC="$2"
       shift 2
       ;;
+    --lidar-points-frame)
+      [[ $# -ge 2 ]] || { echo "Missing value for --lidar-points-frame" >&2; usage; exit 1; }
+      LIDAR_POINTS_FRAME="$2"
+      shift 2
+      ;;
     --lidar-imu-in-topic)
       [[ $# -ge 2 ]] || { echo "Missing value for --lidar-imu-in-topic" >&2; usage; exit 1; }
       LIDAR_IMU_IN_TOPIC="$2"
@@ -143,6 +191,20 @@ while [[ $# -gt 0 ]]; do
     --abort-key-mask)
       [[ $# -ge 2 ]] || { echo "Missing value for --abort-key-mask" >&2; usage; exit 1; }
       ABORT_KEY_MASK="$2"
+      shift 2
+      ;;
+    --record-rosbag)
+      RECORD_ROSBAG="true"
+      shift
+      ;;
+    --rosbag-dir)
+      [[ $# -ge 2 ]] || { echo "Missing value for --rosbag-dir" >&2; usage; exit 1; }
+      ROSBAG_DIR="$2"
+      shift 2
+      ;;
+    --rosbag-topics)
+      [[ $# -ge 2 ]] || { echo "Missing value for --rosbag-topics" >&2; usage; exit 1; }
+      ROSBAG_TOPICS_OVERRIDE="$2"
       shift 2
       ;;
     -h|--help)
@@ -199,6 +261,7 @@ CMD=(
   use_route_server:="$USE_ROUTE_SERVER"
   nav_delay_sec:="$NAV_DELAY_SEC"
   lidar_points_input_topic:="$LIDAR_POINTS_IN_TOPIC"
+  lidar_points_frame:="$LIDAR_POINTS_FRAME"
   lidar_imu_input_topic:="$LIDAR_IMU_IN_TOPIC"
   distortion_imu_topic:="$DISTORTION_IMU_TOPIC"
   recovery_ack_key_mask:="$RECOVERY_ACK_KEY_MASK"
@@ -216,6 +279,44 @@ fi
 
 if [[ -n "$ROBOT_NAME" ]]; then
   CMD+=(robot_name:="$ROBOT_NAME")
+fi
+
+ROSBAG_PID=""
+
+cleanup_rosbag() {
+  if [[ -n "$ROSBAG_PID" ]] && kill -0 "$ROSBAG_PID" 2>/dev/null; then
+    echo "Stopping rosbag recorder (pid=$ROSBAG_PID) to flush metadata..."
+    kill -INT "$ROSBAG_PID" 2>/dev/null || true
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      kill -0 "$ROSBAG_PID" 2>/dev/null || break
+      sleep 1
+    done
+    kill -9 "$ROSBAG_PID" 2>/dev/null || true
+  fi
+}
+
+if [[ "$RECORD_ROSBAG" == "true" ]]; then
+  if [[ -n "$ROSBAG_TOPICS_OVERRIDE" ]]; then
+    # shellcheck disable=SC2206
+    ROSBAG_TOPIC_LIST=( $ROSBAG_TOPICS_OVERRIDE )
+  else
+    ROSBAG_TOPIC_LIST=( "${DEFAULT_ROSBAG_TOPICS[@]}" )
+  fi
+  if [[ ! -f "$ROSBAG_QOS_OVERRIDES_PATH" ]]; then
+    echo "Missing rosbag QoS overrides file: $ROSBAG_QOS_OVERRIDES_PATH" >&2
+    exit 1
+  fi
+  mkdir -p "$ROSBAG_DIR"
+  ROSBAG_TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+  ROSBAG_OUTPUT="${ROSBAG_DIR}/go2_real_${MODE}_${ROSBAG_TIMESTAMP}"
+  echo "Recording rosbag to: $ROSBAG_OUTPUT"
+  echo "Topics (${#ROSBAG_TOPIC_LIST[@]}): ${ROSBAG_TOPIC_LIST[*]}"
+  trap cleanup_rosbag EXIT INT TERM
+  ros2 bag record \
+    --output "$ROSBAG_OUTPUT" \
+    --qos-profile-overrides-path "$ROSBAG_QOS_OVERRIDES_PATH" \
+    "${ROSBAG_TOPIC_LIST[@]}" &
+  ROSBAG_PID=$!
 fi
 
 echo "Starting GO2 real robot stack..."
