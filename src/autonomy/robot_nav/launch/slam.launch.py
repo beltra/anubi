@@ -92,8 +92,11 @@ def generate_launch_description():
             default_value="/lidar/points_scan_accumulated",
             description="Accumulated PointCloud2 topic consumed by pointcloud_to_laserscan",
         ),
-        DeclareLaunchArgument("scan_accumulation_window_sec", default_value="0.75"),
-        DeclareLaunchArgument("scan_accumulation_max_frames", default_value="12"),
+        # Defaults match cloud_accumulator.py: a 3-frame / 0.20 s window suits
+        # the widened +/-0.30 m /scan slice. The old 0.75 s / 12-frame window
+        # was sized for the much sparser +/-0.12 m slice.
+        DeclareLaunchArgument("scan_accumulation_window_sec", default_value="0.20"),
+        DeclareLaunchArgument("scan_accumulation_max_frames", default_value="3"),
     ]
 
     use_sim_time = LaunchConfiguration("use_sim_time")
