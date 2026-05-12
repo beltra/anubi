@@ -7,6 +7,7 @@ RVIZ="true"
 USE_SAFETY="true"
 USE_STVL="true"
 USE_LIO="false"
+USE_EKF_FUSION="true"
 NAV_PROFILE="default_safe"
 USE_ROUTE_SERVER="false"
 ROUTE_GRAPH_FILE=""
@@ -60,6 +61,10 @@ Options:
   --map <path>               Path to slam_toolbox map (.posegraph), required in localization mode
   --no-rviz                  Start without RViz
   --no-safety                Disable safety arbiter for bench tests only
+  --no-ekf-fusion            Skip robot_localization EKF; go2_hw_bridge publishes
+                              /odom directly at the sportmodestate rate (~290 Hz).
+                              Required with use_lio:=true is NOT supported (LIO
+                              mode needs the EKF to fuse DLIO + body odom).
   --use-lio                  Enable optional LIO backend (/lidar_odom)
   --no-stvl                  Disable SpatioTemporalVoxelLayer in Nav2 local costmap
   --nav-profile <id>         Nav2 profile: default_safe | narrow_gap_1p0m | forward_static
@@ -115,6 +120,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --no-rviz)
       RVIZ="false"
+      shift
+      ;;
+    --no-ekf-fusion)
+      USE_EKF_FUSION="false"
       shift
       ;;
     --no-safety)
@@ -228,6 +237,10 @@ if [[ "$USE_ROUTE_SERVER" == "true" && -z "$ROUTE_GRAPH_FILE" ]]; then
   echo "--use-route-server requires --route-graph-file <path>." >&2
   exit 1
 fi
+if [[ "$USE_LIO" == "true" && "$USE_EKF_FUSION" != "true" ]]; then
+  echo "--use-lio requires the EKF (LIO mode fuses DLIO + body odom through it)." >&2
+  exit 1
+fi
 if [[ "$USE_ROUTE_SERVER" == "true" && ! -f "$ROUTE_GRAPH_FILE" ]]; then
   echo "Route graph file not found: $ROUTE_GRAPH_FILE" >&2
   exit 1
@@ -257,6 +270,7 @@ CMD=(
   use_safety:="$USE_SAFETY"
   use_stvl:="$USE_STVL"
   use_lio:="$USE_LIO"
+  use_ekf_fusion:="$USE_EKF_FUSION"
   nav_profile:="$NAV_PROFILE"
   use_route_server:="$USE_ROUTE_SERVER"
   nav_delay_sec:="$NAV_DELAY_SEC"
