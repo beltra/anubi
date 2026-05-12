@@ -10,7 +10,9 @@ distortion_corrector:
     use_twist: true
     use_imu: true
     use_3d_distortion_correction: true
-    deskew_enabled: false
+    # Real L1 cloud carries per-point `time` field (FLOAT32 seconds, range ~0-0.097);
+    # sim overrides this to false because Fortress gpu_lidar omits time fields.
+    deskew_enabled: true
 
     # Real /utlidar/cloud frame from matching /utlidar/cloud to /utlidar/cloud_base.
     # raw->base is Ry(2.88000012056847); inverse mode stores base->raw here.
@@ -22,8 +24,9 @@ distortion_corrector:
     timestamp_field_name: ""
     timestamp_field_candidates: ["time_stamp", "timestamp", "time", "t"]
     timestamp_unit: auto
-    fallback_mode: azimuth
-    # cw because Rx(pi) upside-down mount flips arctan2(y,x), reversing apparent scan direction
+    # Non-repetitive L1 has no meaningful azimuth ordering; drop frames instead
+    # of fabricating relative times if the driver ever stops emitting `time`.
+    fallback_mode: disabled
     azimuth_direction: cw
 
     imu_timeout_sec: 0.25
@@ -41,13 +44,18 @@ distortion_corrector:
     gravity_align: true
     gravity_align_frame: lidar_stabilized
 
-    # Self-filter removes robot-body returns; it does not remove ground/floor.
+    # Self-filter removes robot-body and leg returns; it does not remove
+    # ground/floor (floor sits at z<=-0.45 in base_link when standing, just
+    # below the box). robot_min_z lowered from -0.25 to -0.40 so the full
+    # standing leg span (tibia + thigh) is filtered. Previously legs below
+    # the body box reached /lidar/points_undistorted and showed up as
+    # spurious near-robot obstacles in /scan and STVL.
     filter_self: true
     robot_min_x: -0.40
     robot_max_x: 0.36
     robot_min_y: -0.20
     robot_max_y: 0.20
-    robot_min_z: -0.25
+    robot_min_z: -0.40
     robot_max_z: 0.10
     min_radius: 0.12
 

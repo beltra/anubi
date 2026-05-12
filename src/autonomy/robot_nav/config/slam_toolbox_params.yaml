@@ -18,10 +18,15 @@ slam_toolbox:
     use_map_saver: true
     mode: mapping
 
-    # Conservative scan integration for slow indoor robot
+    # Conservative scan integration for slow indoor robot.
+    # minimum_time_interval reduced from 0.25 to 0.10 after the /scan pipeline
+    # was widened: previously /scan ran at 4.6 Hz due to upstream throttling,
+    # so 0.25 was a non-binding ceiling. With /scan now at LiDAR rate the cap
+    # was hit during rotation (up to 14 deg between SLAM updates at 1 rad/s);
+    # 0.10 keeps rotation-time map updates at ~6 deg.
     minimum_travel_distance: 0.15  # [m]
     minimum_travel_heading: 0.15   # [rad]
-    minimum_time_interval:  0.25   # [s]
+    minimum_time_interval:  0.10   # [s]
 
     use_scan_matching:   true
     use_scan_barycenter: true
@@ -37,7 +42,10 @@ slam_toolbox:
     loop_match_minimum_response_fine:   0.45
 
     scan_buffer_size: 20
-    scan_buffer_maximum_scan_distance: 10.0
+    # Lifted from 10.0 to 25.0 to match max_laser_range: the L1 can return
+    # far-zone walls beyond 10 m, but slam_toolbox was discarding those points
+    # internally during scan matching, so far walls never reached /map.
+    scan_buffer_maximum_scan_distance: 25.0
     scan_queue_size: 50
     throttle_scans: 1
 
@@ -51,7 +59,9 @@ slam_toolbox:
 
     loop_search_space_dimension: 8.0
     loop_search_space_resolution: 0.05
-    loop_search_space_smear_deviation: 0.03
+    # Wider smear absorbs pattern variation between passes of the same area
+    # (L1 non-repetitive sampling differs frame-to-frame even at the same pose).
+    loop_search_space_smear_deviation: 0.08
 
     distance_variance_penalty: 0.5
     angle_variance_penalty:    1.0
