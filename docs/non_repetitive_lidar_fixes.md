@@ -300,18 +300,24 @@ would lose either DLIO or the body-velocity prior. The wrapper now refuses
 `--use-lio` together with `--no-ekf-fusion`. R1 will need a real fix before
 LIO mode is run again.
 
-### Config bug to fix when R1 is revisited
+### Config bug fixed: single absolute yaw source
 
-`ekf_fusion_params.yaml` has two absolute yaw inputs:
+`ekf_fusion_params.yaml` previously had two absolute yaw inputs:
 
 ```yaml
 odom0_config:  [T, T, F, F, F, T, ...]   # index 5 (yaw) = T  -> absolute yaw
 imu0_config:   [F, F, F, F, F, T, ...]   # index 5 (yaw) = T  -> absolute yaw
 ```
 
-Remove yaw from `odom0_config` (set index 5 to False) so the IMU is the single
-absolute-yaw source. The Go2's `/odom_raw` will still provide x/y position and
-all velocity components.
+Index 5 of `odom0_config` is now False, so `/imu/data` is the only absolute
+yaw source. `/odom_raw` continues to provide absolute x/y position and
+linear/angular velocity. This eliminates the
+"2 absolute pose inputs detected for YAW" diagnostic; on its own it does
+**not** fix R1 (rate stayed at 4.85 Hz live with the bug present, so the
+two are independent) but keeps the EKF clean for the day R1 is revisited.
+
+`ekf_fusion_params_lio.yaml` (LIO mode) was already clean: it uses
+`/odom_raw` for linear velocity only and disables `imu0`.
 
 ## Empirical density numbers
 

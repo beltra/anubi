@@ -5,8 +5,12 @@
 #   odom->base_*     : this EKF
 #
 # Source roles:
-#   odom0 (/odom_raw)  : Sport Mode wheel/leg odometry -- absolute position + velocity.
-#                        Primary position source when DLIO is not running.
+#   odom0 (/odom_raw)  : Sport Mode wheel/leg odometry -- absolute x/y position,
+#                        linear velocity, and angular velocity. Yaw_position is
+#                        deliberately excluded: providing absolute yaw from both
+#                        /odom_raw and /imu/data trips robot_localization's
+#                        "2 absolute pose inputs for YAW" warning and produces
+#                        oscillations. The IMU is the single absolute yaw source.
 #   imu0  (/imu/data)  : body IMU -- absolute yaw + angular velocity.
 #
 # This file is loaded when use_lio:=false.
@@ -28,10 +32,12 @@ ekf_filter_node:
     base_link_frame: base_footprint
     world_frame: odom
 
-    # --- Sport Mode leg odometry (absolute position + velocity) ---
+    # --- Sport Mode leg odometry (absolute x/y position + linear/angular velocity) ---
+    # Index 5 (yaw_position) is false: /imu/data is the only absolute yaw source.
+    # Layout: [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
     odom0: /odom_raw
     odom0_config: [true,  true,  false,
-                   false, false, true,
+                   false, false, false,
                    true,  true,  false,
                    false, false, true,
                    false, false, false]
