@@ -1,4 +1,16 @@
-# R1 — EKF /odom rate at 4.85 Hz diagnosis plan
+# R1 — EKF /odom rate at 4.85 Hz: root cause + fix
+
+**Status (2026-05-12, updated):** RESOLVED. Root cause is
+`print_diagnostics: true` triggering TF-buffer thrashing in robot_localization
+3.5.4. Fix is `print_diagnostics: false` in both
+`ekf_fusion_params.yaml` and `ekf_fusion_params_lio.yaml`. Offline replay
+restores /odom from 5.7 Hz to 44.6 Hz with no other config change.
+
+The plan below documents the diagnosis we used to find it. Keep it as a
+reference for the next mysterious robot_localization rate issue.
+
+---
+
 
 Open follow-up from the 2026-05-12 perception tuning round. The
 `robot_localization` EKF (non-LIO config) on this Go2 publishes `/odom` and
@@ -48,7 +60,48 @@ gate. `predict_to_current_time` defaults to `false` in Humble, so when
 most measurements are rejected the publish rate collapses to the rate of
 accepted updates.
 
-## Hypotheses, ranked
+## Confirmed root cause (offline replay, 2026-05-12)
+
+Offline replay of `/odom_raw + /imu/data + /tf + /tf_static` from the
+recorded bag into a fresh `ekf_node`, varying one parameter at a time:
+
+| Config | /odom rate | Fixes the bug? |
+|--------|-----------|----------------|
+| A. baseline (default config) | 5.73 Hz | — (reproduces) |
+| B. `predict_to_current_time:=true` | 35.13 Hz | partial |
+| C. `imu0_remove_gravitational_acceleration:=false` | 44.61 Hz | full |
+| D. `print_diagnostics:=false` | 44.62 Hz | full |
+| E. C + B combined | 44.61 Hz | full |
+
+Both C and D independently restore the rate to 44.6 Hz (= configured 50 Hz
+minus playback startup/shutdown loss).
+
+EKF baseline log shows hundreds of TF warnings during the run:
+```
+[WARN] [tf2_buffer]: Detected jump back in time. Clearing TF buffer.
+```
+At ~40 per second. The diagnostic_updater path inside robot_localization
+triggers TF lookups on every cycle for sensor frame validation; under
+unfavorable timing those lookups hit the buffer at instants when the buffer
+is being concurrently updated, the buffer interprets the new state as a
+backward-time jump, clears itself, and the EKF's measurement integration
+has to wait for the buffer to repopulate. The cycle effectively serializes
+the EKF at the buffer-rebuild rate.
+
+Turning either the gravity-removal lookup (C) or the diagnostic loop (D)
+off breaks the cycle. Gravity removal is correct for this IMU
+(linear_acceleration.z mean = 9.45 m/s², gravity is present), so the
+right fix is **D: `print_diagnostics: false`**.
+
+Hypothesis 4 (non-unit quaternions): disproven offline. All 14216 IMU
+samples have norm^2 = 1.000000 exactly.
+
+Hypothesis 3 (duplicate-stamp clustering): 208 duplicates per 14000
+samples (~1.5%), distributed both as fast bursts (<10 ms apart) and
+isolated dropouts (>1 s apart). Not the rate-killer; would only account
+for ~1.5% loss.
+
+## Hypotheses, ranked (original analysis)
 
 ### High likelihood
 

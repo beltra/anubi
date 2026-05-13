@@ -258,11 +258,18 @@ short-lived false positives. Real far-range walls remain visible.
   LiDAR orientation and IMU processing") still describe the architecture
   correctly; only defaults shifted, not the contracts.
 
-## Known issue: EKF /odom rate at 4.85 Hz (R1)
+## Resolved: EKF /odom rate at 4.85 Hz (R1)
 
-`robot_localization`'s `ekf_filter_node` publishes `/odom` and
-`odom -> base_footprint` TF at a steady 4.85 Hz on this Go2, not the configured
-50 Hz. Confirmed live and offline:
+**Status: fixed by setting `print_diagnostics: false` in
+`ekf_fusion_params.yaml` (and `ekf_fusion_params_lio.yaml`).** Offline
+replay restored /odom from 5.7 Hz to 44.6 Hz. The `--no-ekf-fusion`
+workaround in `scripts/run_go2_real.sh` stays available for bench tests.
+See `docs/ekf_rate_diag.md` for the diagnosis and the offline-replay
+matrix that found it.
+
+Original symptom: `robot_localization`'s `ekf_filter_node` was publishing
+`/odom` and `odom -> base_footprint` TF at a steady 4.85 Hz on this Go2,
+not the configured 50 Hz. Confirmed live and offline:
 
 - `frequency: 50.0`, `sensor_timeout: 0.1`, `transform_timeout: 0.2` are all
   loaded correctly (verified via `ros2 param get`).
