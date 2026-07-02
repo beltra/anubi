@@ -1,0 +1,40 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>g1_sim</name>
+  <version>0.1.0</version>
+  <description>
+    Unitree G1 humanoid — Gazebo Fortress (Ignition Gazebo 6, ROS 2 Humble)
+    kinematic-base simulation, mirroring go2_sim. Provides g1_sim.urdf.xacro
+    (velocity-controlled ghost base + Livox Mid-360 gpu_lidar + IMUs) and the
+    launch files sim_g1.launch.py (Gazebo + bridges + EKF + TF) and
+    sim_bringup_g1.launch.py (full sim + distortion_corrector + SLAM + Nav2),
+    reusing the autonomy stack (robot_nav, robot_lio, robot_safety) unchanged
+    via the canonical sim/real topic contract.
+  </description>
+  <maintainer email="gabriel.voss01@gmail.com">Maintainer</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>ros_ign_gazebo</exec_depend>
+  <exec_depend>ros_ign_bridge</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>robot_localization</exec_depend>
+
+  <!-- Standing-body meshes for the sim model -->
+  <exec_depend>g1_description</exec_depend>
+
+  <!-- Shared sensor macros + worlds + autonomy stack reused by the sim -->
+  <exec_depend>sensor_models</exec_depend>
+  <exec_depend>sim_worlds</exec_depend>
+  <exec_depend>robot_nav</exec_depend>
+  <exec_depend>robot_lio</exec_depend>
+  <exec_depend>robot_safety</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

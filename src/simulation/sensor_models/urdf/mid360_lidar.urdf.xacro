@@ -1,0 +1,145 @@
+<?xml version="1.0"?>
+<!--
+  mid360_lidar.urdf.xacro
+  Reusable Gazebo Fortress (Ignition Gazebo 6, ROS 2 Humble) macro for the
+  Livox Mid-360 LiDAR used on the Unitree G1 humanoid.
+
+  =============================================================================
+  MACRO: mid360_lidar  (Fortress / Ignition Gazebo 6)
+  =============================================================================
+  Livox Mid-360 device specifications (Livox datasheet):
+    - Horizontal FOV : 360 deg
+    - Vertical FOV   : -7 deg ... +52 deg   (59 deg span, non-repetitive scan)
+    - Range          : 0.1 m - 40 m
+    - Point rate     : 200k pts/s (10 Hz frame approximation in sim)
+    - Built-in IMU   : ICM-40609 (modeled separately in the robot xacro)
+
+  MOUNTING NOTE (matches the real G1):
+    On the G1 the Mid-360 is physically mounted INVERTED on the torso/head.
+    On hardware the livox_ros_driver2 applies MID360_config "roll": 180 so the
+    PUBLISHED cloud arrives upright in the `mid360_link` frame. To make the sim
+    `mid360_link` frame identical to the real (post-driver) frame, we mount the
+    sim sensor UPRIGHT but rotate its vertical FOV to the inverted-equivalent
+    coverage: the real -7 deg...+52 deg measured from an inverted sensor sweeps
+    -52 deg...+7 deg in the upright `mid360_link` frame (mostly downward - good for
+    seeing the floor and low obstacles, which is what navigation needs).
+
+  Usage:
+    <xacro:include filename="$(find sensor_models)/urdf/mid360_lidar.urdf.xacro"/>
+    <xacro:mid360_lidar parent="base_link" prefix="">
+      <origin xyz="-0.00368 0.00003 0.46018" rpy="0 0.04014 0"/>
+    </xacro:mid360_lidar>
+
+  Parameters:
+    parent  - URDF link to attach the lidar link to (required)
+    prefix  - string prepended to generated link/joint/sensor names (may be "")
+    *origin - <origin/> child element giving the mount transform (required)
+
+  The macro creates:
+    - Link:  ${prefix}mid360_link   (with prefix="" => "mid360_link", matching the
+             official Unitree G1 URDF sensor frame and the nav config
+             sensor_origin_frame: mid360_link)
+    - Joint: ${prefix}mid360_joint  (fixed, parent->child, origin from block)
+    - Gazebo gpu_lidar sensor publishing the Ignition PointCloudPacked on
+      /livox/lidar/points, bridged + remapped to ROS /lidar/points by the
+      sim launch file.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- link_name: name of the generated sensor frame. Defaults to "mid360_link"
+       (the official Unitree G1 URDF sensor frame). The Gazebo sim passes
+       link_name="lidar_link" so the published cloud frame_id matches the
+       autonomy stack's canonical raw-lidar frame (docs/topic_map.md), letting
+       the G1 reuse distortion_corrector / nav2 / robot_lio unchanged. -->
+  <!-- visibility_mask: Ignition rendering mask for the gpu_lidar. A visual is seen
+       by the sensor only if (visual.visibility_flags AND visibility_mask) != 0.
+       The G1 sim sets this to 4294967293 (0xFFFFFFFD, all bits except bit 1) and the
+       spawn step tags ONLY the head/sensor-pod visual with visibility_flags=2 (bit 1),
+       so the gpu_lidar does NOT detect its own enclosing sensor housing (the real
+       Mid-360 emits through its window and never returns its own pod). Every OTHER body
+       visual keeps the default 0xFFFFFFFF and IS seen, so the torso, shoulders, arms
+       and legs still occlude the downward beams and produce realistic self-returns
+       (removed later by the distortion_corrector self-filter, exactly as on hardware).
+       Default 4294967295 (0xFFFFFFFF) sees everything. NOTE: URDF-to-SDF conversion
+       drops per-visual visibility_flags, so they are injected into the spawn SDF by
+       sim_g1.launch.py; this sensor mask, however, does survive the conversion. -->
+  <xacro:macro name="mid360_lidar" params="
+      parent
+      prefix
+      link_name:=mid360_link
+      range_min:=0.1
+      range_max:=40.0
+      update_rate:=10
+      visibility_mask:=4294967295
+      *origin">
+
+    <link name="${link_name}">
+      <!-- No visual geometry: avoids GPU-LiDAR self-occlusion at the sensor origin. -->
+      <inertial>
+        <mass value="0.265"/>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <inertia ixx="0.0002" ixy="0" ixz="0" iyy="0.0002" iyz="0" izz="0.0002"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}mid360_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child link="${link_name}"/>
+      <xacro:insert_block name="origin"/>
+    </joint>
+
+    <!--
+      Fortress gpu_lidar sensor. The sensor system itself is loaded at world
+      level by ignition-gazebo-sensors-system (present in the sim_worlds SDFs).
+      The Ignition topic /livox/lidar publishes a PointCloudPacked on
+      /livox/lidar/points, bridged to ROS and remapped to the canonical raw
+      cloud topic /lidar/points by the sim launch file.
+      ignition_frame_id sets the PointCloud2 frame_id to ${link_name}.
+    -->
+    <gazebo reference="${link_name}">
+      <sensor name="${prefix}mid360" type="gpu_lidar">
+        <topic>/livox/lidar</topic>
+        <update_rate>${update_rate}</update_rate>
+        <always_on>true</always_on>
+        <visualize>true</visualize>
+        <ignition_frame_id>${link_name}</ignition_frame_id>
+        <visibility_mask>${visibility_mask}</visibility_mask>
+        <lidar>
+          <scan>
+            <horizontal>
+              <!-- Full 360 deg azimuth sweep at 0.75 deg spacing. Kept near the real
+                   Mid-360 point budget (~200k pts/s): 480 x 64 x 10 Hz ~= 307k pts/s,
+                   dense enough to fill the 2D scan ring and the STVL voxel grid without
+                   overloading the costmaps (a 3x-real cloud starves Nav2 bringup). -->
+              <samples>480</samples>
+              <resolution>1</resolution>
+              <min_angle>-3.14159265358979</min_angle>
+              <max_angle>3.14159265358979</max_angle>
+            </horizontal>
+            <vertical>
+              <!-- Inverted-equivalent coverage: -52 deg ... +7 deg (see MOUNTING NOTE).
+                   Biased downward so the beam reaches the floor and low obstacles.
+                   64 lines (~0.94 deg spacing) keep several returns inside the thin
+                   horizontal scan band while staying near the real point budget. -->
+              <samples>64</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.90757</min_angle>
+              <max_angle>0.12217</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>${range_min}</min>
+            <max>${range_max}</max>
+            <resolution>0.01</resolution>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.01</stddev>
+          </noise>
+        </lidar>
+      </sensor>
+    </gazebo>
+
+  </xacro:macro>
+</robot>

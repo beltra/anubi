@@ -1,0 +1,62 @@
+# ============================================================================
+# anubi G1 simulation/navigation image  (ROS 2 Humble + Gazebo Fortress)
+#
+# Base: althack/ros2:humble-full  (the same base used by palingenesys/docker-go2)
+#   - Ubuntu 22.04 Jammy, ROS 2 Humble
+#   - already provides: rviz2, ros_gz_sim / ros_ign_gazebo (Gazebo Fortress),
+#     xacro, robot_state_publisher, colcon, NVIDIA GL userspace.
+#
+# This layer adds ONLY what the anubi G1 stack needs on top of that base:
+#   - Nav2 + STVL (spatio_temporal_voxel_layer) + pointcloud_to_laserscan
+#   - robot_localization (EKF), joint_state_publisher, tf tools
+#   - DLIO build dependencies (PCL / Eigen / OpenMP) so the vendored
+#     direct_lidar_inertial_odometry package builds from source.
+#
+# Build:  docker build -t anubi-g1-sim:humble -f docker/Dockerfile.sim docker/
+# Run:    see docker/run_sim.sh  (GPU + NoMachine X display passthrough)
+# ============================================================================
+FROM althack/ros2:humble-full
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# --- Navigation + perception runtime --------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ros-humble-navigation2 \
+        ros-humble-nav2-bringup \
+        ros-humble-spatio-temporal-voxel-layer \
+        ros-humble-pointcloud-to-laserscan \
+        ros-humble-robot-localization \
+        ros-humble-joint-state-publisher \
+        ros-humble-joint-state-publisher-gui \
+        ros-humble-tf2-ros \
+        ros-humble-tf2-tools \
+        ros-humble-tf-transformations \
+        ros-humble-xacro \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- DLIO (direct_lidar_inertial_odometry) build dependencies -------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ros-humble-pcl-ros \
+        ros-humble-pcl-conversions \
+        libpcl-dev \
+        libeigen3-dev \
+        libomp-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- OpenGL / GLX userspace for hardware-accelerated rendering ------------
+# (mirrors palingenesys/docker-go2; harmless if already present in the base)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libglvnd0 libgl1 libglx0 libegl1 \
+        libxext6 libx11-6 libxcb-glx0 \
+        libxcb-dri2-0 libxcb-dri3-0 libxcb-present0 \
+        mesa-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# NVIDIA Container Toolkit injects the driver at runtime; advertise full caps
+# so both Gazebo (EGL, GPU lidar) and RViz (GLX) can use the L40S.
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=all,graphics,display,compute,utility
+ENV QT_X11_NO_MITSHM=1
+
+WORKDIR /ws
+CMD ["/bin/bash", "-c", "while sleep 1000; do :; done"]

@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<package format="3">
+  <name>g1_locomotion</name>
+  <version>0.1.0</version>
+  <description>
+    Self-contained Unitree G1 AMO (Adaptive Motion Optimization) whole-body
+    locomotion driver, legs-only for navigation. Vendors the Psi0 AMO policy
+    assets so anubi has NO runtime dependency on the Psi0 source tree. Accepts
+    {vx, vy, yaw} velocity commands over a WebSocket server (:8766), runs the
+    AMO policy + adapter, and drives the robot over Unitree DDS (rt/lowcmd @
+    250 Hz / rt/lowstate). Arms are held at their default pose.
+  </description>
+  <maintainer email="gabriel.voss01@gmail.com">Gabriel Voss</maintainer>
+  <license>Proprietary</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <!-- rclpy is optional: the driver runs standalone (no ROS node required).
+       It is listed so the package can later expose a ROS 2 node wrapper. -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+
+  <!-- NOTE: the following runtime deps are NOT in rosdep / apt; they must be
+       pip-installed into the deployment environment (see README.md):
+         - torch        (loads amo_jit.pt / adapter_jit.pt TorchScript)
+         - scipy        (scipy.spatial.transform.Rotation for quat->euler; optional)
+         - unitree_sdk2py (Unitree DDS LowCmd/LowState I/O; only needed on robot) -->
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

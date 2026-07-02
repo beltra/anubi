@@ -1,0 +1,71 @@
+# DLIO parameters for the Unitree G1 REAL robot (head-mounted Livox Mid-360).
+#
+# Layered ON TOP of the vendored DLIO defaults (cfg/dlio.yaml + cfg/params.yaml) by
+# robot_lio/lio.launch.py; only the G1 real-robot deltas live here. The G1 sim uses
+# dlio_params_g1_sim.yaml instead (deskew OFF, near-identity upright mount).
+#
+# Real-robot inputs come from the stock livox_ros_driver2 (relayed to canonical names
+# by lio.launch.py): /livox/lidar -> /lidar/points (PointXYZRTLT, per-point timestamps),
+# /livox/imu -> imu_rescale -> /livox/imu_ms2 -> /lidar/imu (accel in m/s^2).
+#
+# publish_tf is FALSE: DLIO publishes the /lidar_odom topic (child_frame base_link)
+# and the EKF (robot_localization) owns odom -> base_footprint, exactly as on the Go2.
+# Reference: talos-robotics-ai/Navigation g1_sim_bridge/config/dlio_mid360_real.yaml.
+
+/**:
+  ros__parameters:
+    use_sim_time: false
+    publish_tf: false
+    map/waitUntilMove: true
+
+    frames/odom: odom
+    frames/baselink: base_link
+    frames/lidar: dlio_lidar_link
+    frames/imu: dlio_imu_link
+
+    adaptive: false
+
+    # Real Livox stamps every point, so DLIO auto-detects SensorType::LIVOX and
+    # motion-deskews. Keep deskew ON (the opposite of the timestamp-less sim cloud).
+    pointcloud/deskew: true
+    pointcloud/voxelize: true
+    odom/preprocessing/voxelFilter/res: 0.25
+
+    odom/gicp/minNumPoints: 64
+    odom/gicp/kCorrespondences: 16
+    odom/gicp/maxCorrespondenceDistance: 0.5
+
+    odom/keyframe/threshD: 1.0
+    odom/keyframe/threshR: 45.0
+
+    odom/computeTimeOffset: true
+
+    # Estimate the gravity DIRECTION from the averaged at-rest accel during the ~3 s
+    # startup calibration instead of assuming base_link +z is exactly up. With the
+    # INVERTED Mid-360 IMU this is the robust choice (residual mount tilt / sign
+    # ambiguity is absorbed into the initial attitude rather than leaking into the
+    # vertical channel, where DLIO can diverge). Keep the robot STATIONARY at startup.
+    odom/imu/approximateGravity: true
+    odom/imu/calibration/gyro: true
+    odom/imu/calibration/accel: true
+    odom/imu/calibration/time: 3.0
+    odom/imu/bufferSize: 5000
+
+    # base_link(pelvis) -> Mid-360 LiDAR. The Mid-360 is physically inverted but
+    # MID360_config.json applies roll:180 so the CLOUD arrives UPRIGHT, identical in
+    # orientation to the sim's upright mount: t = pelvis->mid360, R = Ry(+0.04014)
+    # (the small forward mount pitch). Calibrate t and the pitch on hardware.
+    extrinsics/baselink2lidar/t: [-0.00368, 0.00003, 0.46018]
+    extrinsics/baselink2lidar/R: [ 0.99919457, 0.0, 0.04012671,
+                                   0.0,        1.0, 0.0,
+                                  -0.04012671, 0.0, 0.99919457]
+
+    # base_link(pelvis) -> Mid-360 IMU. Unlike the cloud, the driver does NOT right
+    # the IMU, so it stays inverted: R = Ry(+0.04014) * Rx(180) re-orients it into
+    # base_link (the talos reference uses a pure Rx(180) with base_link at the sensor;
+    # the extra Ry is the pelvis mount pitch). Translation co-located with the LiDAR
+    # to first order; calibrate the lever arm on hardware.
+    extrinsics/baselink2imu/t: [-0.00368, 0.00003, 0.46018]
+    extrinsics/baselink2imu/R: [ 0.99919457, 0.0, -0.04012671,
+                                 0.0,       -1.0,  0.0,
+                                -0.04012671, 0.0, -0.99919457]

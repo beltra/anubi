@@ -1,0 +1,60 @@
+# distortion_corrector parameters for the Unitree G1 REAL robot (head-mounted Livox
+# Mid-360). Produces the single processed nav cloud /lidar/points_undistorted that
+# Nav2 STVL + collision_monitor + pointcloud_to_laserscan consume.
+#
+# Same SENSOR GEOMETRY and SELF-FILTER BOX as the G1 sim (sim_bringup_g1.launch.py),
+# so the costmap sees the identical body envelope in both. The leveling flags differ
+# from the sim because the sim's kinematic base never tilts (gravity_align / use_imu
+# off there) whereas the real robot pitches/rolls while walking, so here we re-level
+# the cloud from the body IMU into lidar_stabilized (mirrors the Go2 real config).
+
+distortion_corrector:
+  ros__parameters:
+    input_topic: /lidar/points
+    output_topic: /lidar/points_undistorted
+    odom_topic: /odom
+    imu_topic: /imu/data
+
+    # Real robot tilts while walking: re-level the cloud from the body IMU. Deskew
+    # is left OFF (as on the Go2): DLIO already deskews its own copy for odometry,
+    # and the nav cloud only needs gravity leveling + self-filtering.
+    use_twist: false
+    use_imu: true
+    use_3d_distortion_correction: true
+    deskew_enabled: false
+    scan_period: 0.1  # Mid-360 published at 10 Hz
+
+    # The Mid-360 is inverted but MID360_config.json roll:180 rights the CLOUD, so
+    # it arrives upright like the sim mount: a small forward pitch only.
+    sensor_mount_rpy: [0.0, 0.04014, 0.0]
+    mount_rotation_mode: direct
+
+    output_stamp_mode: input
+
+    # Gravity alignment: rotate points into lidar_stabilized (broadcast by
+    # lidar_level_frame_publisher) so the 2D scan stays level under body pitch/roll.
+    gravity_align: true
+    gravity_align_frame: lidar_stabilized
+
+    # Self-filter: remove the robot's own body returns. The real Mid-360 sees the
+    # torso/shoulders/arms/legs (it never returns its own head housing), exactly like
+    # the sim's gpu_lidar, so this is the SAME body box used in sim_bringup_g1.launch.py.
+    # Box is the G1 standing envelope in base_link (pelvis).
+    filter_self: true
+    robot_min_x: -0.18
+    robot_max_x: 0.25
+    robot_min_y: -0.26
+    robot_max_y: 0.26
+    robot_min_z: -0.90
+    robot_max_z: 0.55
+    min_radius: 0.20
+
+    # Mid-360 position in base_link(pelvis) frame (real mount, from the official URDF).
+    sensor_x_in_base: -0.00368
+    sensor_y_in_base: 0.00003
+    sensor_z_in_base: 0.46018
+
+    imu_timeout_sec: 0.25
+    odom_timeout_sec: 0.25
+    publish_diagnostics: false
+    diagnostics_topic: /diagnostics/lidar_correction

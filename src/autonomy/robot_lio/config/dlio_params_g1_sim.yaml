@@ -1,0 +1,58 @@
+# DLIO parameters for the Unitree G1 Gazebo simulation (Livox Mid-360).
+#
+# Optional LIO backend (use_lio:=true); OFF by default - the sim's ground-truth
+# OdometryPublisher + EKF is the default odometry source. The sim mounts the
+# Mid-360 nearly upright on lidar_link, so the base_link->lidar / base_link->imu
+# extrinsics are the pelvis->mid360 offset with a small +0.04 rad pitch.
+# Extrinsics here must match g1_sim.urdf.xacro or LiDAR/IMU fusion is inconsistent.
+
+/**:
+  ros__parameters:
+    use_sim_time: true
+    publish_tf: false
+    map/waitUntilMove: true
+
+    frames/odom: odom
+    frames/baselink: base_link
+    frames/lidar: dlio_lidar_link
+    frames/imu: dlio_imu_link
+
+    adaptive: false
+    # Deskew MUST be off in sim: the Gazebo gpu_lidar emits an instantaneous cloud with
+    # no per-point timestamps, so DLIO's motion-deskew has no valid per-point times and
+    # corrupts the cloud WHILE MOVING (it is fine at rest), which makes the odometry jump
+    # during motion. The real Livox driver stamps every point, so the real config
+    # (dlio_mid360_real.yaml) keeps deskew on.
+    pointcloud/deskew: false
+    pointcloud/voxelize: true
+    # Coarser voxel (0.18 m) keeps DLIO's per-scan GICP light so it does not starve the
+    # Nav2 / collision_monitor lifecycle activations during bringup on a loaded host.
+    odom/preprocessing/voxelFilter/res: 0.18
+
+    odom/gicp/minNumPoints: 64
+    odom/gicp/kCorrespondences: 16
+    odom/gicp/maxCorrespondenceDistance: 0.5
+
+    odom/keyframe/threshD: 0.20
+    odom/keyframe/threshR: 20.0
+
+    odom/computeTimeOffset: false
+    odom/imu/approximateGravity: true
+    odom/imu/calibration/gyro: true
+    odom/imu/calibration/accel: true
+    odom/imu/calibration/time: 3.0
+    odom/imu/bufferSize: 5000
+
+    odom/geo/Kab: 0.85
+
+    # base_link -> lidar_link (sim mount): xyz=(-0.00368, 0.00003, 0.46018), R = Ry(+0.04014)
+    extrinsics/baselink2lidar/t: [-0.00368, 0.00003, 0.46018]
+    extrinsics/baselink2lidar/R: [ 0.99919457, 0.0, 0.04012671,
+                                   0.0,        1.0, 0.0,
+                                  -0.04012671, 0.0, 0.99919457]
+
+    # base_link -> Mid-360 IMU (co-located with lidar_link in sim).
+    extrinsics/baselink2imu/t: [-0.00368, 0.00003, 0.46018]
+    extrinsics/baselink2imu/R: [ 0.99919457, 0.0, 0.04012671,
+                                 0.0,        1.0, 0.0,
+                                -0.04012671, 0.0, 0.99919457]

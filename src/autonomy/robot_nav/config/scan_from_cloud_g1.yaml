@@ -1,0 +1,41 @@
+# pointcloud_to_laserscan parameters for the Unitree G1 (head-mounted Livox Mid-360).
+# Converts /lidar/points_undistorted (PointCloud2) -> /scan (LaserScan) for slam_toolbox
+# and the collision_monitor 2D zones.
+#
+# This is the G1 counterpart of scan_from_cloud.yaml (Go2). The Go2 carries the LiDAR
+# low on the body, so a thin slice around the sensor plane is enough. The G1 Mid-360
+# sits ~1.26 m up, INSIDE the head, so a thin slice at sensor height would only ever see
+# obstacles taller than ~1.2 m and miss tables, chairs, low walls and people's torsos.
+# The band is therefore widened DOWNWARD to span the standing body's obstacle-relevant
+# height, from about knee height up to just above the sensor.
+#
+# Heights are expressed in lidar_stabilized (gravity-levelled, co-located with the
+# sensor at ~1.26 m above the floor), so z=0 is sensor height and the floor sits at
+# about z=-1.26 m. The band deliberately stops above the floor so the downward Mid-360
+# returns from the ground are NOT flattened into the scan (which would paint the floor
+# as an obstacle).
+pointcloud_to_laserscan:
+  ros__parameters:
+    target_frame: lidar_stabilized
+    transform_tolerance: 0.3
+
+    # Tall vertical band: from ~shin/knee height (world ~0.31 m, z=-0.95) up to just
+    # above the sensor (z=+0.20, world ~1.46 m). Captures low furniture, walls and
+    # people across the full body height while keeping the floor (z=-1.26) out of the
+    # scan. pointcloud_to_laserscan keeps the closest return per azimuth in this band,
+    # so the 2D scan reflects the nearest obstacle at ANY height the G1 could hit.
+    min_height: -0.95
+    max_height:  0.20
+
+    angle_min: -3.14159265
+    angle_max:  3.14159265
+    angle_increment: 0.00872665  # 0.5 deg
+
+    scan_time: 0.1
+    # Self-returns are already removed upstream by the distortion_corrector self-filter,
+    # so range_min only needs to clear the immediate sensor neighbourhood.
+    range_min: 0.30
+    range_max: 25.0
+
+    use_inf: true
+    inf_epsilon: 1.0

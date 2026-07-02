@@ -40,6 +40,22 @@ add_pids < <(pgrep -f 'ignition-gazebo' || true)
 add_pids < <(pgrep -f 'gz sim' || true)
 
 add_pids < <(pgrep -f 'sim_champ.launch.py' || true)
+add_pids < <(pgrep -f 'sim_bringup_g1.launch.py' || true)
+add_pids < <(pgrep -f 'sim_g1.launch.py' || true)
+add_pids < <(pgrep -f 'go2_bringup.launch.py' || true)
+add_pids < <(pgrep -f 'g1_bringup.launch.py' || true)
+# G1 real-robot adapters / sensors / odometry
+add_pids < <(pgrep -f 'g1_state_bridge' || true)
+add_pids < <(pgrep -f 'cmd_vel_to_amo' || true)
+add_pids < <(pgrep -f 'imu_rescale' || true)
+add_pids < <(pgrep -f 'livox_ros_driver2' || true)
+add_pids < <(pgrep -f 'dlio_odom_node' || true)
+add_pids < <(pgrep -f 'dlio_map_node' || true)
+add_pids < <(pgrep -f 'lidar_odom_relay' || true)
+add_pids < <(pgrep -f 'collision_monitor' || true)
+add_pids < <(pgrep -f 'slam_toolbox' || true)
+add_pids < <(pgrep -f 'ign gazebo -g' || true)
+add_pids < <(pgrep -f 'lidar_level_frame_publisher' || true)
 add_pids < <(pgrep -f 'ros_ign_gazebo' || true)
 add_pids < <(pgrep -f 'ros_ign_bridge' || true)
 add_pids < <(pgrep -f 'controller_manager/spawner' || true)
@@ -56,11 +72,13 @@ add_pids < <(pgrep -f 'rosbag2_transport' || true)
 
 add_pids < <(pgrep -f 'champ' || true)
 
+# Use grep (always present) rather than rg so this runs identically on the host and
+# inside the sim container.
 pids=$(
   printf '%s\n' "${pids[@]:-}" \
-  | rg -v '^\s*$' \
+  | grep -vE '^[[:space:]]*$' \
   | sort -u \
-  | rg -v "^(${self}|${parent})$" \
+  | grep -vE "^(${self}|${parent})$" \
   || true
 )
 
@@ -83,5 +101,25 @@ while IFS= read -r pid; do
     kill -9 "$pid" 2>/dev/null || true
   fi
 done <<< "$pids"
+
+# FastDDS leaves shared-memory segments and locks in /dev/shm after kill -9. On a small
+# /dev/shm (the 64 MB Docker default) these accumulate across restarts until SHM
+# transport can no longer allocate a buffer for the large LiDAR PointCloud2; DDS then
+# falls back to slow UDP and Nav2 lifecycle bringup starts timing out. Reap them so each
+# restart starts from a clean shared-memory pool.
+rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* 2>/dev/null || true
+
+# Zombie (defunct) ROS nodes cannot be reaped by this script: their parent launch
+# already exited, so they are orphaned to PID 1, and the container's PID 1 (a plain
+# entrypoint, not an init/reaper) never wait()s on them. They accumulate across
+# launches and, once there are hundreds, the DDS discovery / Nav2 lifecycle bring-up
+# starts timing out (collision_monitor stuck inactive, "Node not found" for live
+# nodes). The only fix is to restart the container, which reaps them all. Warn loudly.
+zombies=$(ps -eo stat 2>/dev/null | grep -c '^Z' || true)
+if [ "${zombies:-0}" -ge 50 ]; then
+  echo "WARNING: ${zombies} zombie (defunct) processes present; this script cannot reap them."
+  echo "         They will eventually break DDS discovery / Nav2 lifecycle bring-up."
+  echo "         Restart the container to clear them:  docker restart <container>"
+fi
 
 echo "Done."

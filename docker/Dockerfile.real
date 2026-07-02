@@ -1,0 +1,91 @@
+# ============================================================================
+# anubi G1 REAL-ROBOT image  (ROS 2 Humble + CUDA torch + Unitree/Livox SDKs)
+#
+#   !!! UNVALIDATED !!!
+#   This Dockerfile has NOT been built or run. It was authored from the code's
+#   declared dependencies as a STARTING POINT for the real-robot environment.
+#   You MUST validate it on the target compute unit before trusting it:
+#     - torch/CUDA wheels depend on the target ARCH and CUDA version. The lines
+#       below target x86_64 + NVIDIA dGPU (cu121 wheels). A Jetson (arm64) needs
+#       NVIDIA's L4T base image + the L4T pytorch wheel instead -- see notes.
+#     - the Livox SDK2 and unitree_sdk2_python build steps pin upstream repos;
+#       confirm the tags/commits match the robot's firmware.
+#
+# Why this exists: the AMO locomotion policy (g1_locomotion) loads amo_jit.pt,
+# which was TorchScript-traced with a cuda:0 constant, so its forward pass REQUIRES
+# a CUDA device. The driver now asserts CUDA before streaming motor commands
+# (g1_locomotion/amo_driver.py run_control), so a CPU-only image fails fast.
+#
+# Build (x86_64 + NVIDIA dGPU host):
+#   docker build -t anubi-g1-real:humble -f docker/Dockerfile.real .
+# Run (needs --gpus all + host network for Unitree/Livox DDS + Livox UDP):
+#   docker run --gpus all --network host -v $PWD:/ws/anubi -w /ws/anubi -it \
+#       anubi-g1-real:humble
+# Then inside (see g1_bringup/README.md "Build"):
+#   src/vendors/livox_ros_driver2/build.sh humble
+#   colcon build --symlink-install --packages-up-to g1_bringup g1_locomotion
+# ============================================================================
+FROM althack/ros2:humble-full
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# --- Navigation + perception runtime (same set as Dockerfile.sim) ----------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ros-humble-navigation2 \
+        ros-humble-nav2-bringup \
+        ros-humble-spatio-temporal-voxel-layer \
+        ros-humble-pointcloud-to-laserscan \
+        ros-humble-robot-localization \
+        ros-humble-joint-state-publisher \
+        ros-humble-tf2-ros \
+        ros-humble-tf2-tools \
+        ros-humble-tf-transformations \
+        ros-humble-xacro \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- DLIO (direct_lidar_inertial_odometry) build dependencies --------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ros-humble-pcl-ros \
+        ros-humble-pcl-conversions \
+        libpcl-dev \
+        libeigen3-dev \
+        libomp-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- Build tooling ----------------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git cmake build-essential \
+        python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- Livox SDK2 (required to build the vendored livox_ros_driver2) ----------
+# VALIDATE the tag against the Mid-360 firmware before deploying.
+RUN git clone --depth 1 https://github.com/Livox-SDK/Livox-SDK2.git /opt/Livox-SDK2 \
+    && cmake -S /opt/Livox-SDK2 -B /opt/Livox-SDK2/build \
+    && cmake --build /opt/Livox-SDK2/build -j"$(nproc)" \
+    && cmake --install /opt/Livox-SDK2/build \
+    && ldconfig
+
+# --- Python runtime deps for g1_locomotion (NOT rosdep-installable) ---------
+# torch: cu121 wheels for x86_64 + NVIDIA dGPU. The CUDA runtime libs ship IN
+# the wheel; the host driver is injected by the NVIDIA Container Toolkit at run
+# time. For Jetson (arm64) DELETE this line and base the image on
+# nvcr.io/nvidia/l4t-pytorch instead.
+RUN pip3 install --no-cache-dir \
+        torch --index-url https://download.pytorch.org/whl/cu121
+
+# numpy / scipy / websockets (WS command server) + Unitree DDS python binding.
+# unitree_sdk2_python pulls cyclonedds; building cyclonedds may need
+# CYCLONEDDS_HOME -- VALIDATE on the target.
+RUN pip3 install --no-cache-dir \
+        "numpy<2" scipy websockets \
+    && pip3 install --no-cache-dir \
+        git+https://github.com/unitreerobotics/unitree_sdk2_python.git
+
+# NVIDIA Container Toolkit injects the driver at run time; advertise compute so
+# torch can see the GPU. (graphics/display only needed if you also run RViz here.)
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics,display
+
+WORKDIR /ws/anubi
+CMD ["/bin/bash", "-c", "while sleep 1000; do :; done"]

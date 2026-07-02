@@ -1,0 +1,85 @@
+# g1_params.yaml
+# Unitree G1-specific parameters -- consumed only by g1_bringup.
+# Keep robot-specific values here; use a separate params file for non-G1 robots.
+# Mirrors go2_bringup/config/go2_params.yaml structure.
+
+# -- cmd_vel -> AMO WebSocket bridge -------------------------------------------
+# Last hop of the command chain. Subscribes to the safety-gated /cmd_vel_safe
+# topic, clamps to the G1 caps, and forwards {vx, vy, yaw} as JSON to the AMO
+# locomotion driver's WebSocket (the separate g1_locomotion process).
+cmd_vel_to_amo:
+  ros__parameters:
+    # Safety-gated velocity topic (robot_safety velocity_limiter output).
+    cmd_vel_topic:   "/cmd_vel_safe"
+    # AMO driver WebSocket endpoint (non-ROS; ws://amo_host:amo_port).
+    amo_host:        "127.0.0.1"
+    amo_port:        8766
+    # Fixed send rate to the AMO driver (decoupled from incoming cmd_vel rate).
+    rate_hz:         20.0
+    # G1 velocity caps [m/s, m/s, rad/s] -- final clamp before the robot.
+    # AMO policy in-distribution range; matches nav2_params_g1 + amo_driver.
+    max_forward_vel: 0.5
+    max_lateral_vel: 0.4
+    max_yaw_rate:    0.4
+    # Safety watchdog: command zero velocity if no cmd_vel within this time.
+    cmd_timeout:     0.5
+
+# -- Livox IMU g -> m/s^2 rescale ----------------------------------------------
+# MID-360 IMU reports accel in g (~1.0 at rest); DLIO needs m/s^2 (~9.81).
+imu_rescale:
+  ros__parameters:
+    input_topic:  "/livox/imu"
+    output_topic: "/livox/imu_ms2"
+    accel_scale:  9.80665           # standard gravity (g -> m/s^2)
+
+# -- G1 DDS state bridge -------------------------------------------------------
+# Reads the Unitree DDS state (rt/odommodestate body odometry + rt/lowstate pelvis
+# IMU) and publishes /odom_raw + /imu/data + the base_footprint -> base_link TF for
+# the EKF and perception. The G1 analogue of go2_hw_bridge's state half. publish_tf
+# stays false because the EKF owns odom -> base_footprint; publish_body_tf is true so
+# this node owns base_footprint -> base_link (body roll/pitch + standing height).
+g1_state_bridge:
+  ros__parameters:
+    net_if:           ""            # DDS NIC the G1 is reachable on (e.g. eth0); "" = SDK default
+    odom_topic:       "/odom_raw"
+    imu_topic:        "/imu/data"
+    odom_frame:       "odom"
+    base_frame:       "base_footprint"
+    base_link_frame:  "base_link"
+    imu_frame:        "imu"
+    publish_tf:       false         # EKF owns odom -> base_footprint
+    publish_body_tf:  true          # this node owns base_footprint -> base_link
+    standing_height:  0.78          # must match g1_description; calibrate on HW
+    rate_hz:          50.0
+    body_odom_timeout: 0.3
+
+# -- Frame contract (G1) -------------------------------------------------------
+# Documented here for reference. Matches go2_bringup (see docs/topic_map.md):
+#   map ->(slam_toolbox)-> odom ->(EKF)-> base_footprint
+#   base_footprint ->(g1_state_bridge: body roll/pitch + standing height)-> base_link(==pelvis)
+#   base_footprint ->(lidar_level_frame_publisher, IMU-rate)-> lidar_stabilized
+#   base_link ->(URDF / RSP)-> ... -> mid360_link
+# Nav2 robot_base_frame = base_footprint. DLIO publishes /lidar_odom (no TF); the EKF
+# fuses it (+ /odom_raw) into odom -> base_footprint.
+g1_frames:
+  ros__parameters:
+    odom_frame:           "odom"
+    base_frame:           "base_footprint"   # Nav2 robot_base_frame
+    base_link_frame:      "base_link"        # == pelvis (identity in URDF)
+    lidar_frame:          "mid360_link"      # Livox MID-360 sensor origin
+    lidar_stabilized_frame: "lidar_stabilized"  # gravity-leveled scan frame
+    imu_frame:            "imu"
+    # Velocity caps repeated here as the single source of truth for the robot.
+    # AMO policy in-distribution range; matches nav2_params_g1 + amo_driver.
+    max_linear_vel:   0.5
+    max_lateral_vel:  0.4
+    max_angular_vel:  0.4
+    cmd_timeout:      0.5
+    # Nominal pelvis (base_link) height above the floor while standing [m].
+    # Must match g1_description's standing_height xacro arg. Calibrate on HW.
+    standing_height:  0.78
+
+# -- robot_state_publisher -----------------------------------------------------
+robot_state_publisher:
+  ros__parameters:
+    publish_frequency: 50.0

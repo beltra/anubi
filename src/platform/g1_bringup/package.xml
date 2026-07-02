@@ -1,0 +1,65 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>g1_bringup</name>
+  <version>0.1.0</version>
+  <description>
+    Unitree G1 real-robot bring-up package. The G1 counterpart of go2_bringup, and
+    structurally identical to it (reuses robot_nav / robot_safety / robot_lio).
+
+    This is the HARDWARE bring-up (not simulation). It wires the full autonomy
+    stack on the real G1:
+      - robot_state_publisher (g1_description URDF) + joint_state_publisher
+      - g1_state_bridge: Unitree DDS body state -> /odom_raw + /imu/data + the
+        base_footprint -> base_link TF (the G1 analogue of go2_hw_bridge's state half)
+      - EKF (robot_localization): fuses /odom_raw (+ DLIO) into odom -> base_footprint
+      - Livox Mid-360 driver + imu_rescale (g -> m/s^2 for DLIO)
+      - robot_lio: canonical /livox -> /lidar relays + DLIO LiDAR-inertial odometry
+      - slam.launch.py: distortion_corrector (G1 self-filter) -> /lidar/points_undistorted
+        + pointcloud_to_laserscan (/scan) + slam_toolbox (map -> odom)
+      - robot_nav Nav2 stack (+ collision monitor) with the G1 STVL configs
+      - robot_safety velocity_limiter (/cmd_vel_collision_free -> /cmd_vel_safe)
+      - cmd_vel_to_amo: forwards /cmd_vel_safe to the AMO WebSocket (g1_locomotion)
+
+    Python nodes (cmd_vel_to_amo, imu_rescale, g1_state_bridge) are installed as
+    executables under lib/g1_bringup, mirroring robot_safety's install(PROGRAMS
+    ... RENAME) pattern.
+
+    NOTE: the AMO locomotion driver runs as its OWN process
+    (ros2 run g1_locomotion amo_driver), NOT from this launch.
+  </description>
+  <maintainer email="gabriel.voss01@gmail.com">Maintainer</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <!-- Python node runtime deps -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+
+  <!-- Stack components pulled in by g1_bringup.launch.py -->
+  <exec_depend>g1_description</exec_depend>
+  <!-- g1_state_bridge reuses g1_locomotion's DDS transport (G1DDSInterface), read-only -->
+  <exec_depend>g1_locomotion</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>joint_state_publisher</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>pointcloud_to_laserscan</exec_depend>
+  <exec_depend>direct_lidar_inertial_odometry</exec_depend>
+  <exec_depend>robot_nav</exec_depend>
+  <exec_depend>robot_lio</exec_depend>
+  <exec_depend>robot_localization</exec_depend>
+  <exec_depend>robot_safety</exec_depend>
+  <!-- Livox driver: optional at runtime (gated behind use_livox); declare as a
+       weak exec dep so the stack still builds where the driver is unavailable. -->
+  <exec_depend>livox_ros_driver2</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

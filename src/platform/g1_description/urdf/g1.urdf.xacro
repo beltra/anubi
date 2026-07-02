@@ -1,0 +1,57 @@
+<?xml version="1.0"?>
+<!--
+  g1.urdf.xacro - thin xacro WRAPPER around the official Unitree G1 29-DoF model.
+
+  Purpose
+  .......
+  The vendored official model (g1_29dof.urdf) keeps `pelvis` as the kinematic
+  root. The anubi Nav2 stack expects the conventional root frame `base_link`.
+  This wrapper adds `base_link` on top of the unmodified official model so we
+  never have to touch the vendored URDF (easy to re-vendor upstream updates).
+
+  Rooted at base_link (mirrors go2.urdf.xacro)
+  ............................................
+    base_link  == pelvis (identity coincident)
+      +- pelvis ... torso_link ... mid360_link   (from the official URDF)
+
+  base_footprint and lidar_stabilized are intentionally NOT part of this
+  robot_description, exactly like go2.urdf.xacro, so the bringup owns them
+  dynamically (and there is no static-vs-dynamic TF conflict):
+    * odom -> base_footprint            : EKF (robot_localization)
+    * base_footprint -> base_link       : g1_state_bridge (real, body roll/pitch +
+                                          standing height) / static TF (sim)
+    * base_footprint -> lidar_stabilized: lidar_level_frame_publisher (IMU-rate,
+                                          gravity-leveled scan frame)
+
+  Official-URDF frames referenced downstream:
+    * pelvis       : root link of the official model (== base_link).
+    * mid360_link  : the Livox Mid-360 LiDAR sensor frame (child of torso_link via
+                     mid360_joint). The true sensor origin for raw point clouds.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="g1_29dof">
+
+  <!--
+    standing_height: nominal G1 pelvis (base_link) height above the floor while
+    standing, in metres. No longer used inside this URDF (base_footprint is owned
+    by the bringup), but kept as a declared arg so callers that pass it do not
+    error; the bringup forwards the SAME value to g1_state_bridge /
+    lidar_level_frame_publisher. Default 0.78 is nominal and MUST be calibrated on
+    hardware (it varies with crouch / control mode).
+  -->
+  <xacro:arg name="standing_height" default="0.78"/>
+
+  <!-- Pull in the unmodified official Unitree model (root link = pelvis). -->
+  <xacro:include filename="$(find g1_description)/urdf/g1_29dof.urdf"/>
+
+  <!--
+    base_link: conventional root frame, coincident (identity transform) with the
+    official `pelvis` link. Everything in the anubi stack references base_link.
+  -->
+  <link name="base_link"/>
+  <joint name="base_link_to_pelvis" type="fixed">
+    <parent link="base_link"/>
+    <child link="pelvis"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+</robot>

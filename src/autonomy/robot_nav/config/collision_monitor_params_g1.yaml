@@ -1,0 +1,65 @@
+collision_monitor:
+  ros__parameters:
+    # Shared by the G1 sim and real bringups; nav2.launch.py overrides use_sim_time
+    # per launch (false on hardware), so keep the file default false to avoid a
+    # stuck-clock foot-gun if the node is ever run without that override.
+    use_sim_time: false
+    enabled: True
+    base_frame_id: "base_footprint"
+    odom_frame_id: "odom"
+    cmd_vel_in_topic: "/cmd_vel"
+    cmd_vel_out_topic: "/cmd_vel_collision_free"
+    transform_tolerance: 0.2
+    source_timeout: 0.5
+    base_shift_correction: True
+    stop_pub_timeout: 2.0
+
+    # Unitree G1 humanoid: ~0.40 m (x, fore-aft) x 0.50 m (y, shoulder/arm span)
+    # standing envelope. The monitor evaluates all polygons and applies the most
+    # restrictive triggered action (stop > slowdown > approach).
+    # Humble uses max_points semantics: action triggers when points_inside > max_points.
+    polygons: ["ApproachZone", "SlowZone", "StopZone"]
+
+    # APPROACH: forward-projects the robot footprint along the current command and
+    # scales velocity by the time-to-collision (a smooth, speed-aware slowdown that
+    # reacts earlier at higher speed than a fixed shell). Points approximate the G1
+    # footprint (the shape that is projected), padded ~0.05 m.
+    ApproachZone:
+      type: "polygon"
+      points: [0.25, 0.30, 0.25, -0.30, -0.25, -0.30, -0.25, 0.30]
+      action_type: "approach"
+      time_before_collision: 1.5      # [s] lookahead horizon for the projection
+      simulation_time_step: 0.1       # [s] projection step
+      max_points: 5
+      visualize: True
+      polygon_pub_topic: "/collision_monitor/approach_zone"
+      enabled: True
+
+    # SLOWDOWN: fixed outer shell; halve speed when obstacles are close.
+    SlowZone:
+      type: "polygon"
+      points: [0.50, 0.38, 0.50, -0.38, -0.40, -0.38, -0.40, 0.38]
+      action_type: "slowdown"
+      slowdown_ratio: 0.5
+      max_points: 3
+      visualize: True
+      polygon_pub_topic: "/collision_monitor/slow_zone"
+      enabled: True
+
+    # STOP: tight shell just outside the footprint; hard stop.
+    StopZone:
+      type: "polygon"
+      points: [0.30, 0.28, 0.30, -0.28, -0.28, -0.28, -0.28, 0.28]
+      action_type: "stop"
+      max_points: 2
+      visualize: True
+      polygon_pub_topic: "/collision_monitor/stop_zone"
+      enabled: True
+
+    observation_sources: ["pointcloud"]
+    pointcloud:
+      type: "pointcloud"
+      topic: "/lidar/points_undistorted"
+      min_height: 0.08
+      max_height: 2.3
+      enabled: True

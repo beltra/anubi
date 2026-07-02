@@ -1,0 +1,150 @@
+<?xml version="1.0"?>
+<!--
+  g1_sim.urdf.xacro
+  Unitree G1 - Gazebo Fortress (Ignition Gazebo 6, ROS 2 Humble) KINEMATIC base.
+
+  This sim model shows the ACTUAL Unitree G1 body (official meshes) frozen in the
+  AMO standing pose, driven as a SINGLE rigid "kinematic base" by the Fortress
+  VelocityControl plugin. The G1 walking gait (AMO) is NOT simulated; in sim the
+  velocity-controlled rigid body stands in for it so the full Nav2 perception +
+  planning loop can be verified without leg physics. On the real robot the AMO
+  policy (g1_locomotion) turns /cmd_vel_safe into a gait; this mirrors how
+  go2_sim uses CHAMP.
+
+  Single rigid body
+  =================
+  g1_body_standing.urdf is generated offline from the official 29-DoF URDF: the
+  whole robot is collapsed into ONE link "base_link" whose visuals are every body
+  mesh forward-kinematically posed at the AMO default_dof_pos standing stance.
+  Being one link (not an articulated chain) it cannot fall apart or sag in
+  physics; collisions are omitted (kinematic "ghost"; Nav2 avoids obstacles via
+  the costmap) and gravity is disabled so it cannot sink. The render-based
+  Ignition gpu_lidar sees every body mesh EXCEPT its own enclosing head/sensor pod
+  (see the Mid-360 mount note below), so the body realistically occludes the
+  downward beams and the resulting self-returns are removed downstream by the
+  distortion_corrector self-filter (sim_bringup_g1), exactly as on the real robot.
+
+  Canonical topic / frame parity (docs/topic_map.md):
+     gpu_lidar  -> ign /livox/lidar -> ROS /lidar/points  (frame: lidar_link)
+     body IMU   -> /imu/data        (frame: imu_link)
+     lidar IMU  -> /lidar/imu       (frame: lidar_link)   [for optional LIO]
+     odometry   -> /model/g1/odometry -> ROS /odom_raw     -> EKF
+     command    -> ROS /cmd_vel_safe -> ign /model/g1/cmd_vel (VelocityControl)
+
+  DO NOT use libgazebo_ros_* (Classic) plugins or gz:: (Harmonic) - Fortress = ignition::.
+-->
+<robot name="g1" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:arg name="robot_name" default="g1"/>
+
+  <xacro:include filename="$(find sensor_models)/urdf/mid360_lidar.urdf.xacro"/>
+  <!-- Single-link standing G1 body (defines link "base_link" with all meshes). -->
+  <xacro:include filename="$(find g1_sim)/urdf/g1_body_standing.urdf"/>
+
+  <!-- Mid-360 mount on base_link, at the REAL pelvis->mid360 FK pose: the sensor
+       optical center sits inside the head, exactly as on the physical robot, and is
+       NOT moved for the sim. The official head_link STL is the sensor pod that fully
+       encloses that optical center, so a render-based gpu_lidar placed there would see
+       only the inside of its own housing. The real Mid-360 emits through its window and
+       never returns its own pod, so the gpu_lidar is given visibility_mask 4294967293
+       and the spawn step (sim_g1.launch.py) tags ONLY the head_link visual with
+       visibility_flags=2; every other body visual stays visible. Result: the lidar has
+       a realistic view of the room while the torso, shoulders, arms and legs still
+       occlude its downward beams (part of the body blocks the view, as on hardware). -->
+  <xacro:property name="mid_x"  value="-0.00368"/>
+  <xacro:property name="mid_y"  value="0.00003"/>
+  <xacro:property name="mid_z"  value="0.46018"/>
+  <xacro:property name="mid_py" value="0.04014"/>
+
+  <!-- ====================================================================
+       VelocityControl: holonomic kinematic base driven by a Twist command.
+       Listens on ign /model/<robot_name>/cmd_vel; the launch bridges
+       ROS /cmd_vel_safe -> that Ignition topic.
+       ==================================================================== -->
+  <gazebo>
+    <plugin filename="ignition-gazebo-velocity-control-system"
+            name="ignition::gazebo::systems::VelocityControl">
+      <topic>/model/$(arg robot_name)/cmd_vel</topic>
+    </plugin>
+  </gazebo>
+
+  <!-- OdometryPublisher: ground-truth odom of base_link (bridged to /odom_raw). -->
+  <gazebo>
+    <plugin filename="ignition-gazebo-odometry-publisher-system"
+            name="ignition::gazebo::systems::OdometryPublisher">
+      <odom_frame>odom</odom_frame>
+      <robot_base_frame>base_link</robot_base_frame>
+      <odom_publish_frequency>50</odom_publish_frequency>
+      <odom_topic>/model/$(arg robot_name)/odometry</odom_topic>
+    </plugin>
+  </gazebo>
+
+  <!-- ====================================================================
+       BODY IMU (imu_link -> /imu/data) - EKF + distortion_corrector reference
+       ==================================================================== -->
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+  <link name="imu_link">
+    <inertial>
+      <mass value="0.001"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6"/>
+    </inertial>
+  </link>
+  <gazebo reference="imu_link">
+    <sensor name="imu_sensor" type="imu">
+      <always_on>1</always_on>
+      <update_rate>200</update_rate>
+      <topic>/imu/data</topic>
+      <ignition_frame_id>imu_link</ignition_frame_id>
+      <imu>
+        <angular_velocity>
+          <x><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x><noise type="gaussian"><mean>0</mean><stddev>0.021</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0</mean><stddev>0.021</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0</mean><stddev>0.021</stddev></noise></z>
+        </linear_acceleration>
+      </imu>
+    </sensor>
+  </gazebo>
+
+  <!-- ====================================================================
+       LIVOX MID-360 on lidar_link, placed at the FK mid360 pose on base_link.
+       Naming it lidar_link makes the published cloud frame match the canonical
+       autonomy stack so the G1 reuses distortion_corrector / nav2 unchanged.
+       ==================================================================== -->
+  <xacro:mid360_lidar parent="base_link" prefix="lidar_" link_name="lidar_link"
+                      visibility_mask="4294967293">
+    <origin xyz="${mid_x} ${mid_y} ${mid_z}" rpy="0 ${mid_py} 0"/>
+  </xacro:mid360_lidar>
+
+  <!-- Mid-360 built-in IMU (lidar_link -> /lidar/imu); for parity / optional LIO. -->
+  <gazebo reference="lidar_link">
+    <sensor name="lidar_imu_sensor" type="imu">
+      <always_on>1</always_on>
+      <update_rate>200</update_rate>
+      <topic>/lidar/imu</topic>
+      <ignition_frame_id>lidar_link</ignition_frame_id>
+      <imu>
+        <angular_velocity>
+          <x><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x><noise type="gaussian"><mean>0</mean><stddev>0.021</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0</mean><stddev>0.021</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0</mean><stddev>0.021</stddev></noise></z>
+        </linear_acceleration>
+      </imu>
+    </sensor>
+  </gazebo>
+
+</robot>
