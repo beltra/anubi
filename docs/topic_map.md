@@ -1,10 +1,12 @@
 # Topic Map - Anubi Autonomy Stack
 
-Last updated: 2026-05-07
-Branch: `feat/sim2real`
+Last updated: 2026-06-30
+Branch: `feat/g1` (G1 humanoid variant; off `feat/sim2real`)
 
 This document is the authoritative reference for all ROS 2 topics in the anubi stack.
-"Sim name" and "HW name" columns are filled only when the two differ.
+"Sim name" and "HW name" columns are filled only when the two differ. The main tables
+below describe the Go2; the **Unitree G1 Hardware Variant** section near the end gives
+the G1-specific publishers/frames (only those differ -- the canonical contract is shared).
 
 ---
 
@@ -27,7 +29,7 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 | Topic | Type | Publisher | Consumer(s) | Sim | HW | Notes |
 |-------|------|-----------|-------------|-----|----|-------|
 | `/odom_raw` | `nav_msgs/Odometry` | CHAMP odom bridge (sim) / `go2_hw_bridge` (HW) | EKF fusion node | same | same | Raw body odometry input to EKF. |
-| `/lidar_odom` | `nav_msgs/Odometry` | optional LIO backend (via `robot_lio`) | `lidar_odom_relay` | optional | optional | Disabled by default (`use_lio:=false`). All-zero covariances (DLIO limitation) - never feed directly to the EKF. |
+| `/lidar_odom` | `nav_msgs/Odometry` | optional LIO backend (via `robot_lio`) | `lidar_odom_relay` | optional | optional | Default OFF on the Go2 (`use_lio:=false`); **default ON for the G1 real robot** (`use_lio:=true`, DLIO is its primary odometry). All-zero covariances (DLIO limitation) - never feed directly to the EKF. |
 | `/lidar_odom_reliable` | `nav_msgs/Odometry` | `lidar_odom_relay` | EKF fusion node | optional | optional | `/lidar_odom` with injected diagonal covariances. Active only when `use_lio:=true`. This is the topic the EKF consumes. |
 | `/odom` | `nav_msgs/Odometry` | `footprint_to_odom_ekf` (sim) / `ekf_filter_node` (HW) | `slam_toolbox`, Nav2 | same | same | Fused odometry output. frame_id=`odom`, child_frame_id=`base_footprint`. |
 | `/map` | `nav_msgs/OccupancyGrid` | `slam_toolbox` | Nav2 global costmap `StaticLayer`, RViz | same | same | Published during mapping mode; used as localization reference in localization mode and by STVL profiles for map-backed global planning. |
@@ -111,6 +113,33 @@ These follow standard Nav2 Humble topic naming; listed here for completeness.
 | `/costmap_raw` | `nav2_msgs/Costmap` | Raw costmap for debugging when remapped by a Nav2 component. |
 | `/cmd_vel_nav` | `geometry_msgs/Twist` | Nav2 controller output before velocity smoothing (see Command Topics above). |
 | `/speed_limit` | `nav2_msgs/SpeedLimit` | Optional controller speed-limit input. No default publisher. |
+
+## Unitree G1 Hardware Variant
+
+The G1 humanoid reuses every canonical topic/TF in this document; only the robot-specific
+PUBLISHERS differ (full detail in `docs/g1_embodiment.md`). The autonomy stack and the
+EKF frame ownership (`odom -> base_footprint`) are identical to the Go2.
+
+| Canonical topic / TF | Go2 publisher (HW) | G1 publisher (HW) |
+|----------------------|--------------------|-------------------|
+| `/lidar/points` | `robot_lio` relay of `/utlidar/cloud` | `robot_lio` relay of `/livox/lidar` (Livox Mid-360 driver, frame `lidar_link`) |
+| `/lidar/imu` | `robot_lio` relay of `/utlidar/imu` | `robot_lio` relay of `/livox/imu_ms2` (= `imu_rescale` of `/livox/imu`, g -> m/s^2) |
+| `/odom_raw` | `go2_hw_bridge` (SportModeState) | `g1_state_bridge` (DDS `rt/odommodestate`) |
+| `/imu/data` | `go2_hw_bridge` (body IMU) | `g1_state_bridge` (DDS `rt/lowstate` pelvis IMU) |
+| `/odom` + `odom -> base_footprint` TF | `ekf_filter_node` | `ekf_filter_node` (same robot-agnostic config) |
+| `base_footprint -> base_link` TF | `go2_hw_bridge` | `g1_state_bridge` (body roll/pitch + standing height ~0.78 m, calibrate) |
+| `base_link -> <sensor>` TF | `base_link -> lidar_link -> utlidar_lidar` (URDF + `robot_lio` alias) | `base_link -> mid360_link` (URDF) + identity `mid360_link -> lidar_link` alias (`g1_bringup`, for the driver cloud `frame_id`) |
+| `base_footprint -> lidar_stabilized` TF | `lidar_level_frame_publisher` | `lidar_level_frame_publisher` (same node; G1 Mid-360 extrinsics) |
+| `/lidar/points_undistorted` | `distortion_corrector` (`distortion_corrector.yaml`) | `distortion_corrector` (`distortion_corrector_g1.yaml`, G1 self-filter box; shared by sim) |
+| `/lidar_odom` | DLIO (use_lio) | DLIO (use_lio, default true; `dlio_params_g1_real.yaml`) |
+| `/cmd_vel_safe` consumer | `go2_hw_bridge` (Sport API) | `cmd_vel_to_amo` (AMO WebSocket :8766; caps vx0.5/vy0.4/yaw0.4) |
+
+G1 hardware-only inputs (no Go2 equivalent): `/livox/lidar`, `/livox/imu`, `/livox/imu_ms2`,
+and the Unitree DDS topics `rt/odommodestate` + `rt/lowstate` (read by `g1_state_bridge`).
+The G1 has no Sport API (`/api/sport/request`); commands go to the AMO driver over WebSocket.
+The G1 does NOT use scan accumulation: `/scan` is derived from single Mid-360 frames
+(`accumulate_scan_cloud:=false`), so `/lidar/points_scan_accumulated` is absent on the G1
+(unlike the Go2 real bringup); sim and G1-real share this behavior.
 
 ## Optional Topics (route_server, disabled by default)
 

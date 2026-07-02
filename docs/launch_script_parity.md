@@ -1,10 +1,12 @@
 # Launch Script Parity
 
-Date: 2026-05-07
+Date: 2026-06-30
 
 ## Scope
 
-This note records the shared wrapper arguments for `scripts/run_go2_sim.sh` and `scripts/run_go2_real.sh`.
+This note records the shared wrapper arguments for `scripts/run_go2_sim.sh` and
+`scripts/run_go2_real.sh`, and (in "Unitree G1 Wrappers" below) the G1 equivalents
+`scripts/run_g1_sim.sh` / `scripts/run_g1_real.sh`.
 
 ## Shared Arguments
 
@@ -36,3 +38,13 @@ Simulation-only options are `--world`, `--gui`, `--no-gui`, and `--no-clean`.
 Real-only options are `--no-safety`, `--use-safety`, `--lidar-points-in-topic`, `--lidar-points-frame`, `--lidar-imu-in-topic`, `--recovery-ack-key-mask`, `--resume-key-mask`, `--abort-key-mask`, `--record-rosbag`, `--rosbag-dir`, and `--rosbag-topics`.
 
 `--record-rosbag` starts `ros2 bag record` as a background sibling of the launch and traps SIGINT/SIGTERM to flush metadata. The default topic set covers offline perception replay (relayed LiDAR cloud + IMU, processed clouds, body IMU, sport-mode state, odometry, TF, robot description, map, status). The recorder uses `scripts/rosbag_qos_overrides.yaml` so it subscribes to `/tf_static`, `/robot_description`, and `/map` with TRANSIENT_LOCAL durability and captures their latched samples.
+
+## Unitree G1 Wrappers
+
+`scripts/run_g1_sim.sh` and `scripts/run_g1_real.sh` mirror the Go2 wrappers for the G1 humanoid. The underlying launches (`g1_sim sim_bringup_g1.launch.py`, `g1_bringup g1_bringup.launch.py`) reuse the robot-agnostic autonomy unchanged; the G1 differences are the kinematic sim base, the head-mounted Mid-360, the AMO command bridge, and the G1 Nav2 profiles.
+
+Shared with the Go2 wrappers: `mapping`/`localization` positional mode, `--map`, `--no-rviz`, `--no-stvl`, `--nav-delay`, `--distortion-imu-topic`, `--no-clean`.
+
+`run_g1_sim.sh` (sim-only): `--world`, `--gui`/`--no-gui` (headless is the reliable default on software GL; the Gazebo GUI client does not render on NoMachine `:1001`), and `--use-lio` to enable the optional DLIO backend. The `run_g1_sim.sh` wrapper sets `--nav-delay` to `14.0` (covers Gazebo + bridge + TF settle; the bare `sim_bringup_g1.launch.py` arg default is `10.0`). `use_lio` defaults to false: ground-truth odom + EKF is the reliable demo path because DLIO degrades during the kinematic base's motion.
+
+`run_g1_real.sh` (real-only): `--no-livox`, `--no-lio`, `--no-ekf`, `--no-state-bridge`, `--no-nav`, `--no-safety`, `--livox-config <path>`, `--standing-height <m>`, `--net-if <iface>` (DDS NIC), and `--recovery-ack-key-mask`/`--resume-key-mask`/`--abort-key-mask`. `--nav-delay` defaults to `5.0` so DLIO finishes its ~3 s stationary IMU/gravity calibration and the EKF settles before navigation; keep the robot still during it. Real LiDAR input is `/livox/lidar` + `/livox/imu` (rescaled to `/livox/imu_ms2`), relayed by `robot_lio` to canonical `/lidar/points` + `/lidar/imu`. The command tail is `/cmd_vel_safe -> cmd_vel_to_amo -> AMO WebSocket :8766` (the AMO driver runs as a separate process). The EKF owns `odom -> base_footprint` exactly as on the Go2.

@@ -16,6 +16,7 @@
 ## Canonical Run Paths
 - Sim stack: `scripts/run_go2_sim.sh` (default `mapping`; supports `localization --map ...`).
 - Real robot stack: `scripts/run_go2_real.sh` (default `mapping`; safety is on by default; supports `--no-safety`, `--use-lio`, custom LiDAR input topics).
+- Unitree G1 variant: `scripts/run_g1_sim.sh` / `scripts/run_g1_real.sh` (head-mounted Livox Mid-360 + AMO locomotion; G1 real defaults `use_lio:=true`). See `docs/g1_embodiment.md`.
 - Manual sim entrypoint: `ros2 launch robot_sim sim_bringup.launch.py`.
 - Manual hardware entrypoint: `ros2 launch go2_bringup go2_bringup.launch.py`.
 
@@ -39,7 +40,7 @@
 - Shared wrapper options include `--map`, `--no-rviz`, `--use-lio`, `--no-stvl`, `--nav-profile`, `--use-route-server`, `--route-graph-file`, `--robot-name`, `--distortion-imu-topic`, and `--nav-delay`.
 - Sim-only wrapper options include `--world`, `--gui`, `--no-gui`, and `--no-clean`.
 - Real-only wrapper options include `--no-safety`, `--use-safety`, `--lidar-points-in-topic`, `--lidar-imu-in-topic`, `--recovery-ack-key-mask`, `--resume-key-mask`, `--abort-key-mask`, `--record-rosbag`, `--rosbag-dir`, and `--rosbag-topics`.
-- Sim `--nav-delay` defaults to `20.0` seconds and Nav2 starts 10 seconds after SLAM; real `--nav-delay` defaults to `0.0` seconds and delays SLAM/Nav2 together.
+- Go2 `--nav-delay`: sim defaults `20.0` s (Nav2 starts 10 s after SLAM); real defaults `0.0` s (delays SLAM/Nav2 together). The G1 wrappers differ: `run_g1_sim.sh` defaults `14.0` s, `run_g1_real.sh` defaults `5.0` s (lets DLIO finish its stationary IMU/gravity calibration). Do not assume the Go2 defaults for the G1.
 
 ## Launch/Process Maintenance Rule
 - If you add/change launch-started nodes/processes, update `scripts/kill_ros_nodes.sh` in the same change so cleanup remains complete.
@@ -55,6 +56,7 @@
 ## Coding Guidelines For This Workspace
 - Use ASCII only in new/edited files.
 - Keep comments clean and sparse: explain non-obvious integration constraints (TF ownership, topic contracts, hardware quirks), not obvious code flow.
+- Never reference past conversations, chat sessions, PRs, or task history in comments (e.g. "as discussed", "from the earlier chat", "per previous request"). A comment must stand on its own: state briefly why the code is the way it is, and describe what the code does only when it is not self-evident.
 - Use explicit function and variable names that reflect ROS intent (`cmd_vel_in`, `lidar_points_input_topic`, `use_safety`) and keep parameter naming consistent with existing launch/config conventions.
 - For booleans, keep `use_*`, `enable_*`, or `start_*` naming; for topics, prefer `*_topic` or `*_input_topic`/`*_output_topic`.
 - Preserve safety-critical defaults unless task explicitly changes behavior (watchdog timeouts, cmd gating, TF ownership).
