@@ -1,6 +1,6 @@
 # Topic Map - Anubi Autonomy Stack
 
-Last updated: 2026-05-07
+Last updated: 2026-05-13
 Branch: `feat/sim2real`
 
 This document is the authoritative reference for all ROS 2 topics in the anubi stack.
@@ -18,7 +18,7 @@ This document is the authoritative reference for all ROS 2 topics in the anubi s
 | `/scan` | `sensor_msgs/LaserScan` | `pointcloud_to_laserscan` | `slam_toolbox`, `obstacle_layer` | same | same | Sim derives directly from `/lidar/points_undistorted`; HW derives from `/lidar/points_scan_accumulated` to avoid sparse radial scans from single non-repetitive L1 frames. |
 | `/imu/data` | `sensor_msgs/Imu` | gazebo_bridge (sim) / `go2_hw_bridge` (HW) | EKF (`footprint_to_odom_ekf` in sim, `ekf_filter_node` on HW), `distortion_corrector` | published | published | Body IMU in `imu_link`. Default correction IMU. Set `distortion_imu_topic:=/lidar/imu` to compare LiDAR IMU timing. |
 | `/lidar/imu` | `sensor_msgs/Imu` | `robot_lio` relay (sim/HW) | optional LIO backend | same | same | Canonical LiDAR-integrated IMU topic for LIO. |
-| `/joint_states` | `sensor_msgs/JointState` | `joint_state_publisher_system` (sim only) | `robot_state_publisher`, CHAMP | published | absent | SIM-ONLY. HW uses Sport Mode API; no joint-level state is published on real robot. |
+| `/joint_states` | `sensor_msgs/JointState` | `joint_state_publisher_system` (sim) / `go2_hw_bridge` (HW, decimated from `/lowstate.motor_state`) | `robot_state_publisher`, CHAMP (sim only) | published @ ~200 Hz | published @ ~50 Hz | HW path maps Unitree motor indices (FR=0..2, FL=3..5, RR=6..8, RL=9..11) to CHAMP-style URDF joint names. Decimation is timer-driven; rate set by `joint_states_rate` parameter on `go2_hw_bridge`. RViz uses these to articulate the leg links defined in `go2_description/urdf/leg.xacro`. |
 
 ---
 

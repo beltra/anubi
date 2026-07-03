@@ -55,10 +55,10 @@
   <xacro:property name="lidar_imu_roll" value="0.194961"/>
   <xacro:property name="lidar_imu_pitch" value="0.144193"/>
 
-  <!-- == Include sub-files == -->
-  <xacro:include filename="$(find go2_sim)/urdf/const.xacro"/>
-  <xacro:include filename="$(find go2_sim)/urdf/materials.xacro"/>
-  <xacro:include filename="$(find go2_sim)/urdf/leg.xacro"/>
+  <!-- == Include sub-files (shared sources of truth live in go2_description) == -->
+  <xacro:include filename="$(find go2_description)/urdf/const.xacro"/>
+  <xacro:include filename="$(find go2_description)/urdf/materials.xacro"/>
+  <xacro:include filename="$(find go2_description)/urdf/leg.xacro"/>
   <xacro:include filename="$(find sensor_models)/urdf/l1_lidar.urdf.xacro"/>
 
   <!-- ====================================================================
@@ -128,7 +128,7 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="package://go2_sim/meshes/dae/base.dae" scale="1 1 1"/>
+        <mesh filename="package://go2_description/meshes/dae/base.dae" scale="1 1 1"/>
       </geometry>
     </visual>
     <collision>
@@ -209,13 +209,13 @@
        LEGS  (4x instantiation via leg macro - defines foot links LF/RF/LH/RH_FOOT)
        ==================================================================== -->
   <!--  RF: mirror=-1 (right), mirror_dae=False (right mesh), front_hind=1, front_hind_dae=True  -->
-  <xacro:leg name="rf" mirror="-1" mirror_dae="False" front_hind="1"  front_hind_dae="True"/>
+  <xacro:leg name="rf" mirror="-1" mirror_dae="False" front_hind="1"  front_hind_dae="True"  parent="trunk" with_ros2_control="True"/>
   <!--  LF: mirror=1  (left),  mirror_dae=True  (left mesh),  front_hind=1, front_hind_dae=True  -->
-  <xacro:leg name="lf" mirror="1"  mirror_dae="True"  front_hind="1"  front_hind_dae="True"/>
+  <xacro:leg name="lf" mirror="1"  mirror_dae="True"  front_hind="1"  front_hind_dae="True"  parent="trunk" with_ros2_control="True"/>
   <!--  RH: mirror=-1 (right), mirror_dae=False (right mesh), front_hind=-1, front_hind_dae=False -->
-  <xacro:leg name="rh" mirror="-1" mirror_dae="False" front_hind="-1" front_hind_dae="False"/>
+  <xacro:leg name="rh" mirror="-1" mirror_dae="False" front_hind="-1" front_hind_dae="False" parent="trunk" with_ros2_control="True"/>
   <!--  LH: mirror=1  (left),  mirror_dae=True  (left mesh),  front_hind=-1, front_hind_dae=False -->
-  <xacro:leg name="lh" mirror="1"  mirror_dae="True"  front_hind="-1" front_hind_dae="False"/>
+  <xacro:leg name="lh" mirror="1"  mirror_dae="True"  front_hind="-1" front_hind_dae="False" parent="trunk" with_ros2_control="True"/>
 
   <!-- == Gazebo physics properties for legs == -->
   <!-- LF leg -->
