@@ -16,7 +16,7 @@
 ## Canonical Run Paths
 - Sim stack: `scripts/run_go2_sim.sh` (default `mapping`; supports `localization --map ...`).
 - Real robot stack: `scripts/run_go2_real.sh` (default `mapping`; safety is on by default; supports `--no-safety`, `--use-lio`, custom LiDAR input topics).
-- Unitree G1 variant: `scripts/run_g1_sim.sh` / `scripts/run_g1_real.sh` (head-mounted Livox Mid-360 + AMO locomotion; G1 real defaults `use_lio:=true`). See `docs/g1_embodiment.md`.
+- Unitree G1 variant: `scripts/run_g1_sim.sh` / `scripts/run_g1_real.sh` (head-mounted Livox Mid-360; G1 real defaults `use_lio:=true`). Low-level controller selectable via `--locomotion amo|sonic` (+ `--sonic-profile slow_walk|walk`); AMO is default, SONIC uses parallel configs that never touch the AMO ones. See `docs/g1_embodiment.md` and `docs/g1_sonic_locomotion.md`.
 - Manual sim entrypoint: `ros2 launch robot_sim sim_bringup.launch.py`.
 - Manual hardware entrypoint: `ros2 launch go2_bringup go2_bringup.launch.py`.
 

@@ -205,19 +205,34 @@ is kept for the policy's strafe capability / Omni readiness.) This is what makes
 a holonomic-ish mobile base from Nav2's point of view, without Nav2 knowing anything
 about legs.
 
+### 5.2 Locomotion alternative: the SONIC whole-body controller
+
+With `locomotion:=sonic` (`run_g1_real.sh --locomotion sonic`), the last hop is replaced
+by `cmd_vel_to_sonic`, which turns the Twist into SONIC planner ticks (world-frame
+movement/facing direction + speed) over a ZMQ PUB socket (:5556 on the nav host). The
+SONIC controller (`g1_deploy_onnx_ref` from GR00T-WholeBodyControl, deployed on a Jetson
+Orin Nano via the sonic-g1-locomanipulation repo) connects to that socket and writes
+`rt/lowcmd` at 50 Hz. Everything upstream of the bridge -- and the whole STATE side
+(`g1_state_bridge`, DLIO, EKF) -- is identical to the AMO variant. Two matched
+config pairs (`sonic_profile`): `slow_walk` (SLOW_WALK mode, AMO-equal envelope,
+first-bringup default) and `walk` (WALK mode, vx 0.8 / wz 0.5). The AMO configs are
+never modified by the sonic path. NEVER run `amo_driver` and `g1_deploy_onnx_ref`
+simultaneously (single writer on `rt/lowcmd`). Full first-setup + bringup procedure:
+`docs/g1_sonic_locomotion.md`.
+
 ## 6. Sim/real parity summary
 
 | Aspect                | Simulation                              | Real robot                          |
 |-----------------------|-----------------------------------------|-------------------------------------|
-| Body                  | 1 rigid ghost link, footprint collision | Articulated G1, AMO gait            |
-| Motion from /cmd_vel  | VelocityControl kinematic base          | AMO policy (ws :8766)               |
+| Body                  | 1 rigid ghost link, footprint collision | Articulated G1, AMO or SONIC gait   |
+| Motion from /cmd_vel  | VelocityControl kinematic base          | AMO policy (ws :8766) or SONIC (ZMQ :5556) |
 | Mid-360 mount         | Real pose, gpu_lidar (sees body)        | Real pose, Livox driver             |
 | Self-returns          | distortion_corrector self-filter        | distortion_corrector self-filter    |
 | 2D scan               | scan_from_cloud_g1.yaml                  | scan_from_cloud_g1.yaml             |
 | odom->base_footprint  | EKF                                     | EKF                                 |
 | EKF odometry input    | ground-truth /odom_raw (DLIO optional)  | DLIO + AMO body odom /odom_raw      |
 | base_footprint->base_link | static (no tilt)                    | g1_state_bridge (body roll/pitch)   |
-| Nav2 profiles         | nav2_params_g1 + collision_monitor_g1   | nav2_params_g1 + collision_monitor_g1 |
+| Nav2 profiles         | nav2_params_g1[_sonic_*] + collision_monitor_g1 | nav2_params_g1[_sonic_*] + collision_monitor_g1 |
 
 The deliberate difference is the body/motion row and the EKF's odometry INPUT (no
 ground truth on hardware); the EKF ownership, perception, and Nav2 rows are identical

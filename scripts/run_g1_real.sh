@@ -4,10 +4,15 @@
 # go2_bringup: g1_state_bridge (DDS body state -> /odom_raw + /imu/data + body TF)
 #   + EKF (odom -> base_footprint) + Livox Mid-360 driver + imu_rescale + robot_lio
 #   (canonical relays + DLIO) + slam (distortion_corrector self-filter + p2l + slam_toolbox)
-#   + Nav2 (G1 STVL configs) + robot_safety velocity_limiter + cmd_vel_to_amo (:8766).
+#   + Nav2 (G1 STVL configs) + robot_safety velocity_limiter + the locomotion bridge
+#   (cmd_vel_to_amo ws:8766, or cmd_vel_to_sonic ZMQ:5556 with --locomotion sonic).
 #
-# IMPORTANT: the AMO locomotion driver (g1_locomotion amo_driver) runs as its OWN
-# process and must already be up; this stack only produces velocity commands for it.
+# IMPORTANT: the low-level locomotion controller runs as its OWN process and must
+# already be up; this stack only produces velocity commands for it:
+#   --locomotion amo   (default) g1_locomotion amo_driver on this host (ws :8766)
+#   --locomotion sonic SONIC g1_deploy_onnx_ref on the Jetson, connecting to this
+#                      host's ZMQ :5556 (see docs/g1_sonic_locomotion.md)
+# NEVER run both controllers at once (two writers on rt/lowcmd is dangerous).
 # Keep the robot STILL for the first few seconds so DLIO completes its IMU/gravity
 # calibration (see --nav-delay).
 #
@@ -35,27 +40,36 @@ RECOVERY_ACK_KEY_MASK="0"
 RESUME_KEY_MASK="0"
 ABORT_KEY_MASK="0"
 CLEAN_EXISTING="true"
+LOCOMOTION="amo"
+SONIC_PROFILE="slow_walk"
 
 usage() {
   cat <<'EOF'
 Usage:
   run_g1_real.sh [mapping|localization] [options]
 
-Hardware bring-up for the Unitree G1. Start the AMO locomotion driver SEPARATELY first
-(g1_locomotion amo_driver, WebSocket server on :8766); this stack only commands it.
+Hardware bring-up for the Unitree G1. Start the low-level locomotion controller
+SEPARATELY first; this stack only commands it:
+  amo (default): g1_locomotion amo_driver on this host (WebSocket :8766)
+  sonic:         SONIC g1_deploy_onnx_ref on the Jetson (connects to this host's
+                 cmd_vel_to_sonic ZMQ PUB :5556); see docs/g1_sonic_locomotion.md
+NEVER run both controllers at once (rt/lowcmd single-writer rule).
 Keep the robot STILL during the initial --nav-delay so DLIO can calibrate.
 
 Options:
   --map <path>           slam_toolbox .posegraph map (required in localization mode)
+  --locomotion <name>    Low-level controller: amo (default) or sonic
+  --sonic-profile <name> SONIC velocity envelope: slow_walk (default; vx 0.5, wz 0.4)
+                         or walk (vx 0.8, wz 0.5; only after slow_walk is validated)
   --no-livox             Do NOT start the Livox Mid-360 driver + imu_rescale
                          (e.g. when replaying a rosbag of /livox/lidar + /livox/imu)
   --no-lio               Do NOT run DLIO (odometry then relies on the AMO body odom only)
   --no-ekf               Do NOT run the EKF (advanced; leaves odom->base_footprint unowned)
   --no-state-bridge      Do NOT run the DDS state bridge (use a static base_footprint->base_link;
                          e.g. rosbag replay or bench tests without the robot)
-  --no-nav               Do NOT start Nav2 + collision_monitor + cmd_vel_to_amo
+  --no-nav               Do NOT start Nav2 + collision_monitor + the locomotion bridge
   --no-stvl              Disable SpatioTemporalVoxelLayer in the Nav2 local costmap
-  --no-safety            Disable the velocity_limiter (cmd_vel_to_amo reads /cmd_vel_collision_free)
+  --no-safety            Disable the velocity_limiter (the bridge reads /cmd_vel_collision_free)
   --no-rviz              Start without RViz
   --nav-delay <sec>      Delay before SLAM/Nav2 start (default 5.0; lets DLIO calibrate)
   --livox-config <path>  Livox MID360_config.json (host/lidar IPs + roll:180 mount)
@@ -70,10 +84,12 @@ Options:
   -h, --help             Show this help
 
 Examples:
-  run_g1_real.sh                                   # mapping, full stack
+  run_g1_real.sh                                   # mapping, full stack, AMO
   run_g1_real.sh localization --map /ws/anubi/maps/office.posegraph
   run_g1_real.sh --no-nav                          # sensors + DLIO + EKF only, no commands
   run_g1_real.sh --net-if eth0
+  run_g1_real.sh --locomotion sonic                # SONIC controller, slow_walk envelope
+  run_g1_real.sh --locomotion sonic --sonic-profile walk
 EOF
 }
 
@@ -101,10 +117,19 @@ while [[ $# -gt 0 ]]; do
     --resume-key-mask) [[ $# -ge 2 ]] || { echo "Missing value" >&2; exit 1; }; RESUME_KEY_MASK="$2"; shift 2;;
     --abort-key-mask) [[ $# -ge 2 ]] || { echo "Missing value" >&2; exit 1; }; ABORT_KEY_MASK="$2"; shift 2;;
     --no-clean) CLEAN_EXISTING="false"; shift;;
+    --locomotion) [[ $# -ge 2 ]] || { echo "Missing value for --locomotion" >&2; exit 1; }; LOCOMOTION="$2"; shift 2;;
+    --sonic-profile) [[ $# -ge 2 ]] || { echo "Missing value for --sonic-profile" >&2; exit 1; }; SONIC_PROFILE="$2"; shift 2;;
     -h|--help) usage; exit 0;;
     *) echo "Unknown argument: $1" >&2; usage; exit 1;;
   esac
 done
+
+if [[ "$LOCOMOTION" != "amo" && "$LOCOMOTION" != "sonic" ]]; then
+  echo "Invalid --locomotion '$LOCOMOTION' (expected amo or sonic)." >&2; exit 1
+fi
+if [[ "$SONIC_PROFILE" != "slow_walk" && "$SONIC_PROFILE" != "walk" ]]; then
+  echo "Invalid --sonic-profile '$SONIC_PROFILE' (expected slow_walk or walk)." >&2; exit 1
+fi
 
 if [[ "$MODE" == "localization" && -z "$MAP_PATH" ]]; then
   echo "In localization mode you must provide --map <path>." >&2; exit 1
@@ -139,13 +164,21 @@ CMD=(
   recovery_ack_key_mask:="$RECOVERY_ACK_KEY_MASK"
   resume_key_mask:="$RESUME_KEY_MASK"
   abort_key_mask:="$ABORT_KEY_MASK"
+  locomotion:="$LOCOMOTION"
+  sonic_profile:="$SONIC_PROFILE"
 )
 [[ -n "$MAP_PATH"     ]] && CMD+=(map:="$MAP_PATH")
 [[ -n "$LIVOX_CONFIG" ]] && CMD+=(livox_config:="$LIVOX_CONFIG")
 [[ -n "$NET_IF"       ]] && CMD+=(net_if:="$NET_IF")
 
 echo "Starting G1 real-robot stack..."
-echo "NOTE: ensure the AMO locomotion driver (g1_locomotion amo_driver, ws://127.0.0.1:8766) is already running."
+if [[ "$LOCOMOTION" == "sonic" ]]; then
+  echo "NOTE: ensure the SONIC controller (g1_deploy_onnx_ref on the Jetson) is running and"
+  echo "      pointed at this host's ZMQ :5556, and the AMO driver is NOT running."
+  echo "      SONIC profile: ${SONIC_PROFILE}. See docs/g1_sonic_locomotion.md."
+else
+  echo "NOTE: ensure the AMO locomotion driver (g1_locomotion amo_driver, ws://127.0.0.1:8766) is already running."
+fi
 echo "NOTE: keep the robot STILL for the first ${NAV_DELAY_SEC}s so DLIO can calibrate."
 printf 'Command:'; printf ' %q' "${CMD[@]}"; echo
 exec "${CMD[@]}"

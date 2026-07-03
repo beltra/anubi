@@ -132,11 +132,15 @@ EKF frame ownership (`odom -> base_footprint`) are identical to the Go2.
 | `base_footprint -> lidar_stabilized` TF | `lidar_level_frame_publisher` | `lidar_level_frame_publisher` (same node; G1 Mid-360 extrinsics) |
 | `/lidar/points_undistorted` | `distortion_corrector` (`distortion_corrector.yaml`) | `distortion_corrector` (`distortion_corrector_g1.yaml`, G1 self-filter box; shared by sim) |
 | `/lidar_odom` | DLIO (use_lio) | DLIO (use_lio, default true; `dlio_params_g1_real.yaml`) |
-| `/cmd_vel_safe` consumer | `go2_hw_bridge` (Sport API) | `cmd_vel_to_amo` (AMO WebSocket :8766; caps vx0.5/vy0.4/yaw0.4) |
+| `/cmd_vel_safe` consumer | `go2_hw_bridge` (Sport API) | `cmd_vel_to_amo` (AMO WebSocket :8766; caps vx0.5/vy0.4/yaw0.4) or, with `locomotion:=sonic`, `cmd_vel_to_sonic` (SONIC planner ticks, ZMQ PUB :5556; caps per `sonic_profile`: slow_walk vx0.5/vy0.4/yaw0.4, walk vx0.8/vy0.4/yaw0.5) |
 
 G1 hardware-only inputs (no Go2 equivalent): `/livox/lidar`, `/livox/imu`, `/livox/imu_ms2`,
 and the Unitree DDS topics `rt/odommodestate` + `rt/lowstate` (read by `g1_state_bridge`).
-The G1 has no Sport API (`/api/sport/request`); commands go to the AMO driver over WebSocket.
+The G1 has no Sport API (`/api/sport/request`); commands go to the selected low-level
+controller: the AMO driver over WebSocket (`locomotion:=amo`, default) or the SONIC
+whole-body controller (`g1_deploy_onnx_ref` on the Jetson) over ZMQ (`locomotion:=sonic`,
+see `docs/g1_sonic_locomotion.md`). Exactly one controller may run at a time (single
+writer on `rt/lowcmd`). The state side (`g1_state_bridge`, DLIO, EKF) is identical for both.
 The G1 does NOT use scan accumulation: `/scan` is derived from single Mid-360 frames
 (`accumulate_scan_cloud:=false`), so `/lidar/points_scan_accumulated` is absent on the G1
 (unlike the Go2 real bringup); sim and G1-real share this behavior.

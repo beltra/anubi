@@ -21,6 +21,8 @@ USE_LIO="false"    # default: Gazebo ground-truth odom + EKF (reliable). --use-l
 NAV_DELAY_SEC="14.0"
 DISTORTION_IMU_TOPIC="/imu/data"
 CLEAN_EXISTING="true"
+LOCOMOTION="amo"
+SONIC_PROFILE="slow_walk"
 
 usage() {
   cat <<'EOF'
@@ -41,6 +43,13 @@ Options:
                        during motion, so DLIO tracks well at rest/slow but can drift while
                        moving; the default (ground-truth odom) is the reliable sim path.
   --no-clean           Do not kill pre-existing ROS/Gazebo processes before launch
+  --locomotion <name>  Nav2 velocity envelope to exercise: amo (default) or sonic.
+                       Sim locomotion itself is unchanged (kinematic VelocityControl
+                       base); this only selects the nav2_params_g1*.yaml profile so
+                       SONIC nav tuning can be tested before hardware runs.
+  --sonic-profile <name>
+                       SONIC envelope when --locomotion sonic: slow_walk (default)
+                       or walk (vx 0.8, wz 0.5)
   --nav-delay <sec>    Delay before SLAM starts; Nav2 starts 10 s later (default: 14.0)
   --distortion-imu-topic <topic>
                        IMU topic used for LiDAR correction (default: /imu/data)
@@ -51,6 +60,7 @@ Examples:
   run_g1_sim.sh --use-lio
   run_g1_sim.sh mapping --world /ws/anubi/src/simulation/sim_worlds/worlds/warehouse.world
   run_g1_sim.sh localization --map /ws/anubi/src/autonomy/robot_nav/maps/my_map
+  run_g1_sim.sh --locomotion sonic --sonic-profile walk   # test the SONIC walk envelope
 EOF
 }
 
@@ -69,12 +79,21 @@ while [[ $# -gt 0 ]]; do
     --no-stvl) USE_STVL="false"; shift;;
     --use-lio) USE_LIO="true"; shift;;
     --no-clean) CLEAN_EXISTING="false"; shift;;
+    --locomotion) [[ $# -ge 2 ]] || { echo "Missing value for --locomotion" >&2; exit 1; }; LOCOMOTION="$2"; shift 2;;
+    --sonic-profile) [[ $# -ge 2 ]] || { echo "Missing value for --sonic-profile" >&2; exit 1; }; SONIC_PROFILE="$2"; shift 2;;
     --nav-delay) [[ $# -ge 2 ]] || { echo "Missing value for --nav-delay" >&2; exit 1; }; NAV_DELAY_SEC="$2"; shift 2;;
     --distortion-imu-topic) [[ $# -ge 2 ]] || { echo "Missing value for --distortion-imu-topic" >&2; exit 1; }; DISTORTION_IMU_TOPIC="$2"; shift 2;;
     -h|--help) usage; exit 0;;
     *) echo "Unknown argument: $1" >&2; usage; exit 1;;
   esac
 done
+
+if [[ "$LOCOMOTION" != "amo" && "$LOCOMOTION" != "sonic" ]]; then
+  echo "Invalid --locomotion '$LOCOMOTION' (expected amo or sonic)." >&2; exit 1
+fi
+if [[ "$SONIC_PROFILE" != "slow_walk" && "$SONIC_PROFILE" != "walk" ]]; then
+  echo "Invalid --sonic-profile '$SONIC_PROFILE' (expected slow_walk or walk)." >&2; exit 1
+fi
 
 if [[ "$MODE" == "localization" ]]; then
   if [[ -z "$MAP_PATH" ]]; then
@@ -112,6 +131,8 @@ CMD=(
   use_lio:="$USE_LIO"
   nav_delay_sec:="$NAV_DELAY_SEC"
   distortion_imu_topic:="$DISTORTION_IMU_TOPIC"
+  locomotion:="$LOCOMOTION"
+  sonic_profile:="$SONIC_PROFILE"
 )
 [[ -n "$MAP_PATH"   ]] && CMD+=(map:="$MAP_PATH")
 [[ -n "$WORLD_PATH" ]] && CMD+=(world:="$WORLD_PATH")

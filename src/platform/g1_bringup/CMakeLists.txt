@@ -11,12 +11,18 @@ find_package(ament_cmake_python REQUIRED)
 # -- Python nodes --------------------------------------------------------------
 # Installed (and RENAMEd, dropping the _node.py suffix) so they are runnable as:
 #   ros2 run g1_bringup cmd_vel_to_amo
+#   ros2 run g1_bringup cmd_vel_to_sonic
 #   ros2 run g1_bringup imu_rescale
 #   ros2 run g1_bringup g1_state_bridge
 install(PROGRAMS
   scripts/cmd_vel_to_amo_node.py
   DESTINATION lib/${PROJECT_NAME}
   RENAME cmd_vel_to_amo
+)
+install(PROGRAMS
+  scripts/cmd_vel_to_sonic_node.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME cmd_vel_to_sonic
 )
 install(PROGRAMS
   scripts/imu_rescale_node.py

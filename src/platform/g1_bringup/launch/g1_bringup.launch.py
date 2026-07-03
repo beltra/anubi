@@ -8,9 +8,14 @@ the G1 uses g1_state_bridge (DDS state -> ROS) for the STATE half and cmd_vel_to
 (Nav2 velocity -> AMO WebSocket) for the COMMAND half. The Go2's wheel-LiDAR is
 replaced by the head-mounted Livox Mid-360 (livox driver + imu_rescale + DLIO).
 
-This is HARDWARE bring-up (not simulation). The AMO locomotion driver
-(g1_locomotion amo_driver) must already be running as its OWN process on the
-WebSocket port (:8766); this launch only produces velocity commands for it.
+This is HARDWARE bring-up (not simulation). The low-level locomotion controller
+runs as its OWN process and is selected by the `locomotion` argument; this launch
+only produces velocity commands for it:
+  locomotion:=amo    AMO policy (g1_locomotion amo_driver, WebSocket :8766, this host)
+  locomotion:=sonic  SONIC whole-body controller (g1_deploy_onnx_ref on the Jetson;
+                     connects to THIS host's cmd_vel_to_sonic ZMQ PUB :5556).
+                     See docs/g1_sonic_locomotion.md.
+NEVER run both controllers at once: two writers on rt/lowcmd is dangerous.
 
 Starts (mirrors go2_bringup order; each block gated by a boolean arg):
   1. robot_state_publisher (g1.urdf.xacro) + joint_state_publisher
@@ -23,8 +28,10 @@ Starts (mirrors go2_bringup order; each block gated by a boolean arg):
   7. Livox Mid-360 driver + imu_rescale (g -> m/s^2)                              [use_livox]
   8. robot_lio (canonical /livox -> /lidar relays + DLIO)                         [use_lio]
   9. slam.launch.py   distortion_corrector (G1 self-filter) + p2l(/scan) + slam_toolbox
- 10. nav2.launch.py   Nav2 + collision_monitor (G1 STVL profiles)                 [use_nav]
- 11. cmd_vel_to_amo   /cmd_vel_safe -> AMO WebSocket :8766                         [use_nav]
+ 10. nav2.launch.py   Nav2 + collision_monitor (G1 STVL profiles; AMO or SONIC
+       velocity envelope picked by locomotion + sonic_profile)                    [use_nav]
+ 11. cmd_vel_to_amo   /cmd_vel_safe -> AMO WebSocket :8766           [use_nav, locomotion=amo]
+     cmd_vel_to_sonic /cmd_vel_safe -> SONIC ZMQ PUB :5556          [use_nav, locomotion=sonic]
  12. RViz2                                                                        [rviz]
 
 Frame / topic contract (G1) -- identical to the Go2, see docs/topic_map.md
@@ -44,8 +51,11 @@ Frame / topic contract (G1) -- identical to the Go2, see docs/topic_map.md
   Command chain:
      Nav2 /cmd_vel -> collision_monitor /cmd_vel_collision_free
                    -> velocity_limiter   /cmd_vel_safe          (robot_safety)
-                   -> cmd_vel_to_amo      ws://127.0.0.1:8766 {vx, vy, yaw}
-                   -> AMO driver (g1_locomotion amo_driver, separate process) -> robot
+     then, by locomotion:
+       amo:   cmd_vel_to_amo    ws://127.0.0.1:8766 {vx, vy, yaw}
+              -> AMO driver (g1_locomotion amo_driver, separate process) -> robot
+       sonic: cmd_vel_to_sonic  ZMQ PUB tcp://*:5556 (planner ticks)
+              -> g1_deploy_onnx_ref (SONIC controller on the Jetson) -> robot
 
 Arguments
 ---------
@@ -64,6 +74,9 @@ nav_delay_sec  : float SLAM/Nav2 start delay (default 5.0: let DLIO calibrate wh
 livox_config   : str   Livox MID360_config.json (host/lidar IPs + roll:180 mount)
 standing_height: str   pelvis(base_link) height [m]; forwarded to URDF + state bridge + leveling
 net_if         : str   DDS NIC the G1 is reachable on (e.g. eth0)
+locomotion     : str   'amo' | 'sonic'  low-level controller the stack commands (default amo)
+sonic_profile  : str   'slow_walk' | 'walk'  SONIC velocity envelope; anything but
+                       'walk' falls back to the conservative slow_walk profile
 """
 
 import os
@@ -101,6 +114,17 @@ def generate_launch_description():
     # uses (ekf_fusion_params.yaml / ekf_fusion_params_lio.yaml): canonical topics,
     # base_footprint, two_d_mode -- nothing Go2-specific.
     nav2_params_g1 = os.path.join(robot_nav_share, "config", "nav2_params_g1.yaml")
+    # SONIC velocity-envelope variants of the G1 Nav2 profile; the AMO profile
+    # above is never modified by the sonic path (parallel configs by design).
+    nav2_params_g1_sonic_slow = os.path.join(
+        robot_nav_share, "config", "nav2_params_g1_sonic_slow.yaml")
+    nav2_params_g1_sonic_walk = os.path.join(
+        robot_nav_share, "config", "nav2_params_g1_sonic_walk.yaml")
+    # cmd_vel_to_sonic per-profile params (mode + caps matched to the Nav2 files).
+    g1_sonic_slow_walk_params = os.path.join(
+        g1_bringup_share, "config", "g1_sonic_slow_walk_params.yaml")
+    g1_sonic_walk_params = os.path.join(
+        g1_bringup_share, "config", "g1_sonic_walk_params.yaml")
     collision_params_g1 = os.path.join(robot_nav_share, "config", "collision_monitor_params_g1.yaml")
     scan_params_g1 = os.path.join(robot_nav_share, "config", "scan_from_cloud_g1.yaml")
     distortion_params_g1 = os.path.join(robot_nav_share, "config", "distortion_corrector_g1.yaml")
@@ -160,6 +184,17 @@ def generate_launch_description():
         DeclareLaunchArgument("recovery_ack_key_mask", default_value="0"),
         DeclareLaunchArgument("resume_key_mask", default_value="0"),
         DeclareLaunchArgument("abort_key_mask", default_value="0"),
+        DeclareLaunchArgument(
+            "locomotion", default_value="amo",
+            description="Low-level locomotion controller: 'amo' (WebSocket :8766) or "
+                        "'sonic' (SONIC whole-body controller via ZMQ :5556). Selects "
+                        "the matching Nav2 velocity envelope and cmd_vel bridge node. "
+                        "NEVER run both controllers at once (rt/lowcmd single writer)."),
+        DeclareLaunchArgument(
+            "sonic_profile", default_value="slow_walk",
+            description="SONIC velocity envelope: 'slow_walk' (vx 0.5, wz 0.4; first "
+                        "bringup) or 'walk' (vx 0.8, wz 0.5; validated hardware only). "
+                        "Anything but 'walk' falls back to slow_walk. Ignored for amo."),
     ]
 
     use_sim_time = LaunchConfiguration("use_sim_time")
@@ -183,12 +218,32 @@ def generate_launch_description():
     recovery_ack_key_mask = LaunchConfiguration("recovery_ack_key_mask")
     resume_key_mask = LaunchConfiguration("resume_key_mask")
     abort_key_mask = LaunchConfiguration("abort_key_mask")
+    locomotion = LaunchConfiguration("locomotion")
+    sonic_profile = LaunchConfiguration("sonic_profile")
 
-    # cmd_vel_to_amo consumes the safety-gated topic when safety is on, else the
-    # collision_monitor output directly (mirrors go2_bringup's hw_bridge_cmd_topic).
-    amo_cmd_topic = PythonExpression(
+    # The locomotion bridge consumes the safety-gated topic when safety is on, else
+    # the collision_monitor output directly (mirrors go2_bringup's hw_bridge_cmd_topic).
+    loco_cmd_topic = PythonExpression(
         ["'/cmd_vel_safe' if '", use_safety, "' == 'true' else '/cmd_vel_collision_free'"]
     )
+    # Exactly one cmd_vel bridge runs; both are additionally gated by use_nav.
+    start_cmd_vel_to_amo = PythonExpression(
+        ["'", use_nav, "' == 'true' and '", locomotion, "' != 'sonic'"]
+    )
+    start_cmd_vel_to_sonic = PythonExpression(
+        ["'", use_nav, "' == 'true' and '", locomotion, "' == 'sonic'"]
+    )
+    # Nav2 velocity envelope follows the selected controller. An unknown
+    # sonic_profile intentionally degrades to the conservative slow_walk files.
+    nav2_params_file = PythonExpression([
+        "('", nav2_params_g1_sonic_walk, "' if '", sonic_profile, "' == 'walk' else '",
+        nav2_params_g1_sonic_slow, "') if '", locomotion, "' == 'sonic' else '",
+        nav2_params_g1, "'",
+    ])
+    sonic_bridge_params = PythonExpression([
+        "'", g1_sonic_walk_params, "' if '", sonic_profile, "' == 'walk' else '",
+        g1_sonic_slow_walk_params, "'",
+    ])
     # EKF config: LIO mode (DLIO + body-odom velocity) vs body-odom + IMU mode.
     ekf_params = PythonExpression([
         "'", os.path.join(robot_nav_share, "config", "ekf_fusion_params_lio.yaml"),
@@ -290,7 +345,7 @@ def generate_launch_description():
             "lidar_x_in_base": -0.00368,
             "lidar_y_in_base": 0.00003,
             "lidar_z_in_base": 0.46018,
-            "standing_height": 0.78,
+            "standing_height": ParameterValue(standing_height, value_type=float),
         }],
     )
 
@@ -425,13 +480,13 @@ def generate_launch_description():
             "use_sim_time": use_sim_time,
             "namespace": robot_name,
             "use_stvl": use_stvl,
-            "params_file": nav2_params_g1,
+            "params_file": nav2_params_file,
             "collision_monitor_params": collision_params_g1,
         }.items(),
         condition=IfCondition(use_nav),
     )
 
-    # ---- 11. cmd_vel_to_amo (/cmd_vel_safe -> AMO WebSocket) ----
+    # ---- 11. locomotion bridge: exactly one of cmd_vel_to_amo / cmd_vel_to_sonic ----
     cmd_vel_to_amo = Node(
         package="g1_bringup",
         executable="cmd_vel_to_amo",
@@ -439,9 +494,22 @@ def generate_launch_description():
         output="screen",
         parameters=[g1_params, {
             "use_sim_time": use_sim_time,
-            "cmd_vel_topic": amo_cmd_topic,
+            "cmd_vel_topic": loco_cmd_topic,
         }],
-        condition=IfCondition(use_nav),
+        condition=IfCondition(start_cmd_vel_to_amo),
+    )
+    # SONIC bridge binds ZMQ PUB :5556; g1_deploy_onnx_ref on the Jetson connects
+    # to this host (see docs/g1_sonic_locomotion.md for the Jetson-side flags).
+    cmd_vel_to_sonic = Node(
+        package="g1_bringup",
+        executable="cmd_vel_to_sonic",
+        name="cmd_vel_to_sonic",
+        output="screen",
+        parameters=[sonic_bridge_params, {
+            "use_sim_time": use_sim_time,
+            "cmd_vel_topic": loco_cmd_topic,
+        }],
+        condition=IfCondition(start_cmd_vel_to_sonic),
     )
 
     # ---- 12. RViz2 ----
@@ -459,7 +527,7 @@ def generate_launch_description():
     # while the robot stands still (mirrors go2_bringup's delayed_nav_stack).
     delayed_nav_stack = TimerAction(
         period=nav_delay_sec,
-        actions=[slam, nav2, cmd_vel_to_amo],
+        actions=[slam, nav2, cmd_vel_to_amo, cmd_vel_to_sonic],
     )
 
     return LaunchDescription(args + [

@@ -4,17 +4,24 @@ Unitree **G1** real-robot bring-up. The G1 counterpart of `go2_bringup`. This is
 **hardware** bring-up (not simulation; for the sim see `g1_sim` / `run_g1_sim.sh`).
 
 Unlike `go2_bringup` (which speaks the Unitree Go2 Sport API directly from a C++
-`go2_hw_bridge`), the G1 walks under a learned **AMO** locomotion policy. That policy
-runs in the separate **`g1_locomotion`** package as its **own process** and accepts
-velocity commands over a plain WebSocket (`ws://127.0.0.1:8766`). `g1_bringup` produces
-those commands from Nav2 and forwards them; it does NOT run the locomotion controller
-itself.
+`go2_hw_bridge`), the G1 walks under a learned locomotion policy that runs as its
+**own process**; `g1_bringup` produces velocity commands from Nav2 and forwards them,
+it does NOT run the locomotion controller itself. Two controllers are supported,
+selected by the `locomotion` launch arg (never run both at once -- single writer on
+`rt/lowcmd`):
+
+- `locomotion:=amo` (default): the **AMO** policy in the separate `g1_locomotion`
+  package, commanded over a plain WebSocket (`ws://127.0.0.1:8766`).
+- `locomotion:=sonic`: the **SONIC** whole-body controller (GR00T
+  `g1_deploy_onnx_ref` on a Jetson), commanded via `cmd_vel_to_sonic`'s ZMQ PUB
+  socket (:5556). See `docs/g1_sonic_locomotion.md` for setup + bringup.
 
 The robot-agnostic autonomy (`robot_nav`, `robot_safety`, `robot_lio`) is reused
 UNCHANGED; only the G1 adapters differ. Where the Go2 uses `go2_hw_bridge` for the
 state and command halves, the G1 uses `g1_state_bridge` (DDS state -> ROS) for STATE and
-`cmd_vel_to_amo` (Nav2 velocity -> AMO WebSocket) for COMMAND. The Go2 wheel/utlidar is
-replaced by the head-mounted **Livox Mid-360** (livox driver + `imu_rescale` + DLIO).
+`cmd_vel_to_amo` / `cmd_vel_to_sonic` (Nav2 velocity -> controller) for COMMAND. The
+Go2 wheel/utlidar is replaced by the head-mounted **Livox Mid-360** (livox driver +
+`imu_rescale` + DLIO). The STATE side is identical for both controllers.
 
 ---
 
@@ -34,8 +41,8 @@ arg so the file is testable piecewise.
 | 7 | `livox_ros_driver2` + `imu_rescale` | Mid-360 cloud `/livox/lidar`; IMU `/livox/imu` (g) -> `/livox/imu_ms2` (m/s^2) `[use_livox]` |
 | 8 | `robot_lio` (`lio.launch.py`) | relays `/livox/lidar -> /lidar/points`, `/livox/imu_ms2 -> /lidar/imu`; runs `dlio_odom_node` -> `/lidar_odom` `[use_lio]` |
 | 9 | `slam.launch.py` | `distortion_corrector` (G1 self-filter) `/lidar/points -> /lidar/points_undistorted`; `pointcloud_to_laserscan -> /scan`; `slam_toolbox` (owns `map -> odom`) |
-| 10 | `nav2.launch.py` | Nav2 + `collision_monitor` (G1 STVL profiles) `[use_nav]` |
-| 11 | `cmd_vel_to_amo` | `/cmd_vel_safe` -> AMO WebSocket `{vx, vy, yaw}` `[use_nav]` |
+| 10 | `nav2.launch.py` | Nav2 + `collision_monitor` (G1 STVL profiles; AMO or SONIC velocity envelope) `[use_nav]` |
+| 11 | `cmd_vel_to_amo` OR `cmd_vel_to_sonic` | `/cmd_vel_safe` -> AMO WebSocket :8766, or SONIC ZMQ PUB :5556 `[use_nav, locomotion]` |
 | 12 | RViz2 | optional `[rviz]` |
 
 ### Command chain
@@ -44,8 +51,11 @@ arg so the file is testable piecewise.
 Nav2 /cmd_vel
   -> collision_monitor   /cmd_vel_collision_free
   -> velocity_limiter     /cmd_vel_safe          (robot_safety)
-  -> cmd_vel_to_amo       ws://127.0.0.1:8766 {vx, vy, yaw}   (this package)
-  -> AMO driver (g1_locomotion amo_driver, SEPARATE PROCESS) -> robot
+then, by locomotion:
+  amo:   cmd_vel_to_amo    ws://127.0.0.1:8766 {vx, vy, yaw}   (this package)
+         -> AMO driver (g1_locomotion amo_driver, SEPARATE PROCESS) -> robot
+  sonic: cmd_vel_to_sonic  ZMQ PUB tcp://*:5556 planner ticks  (this package)
+         -> g1_deploy_onnx_ref (SONIC controller, Jetson, SEPARATE PROCESS) -> robot
 ```
 
 ### Frame contract (identical to the Go2; see `docs/topic_map.md`)
@@ -61,9 +71,12 @@ Odometry: **DLIO is the real odometry source** (`use_lio:=true` default). DLIO p
 `/lidar_odom` (NOT a TF); `lidar_odom_relay` injects covariances; the EKF fuses it (and
 the AMO body odometry `/odom_raw` when available) into a planar `odom -> base_footprint`,
 exactly as on the Go2. Nav2 `robot_base_frame = base_footprint`; the nav cloud is
-`/lidar/points_undistorted`. Velocity caps `vx<=0.5, vy<=0.4, wz<=0.4` (the AMO
-policy in-distribution range) are set by Nav2 (`nav2_params_g1`) and clamped again
-in `cmd_vel_to_amo` and the AMO driver.
+`/lidar/points_undistorted`. Velocity caps depend on the controller: AMO
+`vx<=0.5, vy<=0.4, wz<=0.4` (in-distribution range; `nav2_params_g1` +
+`cmd_vel_to_amo` + the AMO driver's clamp), SONIC per `sonic_profile`
+(`slow_walk` equals the AMO envelope, `walk` is `vx<=0.8, wz<=0.5`;
+`nav2_params_g1_sonic_*` + `cmd_vel_to_sonic`, which is the FINAL clamp --
+SONIC itself does not limit yaw or ZMQ speed).
 
 ---
 
@@ -133,7 +146,9 @@ The AMO driver is a **separate process** from this launch.
 | `use_lio` | `true` | Run DLIO (the real LiDAR-inertial odometry source) |
 | `use_ekf_fusion` | `true` | Run the EKF; it owns `odom -> base_footprint` |
 | `use_state_bridge` | `true` | DDS body state -> `/odom_raw` + `/imu/data` + body TF |
-| `use_nav` | `true` | Start Nav2 + `collision_monitor` + `cmd_vel_to_amo` |
+| `use_nav` | `true` | Start Nav2 + `collision_monitor` + the locomotion bridge |
+| `locomotion` | `amo` | Low-level controller: `amo` (ws :8766) or `sonic` (ZMQ :5556) |
+| `sonic_profile` | `slow_walk` | SONIC envelope: `slow_walk` (vx 0.5, wz 0.4) or `walk` (vx 0.8, wz 0.5) |
 | `use_stvl` | `true` | 3D STVL local costmap |
 | `use_safety` | `true` | `velocity_limiter` gates `/cmd_vel_collision_free -> /cmd_vel_safe` |
 | `rviz` | `true` | Open RViz2 |
@@ -157,10 +172,12 @@ scripts/run_g1_real.sh --no-nav --no-rviz
 |------------|--------|--------|
 | `g1_state_bridge` | `scripts/g1_state_bridge_node.py` | Unitree DDS state -> `/odom_raw` + `/imu/data` + `base_footprint->base_link` TF |
 | `cmd_vel_to_amo` | `scripts/cmd_vel_to_amo_node.py` | `/cmd_vel_safe` -> WebSocket `{vx, vy, yaw}` |
+| `cmd_vel_to_sonic` | `scripts/cmd_vel_to_sonic_node.py` | `/cmd_vel_safe` -> SONIC planner ticks (ZMQ PUB :5556; needs `python3-zmq`) |
 | `imu_rescale` | `scripts/imu_rescale_node.py` | `/livox/imu` (g) -> `/livox/imu_ms2` (m/s^2) |
 
 All are ROS-runnable (`ros2 run g1_bringup <exe>`); parameters come from
-`config/g1_params.yaml`.
+`config/g1_params.yaml` (`cmd_vel_to_sonic`: from the profile files
+`config/g1_sonic_slow_walk_params.yaml` / `config/g1_sonic_walk_params.yaml`).
 
 ---
 

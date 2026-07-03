@@ -74,11 +74,12 @@ RUN git clone --depth 1 https://github.com/Livox-SDK/Livox-SDK2.git /opt/Livox-S
 RUN pip3 install --no-cache-dir \
         torch --index-url https://download.pytorch.org/whl/cu121
 
-# numpy / scipy / websockets (WS command server) + Unitree DDS python binding.
+# numpy / scipy / websockets (WS command server) + pyzmq (cmd_vel_to_sonic ZMQ
+# transport to the SONIC controller) + Unitree DDS python binding.
 # unitree_sdk2_python pulls cyclonedds; building cyclonedds may need
 # CYCLONEDDS_HOME -- VALIDATE on the target.
 RUN pip3 install --no-cache-dir \
-        "numpy<2" scipy websockets \
+        "numpy<2" scipy websockets pyzmq \
     && pip3 install --no-cache-dir \
         git+https://github.com/unitreerobotics/unitree_sdk2_python.git
 

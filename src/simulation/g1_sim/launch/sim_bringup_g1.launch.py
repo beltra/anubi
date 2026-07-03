@@ -7,12 +7,17 @@ Humanoid analogue of robot_sim/sim_bringup.launch.py. Starts:
   2. distortion_corrector           (/lidar/points -> /lidar/points_undistorted)
   3. (optional) robot_lio           (DLIO backend, off by default)
   4. robot_nav/slam.launch.py       (optional via start_nav:=true)
-  5. robot_nav/nav2.launch.py       (G1 profile nav2_params_g1.yaml)
+  5. robot_nav/nav2.launch.py       (G1 profile nav2_params_g1.yaml, or the SONIC
+                                     envelope variants via locomotion:=sonic)
   6. RViz2                          (optional)
 
 The autonomy stack (robot_nav, robot_lio, robot_safety) is reused UNCHANGED - the
 only G1-specific inputs are the kinematic sim model, the Mid-360 mount rpy fed to
-distortion_corrector, and the nav2_params_g1.yaml profile (footprint + velocity caps).
+distortion_corrector, and the nav2_params_g1*.yaml profile (footprint + velocity caps).
+
+locomotion / sonic_profile select ONLY the Nav2 velocity envelope here: the sim
+base is a kinematic VelocityControl ghost either way (no gait is simulated), so
+these args exist to exercise the SONIC Nav2 profiles before hardware runs.
 """
 
 import os
@@ -23,7 +28,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction, TimerAction
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
 
@@ -36,6 +41,14 @@ def generate_launch_description():
     default_slam_params = os.path.join(robot_nav_share, "config", "slam_toolbox_params.yaml")
     default_rviz_config = os.path.join(robot_nav_share, "rviz", "nav2.rviz")
     g1_nav2_params = os.path.join(robot_nav_share, "config", "nav2_params_g1.yaml")
+    # SONIC velocity-envelope variants (same files g1_bringup.launch.py uses on
+    # the real robot), selected by locomotion:=sonic + sonic_profile.
+    g1_nav2_params_sonic_slow = os.path.join(
+        robot_nav_share, "config", "nav2_params_g1_sonic_slow.yaml"
+    )
+    g1_nav2_params_sonic_walk = os.path.join(
+        robot_nav_share, "config", "nav2_params_g1_sonic_walk.yaml"
+    )
     g1_collision_params = os.path.join(
         robot_nav_share, "config", "collision_monitor_params_g1.yaml"
     )
@@ -82,12 +95,28 @@ def generate_launch_description():
         DeclareLaunchArgument("distortion_imu_topic", default_value="/imu/data"),
         DeclareLaunchArgument("use_rviz", default_value="true"),
         DeclareLaunchArgument("rviz_config", default_value=default_rviz_config),
+        DeclareLaunchArgument(
+            "locomotion", default_value="amo",
+            description="Nav2 velocity envelope to exercise: 'amo' (nav2_params_g1) or "
+                        "'sonic' (SONIC profiles). Sim locomotion itself is unchanged."),
+        DeclareLaunchArgument(
+            "sonic_profile", default_value="slow_walk",
+            description="SONIC envelope when locomotion:=sonic: 'slow_walk' or 'walk'; "
+                        "anything but 'walk' falls back to slow_walk."),
     ]
 
     start_nav = LaunchConfiguration("start_nav")
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_stvl = LaunchConfiguration("use_stvl")
     use_lio = LaunchConfiguration("use_lio")
+
+    # Same selection logic as g1_bringup.launch.py: an unknown sonic_profile
+    # degrades to the conservative slow_walk file.
+    nav2_params_file = PythonExpression([
+        "('", g1_nav2_params_sonic_walk, "' if '", LaunchConfiguration("sonic_profile"),
+        "' == 'walk' else '", g1_nav2_params_sonic_slow, "') if '",
+        LaunchConfiguration("locomotion"), "' == 'sonic' else '", g1_nav2_params, "'",
+    ])
 
     g1_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -196,8 +225,9 @@ def generate_launch_description():
         launch_arguments={
             "use_sim_time": use_sim_time,
             "use_stvl": use_stvl,
-            # Explicit G1 profile (footprint + velocity caps) overrides nav_profile.
-            "params_file": g1_nav2_params,
+            # Explicit G1 profile (footprint + velocity caps) overrides nav_profile;
+            # AMO or SONIC envelope picked by locomotion + sonic_profile.
+            "params_file": nav2_params_file,
             # G1 collision monitor: approach + slowdown + stop polygons.
             "collision_monitor_params": g1_collision_params,
         }.items(),

@@ -1,0 +1,32 @@
+# g1_sonic_walk_params.yaml
+# cmd_vel_to_sonic profile: WALK -- the faster envelope for after slow_walk has
+# been validated on hardware. vx 0.8 is the top of the band the sonic deployment
+# docs exercise for navigation; wz 0.5 matches its turn demos (SONIC documents NO
+# yaw-rate limit, so this value is validated empirically, not from a spec).
+# MUST match robot_nav/config/nav2_params_g1_sonic_walk.yaml.
+# The AMO configuration (g1_params.yaml, nav2_params_g1.yaml) is untouched by this.
+cmd_vel_to_sonic:
+  ros__parameters:
+    # Safety-gated velocity topic (robot_safety velocity_limiter output).
+    cmd_vel_topic:   "/cmd_vel_safe"
+    # ZMQ PUB endpoint THIS node binds; g1_deploy_onnx_ref connects to it
+    # (--zmq-host <nav host> --zmq-port 5556 on the Jetson).
+    zmq_bind_host:   "*"
+    zmq_port:        5556
+    # Planner tick rate (SONIC planner treats a ~1 s gap as command loss).
+    rate_hz:         30.0
+    # LocomotionMode 2 = WALK (planner-default speed band).
+    locomotion_mode: 2
+    # Velocity caps in REALIZED [m/s, m/s, m/s, rad/s]; clamped BEFORE speed_gain.
+    # max_reverse_vel is a positive magnitude. wz has NO downstream clamp in the
+    # SONIC stack -- this cap and Nav2 wz_max are the only yaw limits.
+    max_forward_vel: 0.8
+    max_reverse_vel: 0.3
+    max_lateral_vel: 0.4
+    max_yaw_rate:    0.5
+    # Compensates the SONIC planner's ~0.85x speed realization (1.18 ~= 1/0.85).
+    speed_gain:      1.18
+    # Watchdog: IDLE if cmd_vel is silent; chain publishes at 20 Hz -> 0.3 s.
+    cmd_timeout:     0.3
+    # Idempotent start/planner-mode command re-send period.
+    start_resend_sec: 1.0

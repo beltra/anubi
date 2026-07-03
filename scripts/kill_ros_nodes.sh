@@ -47,6 +47,7 @@ add_pids < <(pgrep -f 'g1_bringup.launch.py' || true)
 # G1 real-robot adapters / sensors / odometry
 add_pids < <(pgrep -f 'g1_state_bridge' || true)
 add_pids < <(pgrep -f 'cmd_vel_to_amo' || true)
+add_pids < <(pgrep -f 'cmd_vel_to_sonic' || true)
 add_pids < <(pgrep -f 'imu_rescale' || true)
 add_pids < <(pgrep -f 'livox_ros_driver2' || true)
 add_pids < <(pgrep -f 'dlio_odom_node' || true)

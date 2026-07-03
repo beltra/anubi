@@ -19,14 +19,18 @@
         + pointcloud_to_laserscan (/scan) + slam_toolbox (map -> odom)
       - robot_nav Nav2 stack (+ collision monitor) with the G1 STVL configs
       - robot_safety velocity_limiter (/cmd_vel_collision_free -> /cmd_vel_safe)
-      - cmd_vel_to_amo: forwards /cmd_vel_safe to the AMO WebSocket (g1_locomotion)
+      - the locomotion bridge, selected by the `locomotion` launch arg:
+        cmd_vel_to_amo (/cmd_vel_safe -> AMO WebSocket :8766, default) or
+        cmd_vel_to_sonic (/cmd_vel_safe -> SONIC planner ticks, ZMQ PUB :5556;
+        see docs/g1_sonic_locomotion.md)
 
-    Python nodes (cmd_vel_to_amo, imu_rescale, g1_state_bridge) are installed as
-    executables under lib/g1_bringup, mirroring robot_safety's install(PROGRAMS
-    ... RENAME) pattern.
+    Python nodes (cmd_vel_to_amo, cmd_vel_to_sonic, imu_rescale, g1_state_bridge)
+    are installed as executables under lib/g1_bringup, mirroring robot_safety's
+    install(PROGRAMS ... RENAME) pattern.
 
-    NOTE: the AMO locomotion driver runs as its OWN process
-    (ros2 run g1_locomotion amo_driver), NOT from this launch.
+    NOTE: the low-level locomotion controller runs as its OWN process (AMO:
+    ros2 run g1_locomotion amo_driver on this host; SONIC: g1_deploy_onnx_ref
+    on the Jetson), NOT from this launch. Never run both at once.
   </description>
   <maintainer email="gabriel.voss01@gmail.com">Maintainer</maintainer>
   <license>Apache-2.0</license>
@@ -39,6 +43,8 @@
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
+  <!-- cmd_vel_to_sonic ZMQ transport to the SONIC controller -->
+  <exec_depend>python3-zmq</exec_depend>
 
   <!-- Stack components pulled in by g1_bringup.launch.py -->
   <exec_depend>g1_description</exec_depend>
