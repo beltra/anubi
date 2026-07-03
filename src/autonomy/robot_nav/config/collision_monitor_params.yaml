@@ -1,7 +1,9 @@
 collision_monitor:
   ros__parameters:
     use_sim_time: true
-    enabled: True
+    # Top-level `enabled` is not a declared parameter on the Nav2 Humble
+    # collision_monitor node and is silently ignored. Per-polygon and
+    # per-source `enabled` flags below are the effective controls.
     base_frame_id: "base_footprint"
     odom_frame_id: "odom"
     cmd_vel_in_topic: "/cmd_vel"

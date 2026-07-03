@@ -239,7 +239,7 @@ local_costmap:
         plugin: "spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer"
         enabled: true
         voxel_decay: 2.0
-        decay_model: 0
+        decay_model: 1            # exponential decay tolerates L1 non-repetitive coverage
         voxel_size: 0.05
         track_unknown_space: false
         unknown_threshold: 15
@@ -265,7 +265,7 @@ local_costmap:
           observation_persistence: 0.0
           inf_is_valid: false
           filter: "voxel"
-          voxel_min_points: 2       # reject single-point ghost returns
+          voxel_min_points: 1       # L1 non-repetitive: far voxels often hit once per frame
           clear_after_reading: true
           sensor_origin_frame: lidar_stabilized
           max_z: 2.5

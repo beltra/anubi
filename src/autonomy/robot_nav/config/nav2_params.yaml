@@ -122,10 +122,23 @@ controller_server:
       motion_model: "DiffDrive"
       transform_tolerance: 0.3
       prune_distance: 1.7
-      time_steps: 50                       # longer horizon (2.5 s) lets MPPI "see" the rotation
+      # MPPI compute budget tuned for the Go2's onboard Jetson, not for the
+      # development workstation that runs sim. On real hardware
+      # (bag go2_real_mapping_20260513_171712) the prior 2000x50x3 = 300k
+      # trajectory eval per cycle ran the controller at ~10 Hz instead of the
+      # configured 20 Hz, and combined with wz_std=1.0 it produced 3-5 angular
+      # command sign reversals per second while the robot's yaw barely moved.
+      # The velocity_smoother then averaged the oscillation into weak/erratic
+      # commands, presenting as "wrong heading / spins in place" and
+      # "drifts off path". Sim was unaffected because the workstation has the
+      # compute budget to run 300k eval per cycle at 20 Hz and the simulated
+      # quadruped tracks commands exactly. The values below match the
+      # narrow_gap_1p0m profile's compute envelope while keeping the 2 s
+      # horizon and 3 iterations needed for the rotate-in-place behavior.
+      time_steps: 40                       # 2.0 s horizon at model_dt=0.05
       model_dt: 0.05
-      batch_size: 2000                     # more samples to explore rotation trajectories
-      iteration_count: 3                     # extra iteration helps converge on rotation
+      batch_size: 1200                     # 1200x40x3 = 144k eval/cycle (was 300k)
+      iteration_count: 3                     # keep: helps converge on rotation
       retry_attempt_limit: 1
       temperature: 0.3                    # sharper selection toward best trajectory
       gamma: 0.015
@@ -147,9 +160,13 @@ controller_server:
       az_min: -1.2
       vx_std: 0.25
       vy_std: 0.3
-      wz_std: 1.0                          # very wide rotation noise — ensures MPPI samples
-                                             # near-max rotation (1.3 rad/s) to cover 180° turns
-                                             # within the 2.5 s horizon
+      wz_std: 0.4                         # was 1.0 -- too wide for the real robot's
+                                          # actuation latency (~200-400 ms Sport API
+                                          # lag). With 1.0 std MPPI's best-trajectory
+                                          # selection flipped sign every cycle on the
+                                          # Jetson; 0.4 still samples up to ~1.0 rad/s
+                                          # (2.5 sigma) which covers planned turns
+                                          # while keeping consecutive cycles coherent.
 
       critics: ["ConstraintCritic", "ObstaclesCritic", "GoalCritic", "GoalAngleCritic",
                 "PathAlignCritic", "PathFollowCritic", "PathAngleCritic",
@@ -165,7 +182,7 @@ controller_server:
         cost_power: 1
         repulsion_weight: 3.0
         critical_weight: 20.0
-        collision_cost: 1000000.0
+        collision_cost: 1000.0
         collision_margin_distance: 0.12
         near_goal_distance: 0.35
         consider_footprint: true
@@ -220,7 +237,13 @@ controller_server:
         enabled: true
         cost_power: 1
         cost_weight: 35.0
-        deadband_velocities: [0.03, 0.50, 0.02]
+        # Sport API empirical step threshold from bag
+        # go2_real_mapping_20260513_172927: commands in the 5-20 cm/s range
+        # produce only 3-14 % tracking (robot stretches legs without
+        # translating). The Go2 only steps decisively above ~25 cm/s. Penalise
+        # any trajectory that lingers in the dead zone so MPPI commits to a
+        # real step or stays still.
+        deadband_velocities: [0.20, 0.50, 0.05]
 
       TrajectoryVisualizer:
         trajectory_step: 5
@@ -254,8 +277,10 @@ local_costmap:
       stvl_layer:
         plugin: "spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer"
         enabled: true
-        voxel_decay: 0.5
-        decay_model: 0
+        # L1 non-repetitive coverage does not re-confirm every voxel each frame;
+        # exponential decay over 2 s keeps real obstacles alive across the sweep.
+        voxel_decay: 2.0
+        decay_model: 1
         voxel_size: 0.05
         track_unknown_space: false
         unknown_threshold: 15
@@ -277,17 +302,19 @@ local_costmap:
           clearing: true
           obstacle_range: 8.0
           raytrace_range: 10.0
-          min_obstacle_height: 0.12
+          min_obstacle_height: 0.15
           max_obstacle_height: 2.3
           expected_update_rate: 0.0
           observation_persistence: 0.0
           inf_is_valid: false
           filter: "voxel"
-          voxel_min_points: 2       # reject single-point ghost returns
+          # L1 non-repetitive frame may hit distant voxels only once; require 1
+          # so far walls still mark. Deskew + self-filter remove most noise.
+          voxel_min_points: 1
           clear_after_reading: true
           sensor_origin_frame: lidar_stabilized
           max_z: 2.5
-          min_z: -0.10
+          min_z: -0.05
         dynamic_prediction:
           data_type: PointCloud2
           topic: /dynamic_obstacles/predicted_occupancy
@@ -309,8 +336,14 @@ local_costmap:
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 2.0
-        inflation_radius: 0.80
+        # Crowded office tuning. Robot's inscribed radius is ~0.155 m
+        # (half of the 0.31 m wide standing footprint). Halo of 0.30 m
+        # gives ~0.15 m clearance past the footprint without flooding
+        # tight 7-8 m rooms (offline replay of the 17:10 office mapping
+        # bag showed 0.50 m inflation + scale 2.0 left only 23.4% free in
+        # the global costmap; 0.30 m + scale 3.0 restores 52.7% free).
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.30
         inflate_unknown: false
         inflate_around_unknown: false
 
@@ -342,8 +375,10 @@ global_costmap:
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 2.0
-        inflation_radius: 0.85
+        # Match the local costmap so the static-map global planner and the
+        # rolling local planner agree on what counts as a viable corridor.
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.30
         inflate_unknown: false
         inflate_around_unknown: false
 
@@ -488,7 +523,11 @@ velocity_smoother:
     max_decel: [-1.0, -0.5, -1.0]
     odom_topic: "odom"
     odom_duration: 0.1
-    deadband_velocity: [0.03, 0.03, 0.08]
+    # vx deadband matched to Sport API's effective step threshold (see
+    # VelocityDeadbandCritic comment). Forces the smoother to either pass
+    # through a real step command or zero. wz deadband stays low so
+    # rotate-in-place behaviour at small angles still works.
+    deadband_velocity: [0.20, 0.05, 0.05]
     velocity_timeout: 1.0
 
 smoother_server:

@@ -14,7 +14,7 @@ pointcloud_to_laserscan:
     # includes returns from the Go2's own legs (legs extend below z=-0.25 in
     # base_link, which is outside the self_filter box), producing false-
     # positive obstacles around the robot. The current asymmetric window
-    # (-0.20 to +0.50) cuts the leg-return band while widening upward (above
+    # (-0.25 to +0.50) cuts the leg-return band while widening upward (above
     # the LiDAR there are no body parts) to capture more wall/people rings.
     min_height: -0.25
     max_height:  0.50

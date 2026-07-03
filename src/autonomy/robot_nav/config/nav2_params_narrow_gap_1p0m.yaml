@@ -321,7 +321,7 @@ local_costmap:
           observation_persistence: 0.0
           inf_is_valid: false
           filter: "voxel"
-          voxel_min_points: 2
+          voxel_min_points: 1       # L1 non-repetitive: far voxels often hit once per frame
           clear_after_reading: true
           sensor_origin_frame: lidar_stabilized
           max_z: 2.5

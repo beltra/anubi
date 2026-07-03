@@ -23,13 +23,10 @@ ekf_filter_node:
     two_d_mode: true
     transform_time_offset: 0.0
     transform_timeout: 0.2
-    # print_diagnostics: true causes the EKF's diagnostic_updater path to
-    # repeatedly hit the TF buffer and trigger
-    #   "tf2_buffer: Detected jump back in time. Clearing TF buffer."
-    # at ~40 Hz, collapsing /odom output to ~5 Hz. Offline replay confirmed:
-    # toggling this to false on its own restores /odom to ~44 Hz (essentially
-    # the configured 50 Hz minus startup/shutdown loss). See
-    # docs/ekf_rate_diag.md for the full diagnosis.
+    # print_diagnostics: false alone was sufficient offline against the May 12
+    # bag, but live on the Go2 (May 13 bag go2_real_mapping_20260513_165514)
+    # /odom still collapsed to 4.77 Hz with a steady 200 ms period. Keep this
+    # off regardless: it removes the per-cycle TF lookup the doc identified.
     print_diagnostics: false
     publish_tf: true
     publish_acceleration: false

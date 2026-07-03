@@ -19,7 +19,15 @@ go2_hw_bridge:
 
     cmd_timeout: 0.5
     enable_startup_motion_sequence: true
-    enable_goal_motion_sequence: true
+    # enable_goal_motion_sequence: re-runs RecoveryStand -> StandUp ->
+    # ClassicWalk on the first nav goal. With enable_startup_motion_sequence
+    # already running it at boot, this is redundant and forces a 4 s
+    # StopMove-only window right after the first goal is accepted. Bag
+    # go2_real_mapping_20260513_172927 shows the robot commanded at 0.82 m/s
+    # for 2.5 s with zero translation during this window (t=29.35..31.85).
+    # Default off; the startup sequence already gets the robot into walking
+    # mode before Nav2 starts.
+    enable_goal_motion_sequence: false
     startup_standup_delay_sec: 1.0
     startup_classic_walk_delay_sec: 3.0
     nav_goal_status_topic: "/navigate_to_pose/_action/status"

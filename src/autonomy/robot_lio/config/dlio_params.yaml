@@ -6,6 +6,21 @@
 #   by the EKF (ekf.launch.py) before reaching Nav2 or slam_toolbox.
 #   Private DLIO frames (dlio_lidar_link, dlio_imu_link) avoid TF collisions
 #   with URDF-owned frames.
+#
+# Tuning rationale for non-repetitive L1 + Go2 mount (offline bag replay):
+#   cropBoxFilter/size 1.0 -> 0.3:  vendor default removes points inside a
+#     2 m cube around the lidar; on the Go2 head mount that throws away 86%
+#     of every L1 sweep (1213/1410 points) and starves GICP. 0.3 keeps near
+#     returns while still suppressing self-body returns.
+#   voxelFilter/res 0.10 -> 0.05:   reduces variance from non-repetitive
+#     point binning (different points hit different voxels each sweep) and
+#     keeps roughly 2-3x more source points feeding GICP.
+#   odom/geo/Kab 2.25 (vendor) -> 0.85:  matches dlio_params_sim.yaml. Lower
+#     accel-bias adaptation slows runaway absorption of Go2 footstep impacts
+#     into the bias estimate (peaks up to ~3g on /lidar/imu).
+#   odom/geo/abias_max 5.0 (vendor) -> 1.0:  caps how far the bias can drift
+#     so a bad GICP frame cannot teleport the robot. Without this, long runs
+#     hit the 5 m/s^2 ceiling and produce >100 m position jumps.
 
 /**:
   ros__parameters:
@@ -21,7 +36,8 @@
     adaptive: false
     pointcloud/deskew: true
     pointcloud/voxelize: true
-    odom/preprocessing/voxelFilter/res: 0.25
+    odom/preprocessing/voxelFilter/res: 0.05
+    odom/preprocessing/cropBoxFilter/size: 0.3
 
     odom/computeTimeOffset: true
     odom/imu/approximateGravity: true
@@ -34,10 +50,15 @@
     odom/gicp/kCorrespondences: 16
     odom/gicp/maxCorrespondenceDistance: 0.5
 
-    # Keyframe thresholds: build a new submap keyframe every 20 cm or 20 deg.
-    # DLIO compares rotation in degrees, so 20.0 means 20 degrees.
-    odom/keyframe/threshD: 0.20
-    odom/keyframe/threshR: 20.0
+    # Tighter keyframe spacing accumulates a denser submap reference faster,
+    # compensating for sparse non-repetitive single-frame coverage.
+    # DLIO compares rotation in degrees, so 10.0 means 10 degrees.
+    odom/keyframe/threshD: 0.10
+    odom/keyframe/threshR: 10.0
+
+    # Bias-handling gains tuned for L1-on-Go2 vibration. See header notes.
+    odom/geo/Kab: 0.85
+    odom/geo/abias_max: 1.0
 
     # base_link -> raw Unitree LiDAR frame, derived from
     # /utlidar/cloud -> /utlidar/cloud_base point matches.
