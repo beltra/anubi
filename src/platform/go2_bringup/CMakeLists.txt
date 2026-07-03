@@ -59,6 +59,13 @@ install(TARGETS go2_hw_bridge
   DESTINATION lib/${PROJECT_NAME}
 )
 
+# Helper scripts (Python).  Installed as executables so they can be invoked
+# via `ros2 run go2_bringup <script>` and from launch files.
+install(PROGRAMS
+  scripts/lowstate_joint_state_publisher.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 # ── Install directories ───────────────────────────────────────────────────────
 install(DIRECTORY
   include/

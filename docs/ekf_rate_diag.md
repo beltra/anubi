@@ -1,13 +1,27 @@
 # R1 — EKF /odom rate at 4.85 Hz: root cause + fix
 
-**Status (2026-05-12, updated):** RESOLVED. Root cause is
-`print_diagnostics: true` triggering TF-buffer thrashing in robot_localization
-3.5.4. Fix is `print_diagnostics: false` in both
-`ekf_fusion_params.yaml` and `ekf_fusion_params_lio.yaml`. Offline replay
-restores /odom from 5.7 Hz to 44.6 Hz with no other config change.
+**Status (2026-05-13, re-opened then resolved):**
+`print_diagnostics: false` alone was sufficient in offline replay but
+**not on the live Go2 robot**: fresh bag
+`go2_real_mapping_20260513_165514` shows `/odom` still at 4.77 Hz with a
+steady 200 ms period, despite `print_diagnostics: false` being deployed
+(commit 23ee8e0). The downstream effect on path-following is real: during
+the autonomous nav window 0..9.4 s after the first goal, `/odom` yaw lags
+`/imu/data` yaw by 0.1-0.15 rad and `/odom` position lags
+`/sportmodestate.position` by 10-15 cm while the robot is rotating. MPPI
+over-rotates against stale feedback, presenting as "wrong heading / spins
+in place" and "drifts off path".
 
-The plan below documents the diagnosis we used to find it. Keep it as a
-reference for the next mysterious robot_localization rate issue.
+The robust fix is **`predict_to_current_time: true`** in both
+`ekf_fusion_params.yaml` and `ekf_fusion_params_lio.yaml`. This decouples
+the publication rate from the measurement-acceptance rate: the EKF
+propagates its state forward to wall time on every cycle and publishes at
+`frequency` Hz regardless. The underlying measurement-rejection cascade
+is masked rather than removed; it remains a follow-up worth chasing if
+state quality is ever in doubt.
+
+The plan below documents the offline diagnosis we used to find it. Keep
+it as a reference for the next mysterious robot_localization rate issue.
 
 ---
 

@@ -176,6 +176,10 @@ def generate_launch_description():
         ],
         remappings=[
             ("keyframes", dlio_keyframes_topic),
+            # dlio_map_node's "map" output is a PointCloud2; without this
+            # remap it collides with slam_toolbox's /map OccupancyGrid
+            # whenever both run together.
+            ("map", "/dlio/map_cloud"),
         ],
         condition=IfCondition(
             PythonExpression([

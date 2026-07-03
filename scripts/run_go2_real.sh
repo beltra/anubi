@@ -21,7 +21,10 @@ RECOVERY_ACK_KEY_MASK="0x0010"
 RESUME_KEY_MASK="0x0010"
 ABORT_KEY_MASK="0x0020"
 RECORD_ROSBAG="false"
-ROSBAG_DIR="${HOME}/rosbags/go2_real"
+# Default to the in-repo bags/ folder so recordings, the maps/ output, and
+# the configs that produced them stay together for offline replay. The
+# bags/ directory is gitignored.
+ROSBAG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/bags/go2_real"
 ROSBAG_TOPICS_OVERRIDE=""
 ROSBAG_QOS_OVERRIDES_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/rosbag_qos_overrides.yaml"
 
@@ -50,6 +53,19 @@ DEFAULT_ROSBAG_TOPICS=(
   /map
   /robot_status
   /wirelesscontroller
+  # Command/safety chain so "robot did not move on goal" is traceable
+  # from rosbag without re-running the live stack.
+  /cmd_vel_nav
+  /cmd_vel
+  /cmd_vel_collision_free
+  /cmd_vel_safe
+  /goal_pose
+  /plan
+  /local_plan
+  /joystick_override
+  /safety/command_source
+  /safety/tilt_estop
+  /recovery/diagnostics
 )
 
 usage() {
@@ -91,7 +107,7 @@ Options:
                               go2_real_<mode>_<timestamp>. LiDAR pointclouds at
                               the L1 native rate use ~50-100 MB/min of disk.
   --rosbag-dir <path>        Output directory for rosbag recordings
-                              (default: $HOME/rosbags/go2_real)
+                              (default: <repo>/bags/go2_real)
   --rosbag-topics "<list>"   Space-separated topic list to record instead of the
                               curated perception default. QoS overrides for
                               /tf_static, /robot_description, /map still apply.

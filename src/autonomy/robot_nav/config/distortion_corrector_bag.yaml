@@ -1,0 +1,60 @@
+# LiDAR motion deskew parameters for offline bag replay.
+#
+# Overrides distortion_corrector.yaml fields that depend on live-run state
+# the bag does not provide:
+#   - no body /imu/data        -> imu_topic = /lidar/imu
+#   - no fused /odom           -> use_twist = false
+#   - no lidar_stabilized TF   -> gravity_align = false
+#   - no body in the data      -> filter_self = false
+# Mount rotation defaults to identity because most bench bags do not carry
+# the Go2-specific Ry(-2.88) flip. If the bag was recorded on a Go2 (cloud
+# z-distribution will appear inverted), copy this file, set
+# sensor_mount_rpy: [0.0, -2.88000012056847, 0.0], and pass
+# --distortion-params <copy-path> to scripts/replay_bag_perception.sh.
+
+distortion_corrector:
+  ros__parameters:
+    input_topic: /lidar/points
+    output_topic: /lidar/points_undistorted
+    odom_topic: /odom
+    imu_topic: /lidar/imu
+
+    use_twist: false
+    use_imu: true
+    use_3d_distortion_correction: true
+    deskew_enabled: true
+
+    sensor_mount_rpy: [0.0, 0.0, 0.0]
+    mount_rotation_mode: inverse
+
+    scan_period: 0.1
+
+    timestamp_field_name: ""
+    timestamp_field_candidates: ["time_stamp", "timestamp", "time", "t"]
+    timestamp_unit: auto
+    fallback_mode: disabled
+    azimuth_direction: cw
+
+    imu_timeout_sec: 0.25
+    odom_timeout_sec: 1.0e+9
+
+    publish_diagnostics: false
+    diagnostics_topic: /diagnostics/lidar_correction
+
+    output_stamp_mode: input
+
+    gravity_align: false
+    gravity_align_frame: lidar_stabilized
+
+    filter_self: false
+    robot_min_x: -0.40
+    robot_max_x: 0.36
+    robot_min_y: -0.20
+    robot_max_y: 0.20
+    robot_min_z: -0.25
+    robot_max_z: 0.10
+    min_radius: 0.12
+
+    sensor_x_in_base: 0.28945
+    sensor_y_in_base: 0.0
+    sensor_z_in_base: -0.046825

@@ -1,0 +1,5 @@
+# Offline bag replay perception validation
+
+Offline LiDAR bag replay is a validation entrypoint (sibling to MPPI benchmarks and safety regressions per ADR 0009) and is permitted to violate the live-run TF ownership contract from ADR 0005 in one narrow way: when the bag has no body odometry input, DLIO publishes `odom -> base_link` directly. EKF cannot run without `/odom_raw` or a body IMU, so there is no fused odometry to own that TF; without an owner, slam_toolbox and the Nav2 costmaps cannot anchor scans, defeating the validation purpose.
+
+The exception is scoped to the offline replay launch entrypoint (`robot_nav/launch/bag_perception.launch.py`) and the wrapper `scripts/replay_bag_perception.sh`. Live runs (real hardware, sim) continue to require body odometry through the EKF and keep the EKF as the single TF owner. The hardware bridge, safety chain, and command chain are not started in replay mode, so the `/cmd_vel_*` arbiter cannot accidentally consume DLIO-derived TFs in a real-robot context. The relevant production invariants in ADR 0003 (safety arbiter command chain) and ADR 0005 are unchanged.

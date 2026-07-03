@@ -138,6 +138,88 @@ run_with_timeout() {
   fi
 }
 
+# --- Daemon-free helpers ---------------------------------------------------
+# The ros2 CLI daemon hangs on this workspace's Humble + rmw_cyclonedds_cpp
+# combination, so we discover services/topics with --no-daemon and call
+# services through rclpy instead of `ros2 service call`. These helpers work
+# whether or not a daemon is also running.
+
+ros2_service_list_no_daemon() {
+  ros2 service list --no-daemon --spin-time 2 2>/dev/null
+}
+
+ros2_topic_list_no_daemon() {
+  ros2 topic list --no-daemon --spin-time 2 2>/dev/null
+}
+
+# Call a ROS 2 service through rclpy. Exits 0 on success, non-zero otherwise.
+#   $1: service name (e.g. /save_pcd)
+#   $2: fully qualified service type (e.g. direct_lidar_inertial_odometry/srv/SavePCD)
+#   $3: YAML request body (e.g. "{leaf_size: 0.1, save_path: '/tmp/out'}")
+#   $4: wait timeout in seconds (default 30)
+#   $5: response wait timeout in seconds (default 60)
+call_ros2_service_rclpy() {
+  local svc="$1"
+  local pkg_type="$2"
+  local body="$3"
+  local wait_sec="${4:-30}"
+  local resp_sec="${5:-60}"
+
+  python3 - "$svc" "$pkg_type" "$body" "$wait_sec" "$resp_sec" <<'PY'
+import sys
+import time
+from importlib import import_module
+
+import yaml
+
+import rclpy
+from rclpy.node import Node
+
+svc, pkg_type, body, wait_sec, resp_sec = sys.argv[1:6]
+wait_sec = float(wait_sec)
+resp_sec = float(resp_sec)
+
+pkg, mid, srv_name = pkg_type.split("/", 2)
+if mid != "srv":
+    print(f"unexpected service type: {pkg_type}", file=sys.stderr)
+    sys.exit(64)
+SrvType = getattr(import_module(f"{pkg}.srv"), srv_name)
+fields = yaml.safe_load(body) or {}
+
+rclpy.init()
+node = Node("save_current_maps_client")
+client = node.create_client(SrvType, svc)
+deadline = time.time() + wait_sec
+while time.time() < deadline:
+    if client.service_is_ready():
+        break
+    rclpy.spin_once(node, timeout_sec=0.2)
+else:
+    print(f"{svc}: not available after {wait_sec:.0f}s", file=sys.stderr)
+    rclpy.shutdown()
+    sys.exit(2)
+
+req = SrvType.Request()
+for k, v in fields.items():
+    setattr(req, k, v)
+
+future = client.call_async(req)
+rclpy.spin_until_future_complete(node, future, timeout_sec=resp_sec)
+resp = future.result()
+if resp is None:
+    print(f"{svc}: no response within {resp_sec:.0f}s", file=sys.stderr)
+    rclpy.shutdown()
+    sys.exit(3)
+
+print(f"{svc} response: {resp}")
+success_attr = getattr(resp, "success", None)
+rclpy.shutdown()
+# Honor an explicit success flag if the service has one; otherwise treat a
+# returned response as success.
+sys.exit(0 if (success_attr is True or success_attr is None) else 4)
+PY
+}
+
 echo "Saving maps into: $OUTPUT_DIR"
 
 cleanup() {
@@ -161,7 +243,7 @@ start_temporary_dlio_map_node() {
 
   local i
   for i in $(seq 1 "$TIMEOUT_SEC"); do
-    if ros2 service list | grep -E '(^|/)save_pcd$' >/dev/null 2>&1; then
+    if ros2_service_list_no_daemon | grep -E '(^|/)save_pcd$' >/dev/null 2>&1; then
       echo "[DLIO] temporary dlio_map_node is ready"
       return 0
     fi
@@ -174,8 +256,7 @@ start_temporary_dlio_map_node() {
 
 save_dlio_map() {
   local save_pcd_service
-  local save_pcd_type
-  save_pcd_service="$(ros2 service list | grep -E '(^|/)save_pcd$' | head -n 1 || true)"
+  save_pcd_service="$(ros2_service_list_no_daemon | grep -E '(^|/)save_pcd$' | head -n 1 || true)"
 
   if [[ -z "$save_pcd_service" ]]; then
     start_temporary_dlio_map_node || {
@@ -183,20 +264,18 @@ save_dlio_map() {
       echo "       Start DLIO map node (direct_lidar_inertial_odometry dlio_map_node) and retry."
       return 1
     }
-    save_pcd_service="$(ros2 service list | grep -E '(^|/)save_pcd$' | head -n 1 || true)"
+    save_pcd_service="$(ros2_service_list_no_daemon | grep -E '(^|/)save_pcd$' | head -n 1 || true)"
   fi
 
-  save_pcd_type="$(ros2 service type "$save_pcd_service" 2>/dev/null || true)"
-  if [[ -z "$save_pcd_type" ]]; then
-    echo "[WARN] Could not resolve service type for $save_pcd_service"
-    return 1
-  fi
+  # dlio_map_node always advertises this exact type, so we skip a daemon-
+  # backed `ros2 service type` lookup (which hangs on cyclonedds builds).
+  local save_pcd_type="direct_lidar_inertial_odometry/srv/SavePCD"
 
   echo "[DLIO] Using service: $save_pcd_service"
   echo "[DLIO] Service type: $save_pcd_type"
-  if ! run_with_timeout ros2 service call "$save_pcd_service" \
-      "$save_pcd_type" \
-      "{leaf_size: $DLIO_LEAF_SIZE, save_path: '$OUTPUT_DIR'}"; then
+  if ! call_ros2_service_rclpy "$save_pcd_service" "$save_pcd_type" \
+      "{leaf_size: $DLIO_LEAF_SIZE, save_path: '$OUTPUT_DIR'}" \
+      "$TIMEOUT_SEC" 60; then
     echo "[WARN] save_pcd service call failed or timed out."
     return 1
   fi
@@ -217,7 +296,7 @@ save_nav2_and_slam_maps() {
   local slam_prefix="$OUTPUT_DIR/$SLAM_BASENAME"
   local had_error=0
 
-  if ! ros2 topic list | grep -Fx "$map_topic" >/dev/null 2>&1; then
+  if ! ros2_topic_list_no_daemon | grep -Fx "$map_topic" >/dev/null 2>&1; then
     echo "[WARN] Topic $map_topic not found. Nav2 map save skipped."
     return 1
   fi
@@ -238,11 +317,12 @@ save_nav2_and_slam_maps() {
   fi
 
   local serialize_service="/slam_toolbox/serialize_map"
-  if ros2 service type "$serialize_service" >/dev/null 2>&1; then
+  if ros2_service_list_no_daemon | grep -Fx "$serialize_service" >/dev/null 2>&1; then
     echo "[SLAM] Saving posegraph to ${slam_prefix}.posegraph/.data"
-    if ! run_with_timeout ros2 service call "$serialize_service" \
-        slam_toolbox/srv/SerializePoseGraph \
-        "{filename: '$slam_prefix'}"; then
+    if ! call_ros2_service_rclpy "$serialize_service" \
+        "slam_toolbox/srv/SerializePoseGraph" \
+        "{filename: '$slam_prefix'}" \
+        "$TIMEOUT_SEC" 60; then
       echo "[WARN] serialize_map service call failed or timed out."
       had_error=1
     fi

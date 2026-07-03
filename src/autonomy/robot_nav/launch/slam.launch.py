@@ -97,6 +97,12 @@ def generate_launch_description():
         # was sized for the much sparser +/-0.12 m slice.
         DeclareLaunchArgument("scan_accumulation_window_sec", default_value="0.20"),
         DeclareLaunchArgument("scan_accumulation_max_frames", default_value="3"),
+        # Skip slam_toolbox itself (mapping AND localization nodes) while
+        # still running the perception pipeline that produces /scan. Used by
+        # bag-replay flows where the bag already carries /map and the
+        # `map -> odom` TF, and a second slam_toolbox would create a
+        # competing TF publisher.
+        DeclareLaunchArgument("start_slam_toolbox", default_value="true"),
     ]
 
     use_sim_time = LaunchConfiguration("use_sim_time")
@@ -113,13 +119,18 @@ def generate_launch_description():
     scan_accumulated_cloud_topic = LaunchConfiguration("scan_accumulated_cloud_topic")
     scan_accumulation_window_sec = LaunchConfiguration("scan_accumulation_window_sec")
     scan_accumulation_max_frames = LaunchConfiguration("scan_accumulation_max_frames")
+    start_slam_toolbox = LaunchConfiguration("start_slam_toolbox")
     scan_input_topic = PythonExpression([
         "'", scan_accumulated_cloud_topic, "' if '", accumulate_scan_cloud,
         "' == 'true' else '", scan_cloud_topic, "'",
     ])
 
-    is_mapping       = PythonExpression(["'", slam_mode, "' == 'mapping'"])
-    is_localization  = PythonExpression(["'", slam_mode, "' == 'localization'"])
+    is_mapping       = PythonExpression([
+        "'", slam_mode, "' == 'mapping' and '", start_slam_toolbox, "' == 'true'",
+    ])
+    is_localization  = PythonExpression([
+        "'", slam_mode, "' == 'localization' and '", start_slam_toolbox, "' == 'true'",
+    ])
 
     distortion_corrector = Node(
         package="robot_nav",
