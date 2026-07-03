@@ -1,0 +1,53 @@
+# DLIO parameters for offline bag replay perception validation.
+#
+# Differs from dlio_params.yaml only in publish_tf: this is the documented
+# Replay TF Owner Override (ADR 0012). The bag has no body odom and no body
+# IMU, so the EKF cannot run; DLIO becomes the TF owner of odom -> base_link
+# for the duration of the replay.
+
+/**:
+  ros__parameters:
+    use_sim_time: true
+    publish_tf: true
+    # Offline bag replay: process all frames, even when initial frames show
+    # the bag was recorded stationary. Live runs keep waitUntilMove: true.
+    map/waitUntilMove: false
+
+    frames/odom: odom
+    frames/baselink: base_link
+    frames/lidar: dlio_lidar_link
+    frames/imu: dlio_imu_link
+
+    adaptive: false
+    pointcloud/deskew: true
+    pointcloud/voxelize: true
+    odom/preprocessing/voxelFilter/res: 0.10
+
+    odom/computeTimeOffset: true
+    odom/imu/approximateGravity: true
+    odom/imu/calibration/gyro: true
+    odom/imu/calibration/accel: true
+    odom/imu/calibration/time: 3.0
+    odom/imu/bufferSize: 5000
+
+    odom/gicp/minNumPoints: 64
+    odom/gicp/kCorrespondences: 16
+    odom/gicp/maxCorrespondenceDistance: 0.5
+
+    odom/keyframe/threshD: 0.10
+    odom/keyframe/threshR: 10.0
+
+    # Identity extrinsics: offline bag has no body context, so we treat the
+    # lidar/imu as if they were rigidly mounted at body origin. The static
+    # TFs published by bag_perception.launch.py match this assumption.
+    # If a bag has known body offsets, override this YAML via
+    # --distortion-params (and a sibling DLIO YAML).
+    extrinsics/baselink2lidar/t: [0.0, 0.0, 0.0]
+    extrinsics/baselink2lidar/R: [1.0, 0.0, 0.0,
+                                  0.0, 1.0, 0.0,
+                                  0.0, 0.0, 1.0]
+
+    extrinsics/baselink2imu/t: [0.0, 0.0, 0.0]
+    extrinsics/baselink2imu/R: [1.0, 0.0, 0.0,
+                                0.0, 1.0, 0.0,
+                                0.0, 0.0, 1.0]

@@ -1,6 +1,6 @@
 # Topic Map - Anubi Autonomy Stack
 
-Last updated: 2026-06-30
+Last updated: 2026-07-03
 Branch: `feat/g1` (G1 humanoid variant; off `feat/sim2real`)
 
 This document is the authoritative reference for all ROS 2 topics in the anubi stack.
@@ -16,11 +16,11 @@ the G1-specific publishers/frames (only those differ -- the canonical contract i
 |-------|------|-----------|-------------|-----|----|-------|
 | `/lidar/points` | `sensor_msgs/PointCloud2` | gazebo_bridge (sim) / `robot_lio` relay of `/utlidar/cloud` (HW) | `distortion_corrector`, `dlio_odom_node` (opt.) | frame: `lidar_link` | frame: `utlidar_lidar` by default | Raw sensor output. HW keeps the driver `frame_id` and publishes an identity `lidar_link -> utlidar_lidar` TF alias; the HW `lidar_link` orientation is set to the measured Unitree driver frame. **Not consumed directly by Nav2 or SLAM**. |
 | `/lidar/points_undistorted` | `sensor_msgs/PointCloud2` | `distortion_corrector` | `scan_cloud_accumulator` (HW), Nav2 STVL costmap, `collision_monitor` | same | same | Frame: `lidar_stabilized` when IMU state is available. Single processed cloud: self-filtered, trunk-stabilized, and optionally deskewed on HW. No ground/floor removal. |
-| `/lidar/points_scan_accumulated` | `sensor_msgs/PointCloud2` | `scan_cloud_accumulator` (HW real bringup) | `pointcloud_to_laserscan` | absent | published | Short rolling window of `/lidar/points_undistorted` frames. Used only to densify `/scan` for the non-repetitive Unitree L1 pattern. Nav2 STVL and collision monitoring still consume the latest corrected cloud directly. |
+| `/lidar/points_scan_accumulated` | `sensor_msgs/PointCloud2` | `scan_cloud_accumulator` (HW real bringup) | `pointcloud_to_laserscan` | absent | published | Short rolling window (default 0.20 s / 3 frames) of `/lidar/points_undistorted` frames, each re-projected into the newest sensor pose through `odom` so accumulated points reflect the current pose. Used only to densify `/scan` for the non-repetitive Unitree L1 pattern. Graceful degradation: if older frames' TF lookups fail, the newest is still published, so output rate is locked to the LiDAR input rate. Nav2 STVL and collision monitoring still consume the latest corrected cloud directly. |
 | `/scan` | `sensor_msgs/LaserScan` | `pointcloud_to_laserscan` | `slam_toolbox`, `obstacle_layer` | same | same | Sim derives directly from `/lidar/points_undistorted`; HW derives from `/lidar/points_scan_accumulated` to avoid sparse radial scans from single non-repetitive L1 frames. |
 | `/imu/data` | `sensor_msgs/Imu` | gazebo_bridge (sim) / `go2_hw_bridge` (HW) | EKF (`footprint_to_odom_ekf` in sim, `ekf_filter_node` on HW), `distortion_corrector` | published | published | Body IMU in `imu_link`. Default correction IMU. Set `distortion_imu_topic:=/lidar/imu` to compare LiDAR IMU timing. |
 | `/lidar/imu` | `sensor_msgs/Imu` | `robot_lio` relay (sim/HW) | optional LIO backend | same | same | Canonical LiDAR-integrated IMU topic for LIO. |
-| `/joint_states` | `sensor_msgs/JointState` | `joint_state_publisher_system` (sim only) | `robot_state_publisher`, CHAMP | published | absent | SIM-ONLY. HW uses Sport Mode API; no joint-level state is published on real robot. |
+| `/joint_states` | `sensor_msgs/JointState` | `joint_state_publisher_system` (sim) / `go2_hw_bridge` (HW, decimated from `/lowstate.motor_state`) | `robot_state_publisher`, CHAMP (sim only) | published @ ~200 Hz | published @ ~50 Hz | HW path maps Unitree motor indices (FR=0..2, FL=3..5, RR=6..8, RL=9..11) to CHAMP-style URDF joint names. Decimation is timer-driven; rate set by `joint_states_rate` parameter on `go2_hw_bridge`. RViz uses these to articulate the leg links defined in `go2_description/urdf/leg.xacro`. |
 
 ---
 
@@ -41,7 +41,7 @@ the G1-specific publishers/frames (only those differ -- the canonical contract i
 | Transform | Publisher | Sim | HW | Notes |
 |-----------|-----------|-----|----|-------|
 | `map -> odom` | `slam_toolbox` | same | same | Published by slam_toolbox during active SLAM. Static identity fallback available via `publish_map_to_odom_tf:=true` launch arg (for testing without SLAM). |
-| `odom -> base_footprint` | EKF (`footprint_to_odom_ekf` in sim / `ekf_filter_node` on HW) | same | same | EKF owns this TF in both environments. |
+| `odom -> base_footprint` | EKF (`footprint_to_odom_ekf` in sim / `ekf_filter_node` on HW) | same | same | EKF owns this TF in both environments. Offline bag replay (`scripts/replay_bag_perception.sh`) is the documented exception: DLIO owns `odom -> base_link` directly because no body odom is available. See ADR 0012. |
 | `base_footprint -> base_link` | `static_transform_publisher` (sim) / `go2_hw_bridge` (HW) | same | same | Sim uses fixed standing-height offset; HW includes body roll/pitch plus standing height. |
 | `base_link -> lidar_link` | URDF / `robot_state_publisher` | rpy=(0, -0.26180, 0) | rpy=(0, 2.88000, 0) | xyz=(0.28945, 0, -0.046825). Sim uses a right-side-up Fortress workaround; HW orientation is derived from matching `/utlidar/cloud` to `/utlidar/cloud_base`. |
 | `lidar_link -> utlidar_lidar` | `robot_lio` static TF (HW default) | absent | identity | Driver frame alias for real `/utlidar/cloud` pointclouds. Identity is valid because HW `lidar_link` matches the measured driver frame. `scripts/run_go2_real.sh --lidar-points-frame <frame>` changes the child frame when the driver reports a different name. |

@@ -15,6 +15,9 @@
  * ── Publications ─────────────────────────────────────────────────────────────
  *  /odom              [nav_msgs/Odometry]       — re-published for Nav2
  *  /imu/data          [sensor_msgs/Imu]         — raw body IMU for fusion / deskew
+ *  /joint_states      [sensor_msgs/JointState]  — 12 leg joints @ ~50 Hz from
+ *                                                  /lowstate.motor_state[0..11]
+ *                                                  (decimated from ~500 Hz raw)
  *  /robot_status      [robot_common_interfaces/RobotStatus] — health at 1 Hz
  *  /api/sport/request [unitree_api/Request]     — motion commands to Go2
  *  TF: odom → base_footprint  (planar x, y, yaw odometry)
@@ -58,6 +61,7 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/imu.hpp"
+#include "sensor_msgs/msg/joint_state.hpp"
 #include "tf2/LinearMath/Matrix3x3.h"
 #include "tf2/LinearMath/Quaternion.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
@@ -85,6 +89,8 @@ public:
     declare_parameter<std::string>("sport_req_topic",  "/api/sport/request");
     declare_parameter<std::string>("odom_topic",       "/odom");
     declare_parameter<std::string>("imu_topic",        "/imu/data");
+    declare_parameter<std::string>("joint_states_topic", "/joint_states");
+    declare_parameter<double>("joint_states_rate",     50.0);   // [Hz] decimation from ~500 Hz lowstate
     declare_parameter<std::string>("odom_frame",       "odom");
     declare_parameter<std::string>("base_frame",       "base_footprint");
     declare_parameter<std::string>("base_link_frame",  "base_link");
@@ -109,6 +115,8 @@ public:
     sport_topic_    = get_parameter("sport_req_topic").as_string();
     odom_topic_     = get_parameter("odom_topic").as_string();
     imu_topic_      = get_parameter("imu_topic").as_string();
+    joint_states_topic_ = get_parameter("joint_states_topic").as_string();
+    joint_states_rate_  = get_parameter("joint_states_rate").as_double();
     odom_frame_     = get_parameter("odom_frame").as_string();
     base_frame_     = get_parameter("base_frame").as_string();
     base_link_frame_ = get_parameter("base_link_frame").as_string();
@@ -133,6 +141,8 @@ public:
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
     odom_pub_   = create_publisher<nav_msgs::msg::Odometry>(odom_topic_, rclcpp::QoS(10));
     imu_pub_    = create_publisher<sensor_msgs::msg::Imu>(imu_topic_, rclcpp::QoS(50));
+    joint_states_pub_ = create_publisher<sensor_msgs::msg::JointState>(
+      joint_states_topic_, rclcpp::QoS(10));
     status_pub_ = create_publisher<robot_common_interfaces::msg::RobotStatus>(
       "/robot_status", rclcpp::QoS(10).transient_local());
     sport_pub_  = create_publisher<unitree_api::msg::Request>(
@@ -165,6 +175,16 @@ public:
     status_timer_ = create_wall_timer(
       std::chrono::milliseconds(1000),
       std::bind(&Go2HwBridge::publish_status, this));
+
+    // ── Joint-state timer ────────────────────────────────────────────────
+    // Decimates /lowstate (~500 Hz) down to joint_states_rate_ to avoid
+    // saturating TF / robot_state_publisher with redundant updates.
+    if (joint_states_rate_ > 0.0) {
+      const auto js_period = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::duration<double>(1.0 / joint_states_rate_));
+      joint_states_timer_ = create_wall_timer(
+        js_period, std::bind(&Go2HwBridge::publish_joint_states, this));
+    }
 
     // Startup sequence (real robot): StandUp first, then enable ClassicWalk.
     if (enable_startup_motion_sequence_ || enable_goal_motion_sequence_) {
@@ -322,12 +342,44 @@ private:
     has_state_  = true;
   }
 
-  // ── LowState callback (battery data) ────────────────────────────────────
+  // ── LowState callback (battery data + joint state cache) ─────────────────
 
   void on_low_state(const unitree_go::msg::LowState::SharedPtr msg)
   {
     last_low_state_ = *msg;
     has_low_state_  = true;
+  }
+
+  // ── Joint state publisher ────────────────────────────────────────────────
+  // Maps Unitree Go2 motor indices to CHAMP-style URDF joint names.  Index
+  // order follows unitree_sdk2/include/unitree/dds_wrapper/robots/go2/defines.h
+  // (FR=0..2, FL=3..5, RR=6..8, RL=9..11 with 0=hip, 1=thigh, 2=calf).
+  // Joint names match leg.xacro in go2_description.
+  static constexpr std::array<const char *, 12> kJointNames = {
+    "rf_hip_joint",        "rf_upper_leg_joint",  "rf_lower_leg_joint",   // FR
+    "lf_hip_joint",        "lf_upper_leg_joint",  "lf_lower_leg_joint",   // FL
+    "rh_hip_joint",        "rh_upper_leg_joint",  "rh_lower_leg_joint",   // RR
+    "lh_hip_joint",        "lh_upper_leg_joint",  "lh_lower_leg_joint"};  // RL
+
+  void publish_joint_states()
+  {
+    if (!has_low_state_) {
+      return;  // No data yet; robot_state_publisher will hold last known transforms.
+    }
+
+    sensor_msgs::msg::JointState js;
+    js.header.stamp = now();
+    js.name.assign(kJointNames.begin(), kJointNames.end());
+    js.position.resize(12);
+    js.velocity.resize(12);
+    js.effort.resize(12);
+    for (size_t i = 0; i < 12; ++i) {
+      const auto & m = last_low_state_.motor_state[i];
+      js.position[i] = static_cast<double>(m.q);
+      js.velocity[i] = static_cast<double>(m.dq);
+      js.effort[i]   = static_cast<double>(m.tau_est);
+    }
+    joint_states_pub_->publish(js);
   }
 
   // ── cmd_vel callback ─────────────────────────────────────────────────────
@@ -574,6 +626,8 @@ private:
   std::string sport_topic_;
   std::string odom_topic_;
   std::string imu_topic_;
+  std::string joint_states_topic_;
+  double joint_states_rate_;
   std::string odom_frame_;
   std::string base_frame_;
   std::string base_link_frame_;
@@ -594,6 +648,7 @@ private:
 
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_states_pub_;
   rclcpp::Publisher<robot_common_interfaces::msg::RobotStatus>::SharedPtr status_pub_;
   rclcpp::Publisher<unitree_api::msg::Request>::SharedPtr sport_pub_;
 
@@ -604,6 +659,7 @@ private:
 
   rclcpp::TimerBase::SharedPtr watchdog_timer_;
   rclcpp::TimerBase::SharedPtr status_timer_;
+  rclcpp::TimerBase::SharedPtr joint_states_timer_;
   rclcpp::TimerBase::SharedPtr startup_sequence_timer_;
 
   std::optional<rclcpp::Time> last_cmd_time_;

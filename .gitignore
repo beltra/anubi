@@ -33,6 +33,17 @@ Thumbs.db
 *.claude
 *.agents
 *.pytest_cache
+*.cache
 
 # Local git worktrees
 .worktrees/
+
+# Rosbag recordings (large, machine-local). Keep the directory and any
+# checked-in README, but not the recordings themselves.
+bags/*
+!bags/.gitkeep
+!bags/README.md
+
+# Generated map artifacts (PGM/PCD/YAML from slam_toolbox / DLIO). Local
+# outputs of scripts/save_current_maps.sh; not part of the source tree.
+maps/

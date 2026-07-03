@@ -1,29 +1,40 @@
 <?xml version="1.0"?>
 <!--
   go2.urdf.xacro
-  Minimal Go2 robot description for Nav2 navigation.
+  Hardware Go2 robot description for Nav2 navigation and RViz visualization.
 
   Frame tree (Nav2 standard contract):
     base_footprint  (published dynamically by the hardware bridge / sim launch)
-      += base_link        (robot body center at standing height, roll/pitch-capable)
-           += trunk        (visual/collision body mesh)
-           += imu_link     (co-located with trunk centre)
-           += lidar_link   (Unitree L1 LiDAR mount)
+      += base_link             (robot body center at standing height, roll/pitch-capable)
+           += trunk             (Go2 body mesh; fixed offset, identity)
+           |    += {lf,rf,lh,rh}_hip_link -> {..}_upper_leg_link -> {..}_lower_leg_link -> {LF,RF,LH,RH}_FOOT
+           += imu_link          (co-located with trunk centre)
+           += lidar_link        (Unitree L1 LiDAR mount, real driver orientation)
 
   Notes:
     - This URDF is rooted at base_link. base_footprint is intentionally not part of
       robot_description so bringup can publish base_footprint->base_link dynamically
       from IMU roll/pitch without conflicting with robot_state_publisher.
-    - lidar_link pose matches Go2 mounting location used by Nav2/SLAM.
-    - Leg links are omitted (not needed for Nav2). Add them when joint-state
-      visualization or IK is required.
+    - lidar_link pose matches the Go2 mounting location used by Nav2/SLAM (real
+      driver orientation; see go2_sim/urdf/go2_sim.urdf.xacro for the Fortress
+      workaround used in simulation).
+    - Leg links + joints are present so RViz mirrors the real robot pose when
+      go2_hw_bridge publishes /joint_states from /lowstate.motor_state[].q. The
+      ros2_control block from leg.xacro is gated off here (hardware does not use
+      ign_ros2_control).
+    - base_link keeps two collision boxes (trunk + safety envelope) so Nav2
+      consumers that read URDF collision geometry get the standing footprint
+      independent of leg articulation.
 
-  NOTE: Gazebo simulation plugins are implemented in go2_sim/urdf/go2_sim.urdf.xacro.
-        This hardware-focused URDF intentionally keeps simulation plugins out.
   TODO(agibot): Create agibot_d1_description/urdf/d1.urdf.xacro with the same
                 frame names (base_footprint, base_link, lidar_link, imu_link).
 -->
 <robot name="go2" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Shared geometry: leg/joint constants, mesh materials, parametric leg macro. -->
+  <xacro:include filename="$(find go2_description)/urdf/const.xacro"/>
+  <xacro:include filename="$(find go2_description)/urdf/materials.xacro"/>
+  <xacro:include filename="$(find go2_description)/urdf/leg.xacro"/>
 
   <!-- =======================================================================
        Physical constants
@@ -56,47 +67,17 @@
   <xacro:property name="lidar_yaw" value="0.0"/>
 
   <!-- =======================================================================
-       base_link  -  robot body centre
+       base_link  -  virtual root + Nav2 collision geometry
+       Visuals live on `trunk` (Go2 body mesh) and the leg links instantiated
+       below. The collision boxes here express the full standing footprint for
+       Nav2 consumers that read URDF collision geometry.
   ============================================================================ -->
   <link name="base_link">
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <geometry>
-        <!--
-          TRUNK ONLY - this box represents the rigid body torso, not the full
-          robot envelope. The full standing footprint (700x310 mm including legs)
-          is represented in Nav2 via the footprint parameter in nav2_params.yaml.
-          Replace with mesh when available:
-            <mesh filename="file://$(find go2_description)/meshes/trunk.dae"/>
-        -->
-        <box size="${body_length} ${body_width*2} ${body_height}"/>
-      </geometry>
-      <material name="dark_grey">
-        <color rgba="0.2 0.2 0.2 1.0"/>
-      </material>
-    </visual>
-    <!-- Leg stance envelope - represents the physical standing footprint.
-         Positioned at z = -(standing_height - stance_height/2) relative to
-         base_link, which is: -(0.28 - 0.115) = -0.165 m -->
-    <visual name="stance_visual">
-      <origin xyz="0 0 ${-(standing_height - stance_height/2)}" rpy="0 0 0"/>
-      <geometry>
-        <box size="${stance_length} ${stance_width} ${stance_height}"/>
-      </geometry>
-      <material name="stance_grey">
-        <color rgba="0.5 0.5 0.5 0.4"/>
-      </material>
-    </visual>
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <!--
-          TRUNK ONLY - this box represents the rigid body torso, not the full
-          robot envelope. The full standing footprint (700x310 mm including legs)
-          is represented in Nav2 via the footprint parameter in nav2_params.yaml.
-          Replace with mesh when available:
-            <mesh filename="file://$(find go2_description)/meshes/trunk.dae"/>
-        -->
+        <!-- Rigid body torso footprint (full standing envelope is via the
+             safety collision below and nav2 footprint parameters). -->
         <box size="${body_length} ${body_width*2} ${body_height}"/>
       </geometry>
     </collision>
@@ -107,14 +88,44 @@
         <box size="${safety_length} ${safety_width} ${stance_height}"/>
       </geometry>
     </collision>
+  </link>
+
+  <!-- =======================================================================
+       trunk  -  Go2 body mesh, fixed offset from base_link
+       Matches the sim URDF (go2_sim.urdf.xacro) so RViz appearance and the leg
+       attachment frame are identical between sim and real.
+  ============================================================================ -->
+  <joint name="floating_base" type="fixed">
+    <parent link="base_link"/>
+    <child  link="trunk"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="trunk">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://go2_description/meshes/dae/base.dae" scale="1 1 1"/>
+      </geometry>
+    </visual>
     <inertial>
-      <origin xyz="0.021112 0.0 -0.005366" rpy="0 0 0"/>
-      <mass value="${body_mass}"/>
-      <inertia ixx="0.02448"  ixy="0.00012166" ixz="0.0014849"
-               iyy="0.098077" iyz="-0.0000312"
-               izz="0.107"/>
+      <origin xyz="${trunk_com_x} ${trunk_com_y} ${trunk_com_z}" rpy="0 0 0"/>
+      <mass value="${trunk_mass}"/>
+      <inertia ixx="${trunk_ixx}" ixy="${trunk_ixy}" ixz="${trunk_ixz}"
+               iyy="${trunk_iyy}" iyz="${trunk_iyz}"
+               izz="${trunk_izz}"/>
     </inertial>
   </link>
+
+  <!-- =======================================================================
+       Articulated legs - joint_states fed by go2_hw_bridge from /lowstate.
+       Same macro and mirroring scheme as the sim URDF; ros2_control block is
+       gated off (hardware does not use ign_ros2_control).
+  ============================================================================ -->
+  <xacro:leg name="rf" mirror="-1" mirror_dae="False" front_hind="1"  front_hind_dae="True"  parent="trunk" with_ros2_control="False"/>
+  <xacro:leg name="lf" mirror="1"  mirror_dae="True"  front_hind="1"  front_hind_dae="True"  parent="trunk" with_ros2_control="False"/>
+  <xacro:leg name="rh" mirror="-1" mirror_dae="False" front_hind="-1" front_hind_dae="False" parent="trunk" with_ros2_control="False"/>
+  <xacro:leg name="lh" mirror="1"  mirror_dae="True"  front_hind="-1" front_hind_dae="False" parent="trunk" with_ros2_control="False"/>
 
   <!-- =======================================================================
        imu_link  -  co-located with trunk centre (Go2 internal IMU)

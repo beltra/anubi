@@ -558,8 +558,19 @@ private:
       last_timing_mode_ = "fallback:index";
       return relative_times_from_index(n_points);
     }
-    last_timing_mode_ = "fallback:azimuth";
-    return relative_times_from_azimuth(x, y);
+    if (fallback_mode_ == "azimuth") {
+      last_timing_mode_ = "fallback:azimuth";
+      return relative_times_from_azimuth(x, y);
+    }
+    // fallback_mode == "disabled" (or unknown): zero rel times, caller must
+    // detect via has_time_field() and apply missing-state drop policy.
+    last_timing_mode_ = "fallback:disabled";
+    return std::vector<double>(n_points, 0.0);
+  }
+
+  bool has_time_field(const PointCloud2 & msg) const
+  {
+    return resolve_time_field(msg).first;
   }
 
   void publish_diagnostics(
@@ -623,6 +634,22 @@ private:
       std::numeric_limits<double>::quiet_NaN(), elapsed_ms(start_time));
   }
 
+  // Missing-state drop: emit diagnostic but do not publish a cloud.
+  void drop_frame(
+    const PointCloud2::SharedPtr msg,
+    const std::string & reason,
+    const std::chrono::steady_clock::time_point & start_time)
+  {
+    ++passthrough_count_;
+    publish_diagnostics(
+      DiagnosticStatus::ERROR, reason,
+      static_cast<size_t>(msg->width) * static_cast<size_t>(msg->height),
+      stamp_to_sec(msg->header.stamp), std::numeric_limits<double>::quiet_NaN(),
+      std::numeric_limits<double>::quiet_NaN(), elapsed_ms(start_time));
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 2000, "distortion_corrector: %s", reason.c_str());
+  }
+
   void cloud_callback(const PointCloud2::SharedPtr msg)
   {
     const auto start_time = std::chrono::steady_clock::now();
@@ -652,6 +679,11 @@ private:
     }
     if (!is_float_field(x_field) || !is_float_field(y_field) || !is_float_field(z_field)) {
       publish_passthrough(msg, "cloud x/y/z fields are not floating point", start_time);
+      return;
+    }
+
+    if (deskew_enabled_ && fallback_mode_ == "disabled" && !has_time_field(*msg)) {
+      drop_frame(msg, "deskew enabled with fallback_mode=disabled but cloud has no time field", start_time);
       return;
     }
 

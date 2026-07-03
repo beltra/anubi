@@ -40,6 +40,7 @@ install(PROGRAMS
   scripts/cloud_accumulator.py
   scripts/cloud_self_filter.py
   scripts/lidar_odom_relay.py
+  scripts/odom_to_tf.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

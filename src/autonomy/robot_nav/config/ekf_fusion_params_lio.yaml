@@ -31,7 +31,10 @@ ekf_filter_node:
     two_d_mode: true
     transform_time_offset: 0.0
     transform_timeout: 0.2
-    print_diagnostics: true
+    # See ekf_fusion_params.yaml + docs/ekf_rate_diag.md: leaving this on
+    # collapses /odom output rate to ~5 Hz via TF-buffer thrashing inside
+    # the diagnostic_updater path. Same root cause applies in LIO mode.
+    print_diagnostics: false
     publish_tf: true
     publish_acceleration: false
 
