@@ -135,7 +135,13 @@ CMD=(
   sonic_profile:="$SONIC_PROFILE"
 )
 [[ -n "$MAP_PATH"   ]] && CMD+=(map:="$MAP_PATH")
-[[ -n "$WORLD_PATH" ]] && CMD+=(world:="$WORLD_PATH")
+if [[ -n "$WORLD_PATH" ]]; then
+  CMD+=(world:="$WORLD_PATH")
+  # The robot spawn (`create -world <name>`) must target the SDF's <world name>;
+  # without this a non-default world spawns nothing and `create` times out.
+  WORLD_NAME="$(grep -oPm1 '<world name="\K[^"]+' "$WORLD_PATH" || true)"
+  [[ -n "$WORLD_NAME" ]] && CMD+=(world_name:="$WORLD_NAME")
+fi
 
 echo "Starting G1 simulation stack..."
 printf 'Command:'; printf ' %q' "${CMD[@]}"; echo
