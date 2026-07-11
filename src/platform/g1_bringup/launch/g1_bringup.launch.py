@@ -77,6 +77,8 @@ net_if         : str   DDS NIC the G1 is reachable on (e.g. eth0)
 locomotion     : str   'amo' | 'sonic'  low-level controller the stack commands (default amo)
 sonic_profile  : str   'slow_walk' | 'walk'  SONIC velocity envelope; anything but
                        'walk' falls back to the conservative slow_walk profile
+sonic_arm_preset : str 'none' | 'default' | 'carry'  fixed upper-body pose held while
+                       walking (default none = arms swing with the gait)
 """
 
 import os
@@ -195,6 +197,12 @@ def generate_launch_description():
             description="SONIC velocity envelope: 'slow_walk' (vx 0.5, wz 0.4; first "
                         "bringup) or 'walk' (vx 0.8, wz 0.5; validated hardware only). "
                         "Anything but 'walk' falls back to slow_walk. Ignored for amo."),
+        DeclareLaunchArgument(
+            "sonic_arm_preset", default_value="none",
+            description="Fixed upper-body pose the SONIC bridge holds while walking: "
+                        "'none' (arms swing with the gait), 'default' (nominal standing "
+                        "arms), or 'carry' (two-handed carry pose). Loco-manipulation; "
+                        "validate on a hoist and tune per payload. Ignored for amo."),
     ]
 
     use_sim_time = LaunchConfiguration("use_sim_time")
@@ -220,6 +228,7 @@ def generate_launch_description():
     abort_key_mask = LaunchConfiguration("abort_key_mask")
     locomotion = LaunchConfiguration("locomotion")
     sonic_profile = LaunchConfiguration("sonic_profile")
+    sonic_arm_preset = LaunchConfiguration("sonic_arm_preset")
 
     # The locomotion bridge consumes the safety-gated topic when safety is on, else
     # the collision_monitor output directly (mirrors go2_bringup's hw_bridge_cmd_topic).
@@ -508,6 +517,7 @@ def generate_launch_description():
         parameters=[sonic_bridge_params, {
             "use_sim_time": use_sim_time,
             "cmd_vel_topic": loco_cmd_topic,
+            "arm_preset": sonic_arm_preset,
         }],
         condition=IfCondition(start_cmd_vel_to_sonic),
     )

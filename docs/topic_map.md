@@ -31,7 +31,7 @@ the G1-specific publishers/frames (only those differ -- the canonical contract i
 | `/odom_raw` | `nav_msgs/Odometry` | CHAMP odom bridge (sim) / `go2_hw_bridge` (HW) | EKF fusion node | same | same | Raw body odometry input to EKF. |
 | `/lidar_odom` | `nav_msgs/Odometry` | optional LIO backend (via `robot_lio`) | `lidar_odom_relay` | optional | optional | Default OFF on the Go2 (`use_lio:=false`); **default ON for the G1 real robot** (`use_lio:=true`, DLIO is its primary odometry). All-zero covariances (DLIO limitation) - never feed directly to the EKF. |
 | `/lidar_odom_reliable` | `nav_msgs/Odometry` | `lidar_odom_relay` | EKF fusion node | optional | optional | `/lidar_odom` with injected diagonal covariances. Active only when `use_lio:=true`. This is the topic the EKF consumes. |
-| `/odom` | `nav_msgs/Odometry` | `footprint_to_odom_ekf` (sim) / `ekf_filter_node` (HW) | `slam_toolbox`, Nav2 | same | same | Fused odometry output. frame_id=`odom`, child_frame_id=`base_footprint`. |
+| `/odom` | `nav_msgs/Odometry` | `footprint_to_odom_ekf` (sim) / `ekf_filter_node` (HW) | `slam_toolbox`, Nav2, `cmd_vel_to_sonic` (yaw source, `locomotion:=sonic`) | same | same | Fused odometry output. frame_id=`odom`, child_frame_id=`base_footprint`. G1 SONIC bridge reads yaw here to anchor its closed-loop body->world heading conversion. |
 | `/map` | `nav_msgs/OccupancyGrid` | `slam_toolbox` | Nav2 global costmap `StaticLayer`, RViz | same | same | Published during mapping mode; used as localization reference in localization mode and by STVL profiles for map-backed global planning. |
 
 ---
@@ -132,7 +132,7 @@ EKF frame ownership (`odom -> base_footprint`) are identical to the Go2.
 | `base_footprint -> lidar_stabilized` TF | `lidar_level_frame_publisher` | `lidar_level_frame_publisher` (same node; G1 Mid-360 extrinsics) |
 | `/lidar/points_undistorted` | `distortion_corrector` (`distortion_corrector.yaml`) | `distortion_corrector` (`distortion_corrector_g1.yaml`, G1 self-filter box; shared by sim) |
 | `/lidar_odom` | DLIO (use_lio) | DLIO (use_lio, default true; `dlio_params_g1_real.yaml`) |
-| `/cmd_vel_safe` consumer | `go2_hw_bridge` (Sport API) | `cmd_vel_to_amo` (AMO WebSocket :8766; caps vx0.5/vy0.4/yaw0.4) or, with `locomotion:=sonic`, `cmd_vel_to_sonic` (SONIC planner ticks, ZMQ PUB :5556; caps per `sonic_profile`: slow_walk vx0.5/vy0.4/yaw0.4, walk vx0.8/vy0.4/yaw0.5) |
+| `/cmd_vel_safe` consumer | `go2_hw_bridge` (Sport API) | `cmd_vel_to_amo` (AMO WebSocket :8766; caps vx0.5/vy0.4/yaw0.4) or, with `locomotion:=sonic`, `cmd_vel_to_sonic` (SONIC planner ticks, ZMQ PUB :5556; also SUBs `/odom` for closed-loop heading; caps per `sonic_profile`: slow_walk vx0.5/vy0.4/yaw0.4, walk vx0.8/vy0.4/yaw0.5) |
 
 G1 hardware-only inputs (no Go2 equivalent): `/livox/lidar`, `/livox/imu`, `/livox/imu_ms2`,
 and the Unitree DDS topics `rt/odommodestate` + `rt/lowstate` (read by `g1_state_bridge`).

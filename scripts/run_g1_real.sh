@@ -61,6 +61,11 @@ Options:
   --locomotion <name>    Low-level controller: amo (default) or sonic
   --sonic-profile <name> SONIC velocity envelope: slow_walk (default; vx 0.5, wz 0.4)
                          or walk (vx 0.8, wz 0.5; only after slow_walk is validated)
+  --sonic-arm-preset <name>
+                         SONIC fixed upper-body pose held while walking: none
+                         (default; arms swing with the gait), default (nominal
+                         standing arms), or carry (two-handed carry). Loco-
+                         manipulation; validate hoisted and tune per payload.
   --no-livox             Do NOT start the Livox Mid-360 driver + imu_rescale
                          (e.g. when replaying a rosbag of /livox/lidar + /livox/imu)
   --no-lio               Do NOT run DLIO (odometry then relies on the AMO body odom only)
@@ -90,6 +95,7 @@ Examples:
   run_g1_real.sh --net-if eth0
   run_g1_real.sh --locomotion sonic                # SONIC controller, slow_walk envelope
   run_g1_real.sh --locomotion sonic --sonic-profile walk
+  run_g1_real.sh --locomotion sonic --sonic-arm-preset carry   # hold two-handed carry pose
 EOF
 }
 
@@ -119,6 +125,7 @@ while [[ $# -gt 0 ]]; do
     --no-clean) CLEAN_EXISTING="false"; shift;;
     --locomotion) [[ $# -ge 2 ]] || { echo "Missing value for --locomotion" >&2; exit 1; }; LOCOMOTION="$2"; shift 2;;
     --sonic-profile) [[ $# -ge 2 ]] || { echo "Missing value for --sonic-profile" >&2; exit 1; }; SONIC_PROFILE="$2"; shift 2;;
+    --sonic-arm-preset) [[ $# -ge 2 ]] || { echo "Missing value for --sonic-arm-preset" >&2; exit 1; }; SONIC_ARM_PRESET="$2"; shift 2;;
     -h|--help) usage; exit 0;;
     *) echo "Unknown argument: $1" >&2; usage; exit 1;;
   esac
@@ -129,6 +136,9 @@ if [[ "$LOCOMOTION" != "amo" && "$LOCOMOTION" != "sonic" ]]; then
 fi
 if [[ "$SONIC_PROFILE" != "slow_walk" && "$SONIC_PROFILE" != "walk" ]]; then
   echo "Invalid --sonic-profile '$SONIC_PROFILE' (expected slow_walk or walk)." >&2; exit 1
+fi
+if [[ "$SONIC_ARM_PRESET" != "none" && "$SONIC_ARM_PRESET" != "default" && "$SONIC_ARM_PRESET" != "carry" ]]; then
+  echo "Invalid --sonic-arm-preset '$SONIC_ARM_PRESET' (expected none, default, or carry)." >&2; exit 1
 fi
 
 if [[ "$MODE" == "localization" && -z "$MAP_PATH" ]]; then
@@ -166,6 +176,7 @@ CMD=(
   abort_key_mask:="$ABORT_KEY_MASK"
   locomotion:="$LOCOMOTION"
   sonic_profile:="$SONIC_PROFILE"
+  sonic_arm_preset:="$SONIC_ARM_PRESET"
 )
 [[ -n "$MAP_PATH"     ]] && CMD+=(map:="$MAP_PATH")
 [[ -n "$LIVOX_CONFIG" ]] && CMD+=(livox_config:="$LIVOX_CONFIG")
@@ -175,7 +186,8 @@ echo "Starting G1 real-robot stack..."
 if [[ "$LOCOMOTION" == "sonic" ]]; then
   echo "NOTE: ensure the SONIC controller (g1_deploy_onnx_ref on the Jetson) is running and"
   echo "      pointed at this host's ZMQ :5556, and the AMO driver is NOT running."
-  echo "      SONIC profile: ${SONIC_PROFILE}. See docs/g1_sonic_locomotion.md."
+  echo "      SONIC profile: ${SONIC_PROFILE}, arm preset: ${SONIC_ARM_PRESET}. See docs/g1_sonic_locomotion.md."
+  [[ "$SONIC_ARM_PRESET" != "none" ]] && echo "      NOTE: arm preset '${SONIC_ARM_PRESET}' pins the upper body (loco-manipulation); validate hoisted, tune per payload."
 else
   echo "NOTE: ensure the AMO locomotion driver (g1_locomotion amo_driver, ws://127.0.0.1:8766) is already running."
 fi

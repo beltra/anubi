@@ -9,6 +9,10 @@ cmd_vel_to_sonic:
   ros__parameters:
     # Safety-gated velocity topic (robot_safety velocity_limiter output).
     cmd_vel_topic:   "/cmd_vel_safe"
+    # Measured yaw source for the closed-loop body->world conversion. /odom is the
+    # EKF-fused body pose (owns odom->base_footprint, present in sim and real);
+    # set to /lidar_odom to anchor directly on DLIO instead.
+    odom_topic:      "/odom"
     # ZMQ PUB endpoint THIS node binds; g1_deploy_onnx_ref connects to it
     # (--zmq-host <nav host> --zmq-port 5556 on the Jetson).
     zmq_bind_host:   "*"
@@ -26,6 +30,9 @@ cmd_vel_to_sonic:
     max_yaw_rate:    0.5
     # Compensates the SONIC planner's ~0.85x speed realization (1.18 ~= 1/0.85).
     speed_gain:      1.18
+    # Closed-loop turn intent: `facing` leads the measured heading by wz * this.
+    # MUST be > 0 or the robot never turns (it is the whole turning mechanism).
+    facing_lookahead_sec: 0.4
     # Watchdog: IDLE if cmd_vel is silent; chain publishes at 20 Hz -> 0.3 s.
     cmd_timeout:     0.3
     # Idempotent start/planner-mode command re-send period.
