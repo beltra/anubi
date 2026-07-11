@@ -160,7 +160,6 @@ class G1StateBridge(Node):
         # Block briefly for the first state so the IMU/TF are valid from the first tick.
         self._io.wait_for_state(timeout=10.0)
 
-        self._last_odom = None
         self.create_timer(1.0 / max(1.0, rate_hz), self._tick)
         self.get_logger().info(
             "publishing odom=%s imu=%s body_tf=%s odom_tf=%s standing_height=%.2f"
@@ -218,10 +217,15 @@ class G1StateBridge(Node):
         odom_dict = self._io.get_odom()
         if odom_dict is None:
             return
-        # Detect staleness: the DDS buffer keeps the last sample, so compare against
-        # the previous one. If position is identical for longer than the timeout we
-        # still publish (a stationary robot legitimately repeats); robustness against
-        # a truly dead stream is left to the EKF sensor_timeout + the use_lio fallback.
+        # Publish /odom_raw only while the body odometry is fresh. The DDS buffer
+        # keeps serving the last SportModeState after the stream stops (control-mode
+        # dependent), so gate on the age of the last genuinely new sample: past
+        # body_odom_timeout, drop /odom_raw and let the EKF fall back to DLIO. A
+        # stationary robot still refreshes the stream, so this does not misfire when
+        # merely standing still. IMU + body TF keep publishing regardless.
+        odom_age = self._io.odom_age()
+        if odom_age is not None and odom_age > self._odom_timeout:
+            return
         px, py = float(odom_dict["position"][0]), float(odom_dict["position"][1])
         vx, vy = float(odom_dict["velocity"][0]), float(odom_dict["velocity"][1])
         oq = odom_dict["orientation_quaternion"]

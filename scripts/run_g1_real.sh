@@ -36,12 +36,17 @@ STANDING_HEIGHT="0.78"
 NAV_DELAY_SEC="5.0"
 DISTORTION_IMU_TOPIC="/imu/data"
 NET_IF=""
-RECOVERY_ACK_KEY_MASK="0"
-RESUME_KEY_MASK="0"
-ABORT_KEY_MASK="0"
+# Controller key masks (same unitree_go/WirelessController layout as the Go2, so
+# match run_go2_real.sh). Leaving these at 0 disables controller acknowledgement:
+# a latched tilt E-STOP could then never be cleared and Nav2 resume/abort would be
+# inert. Override per-controller if the button map differs.
+RECOVERY_ACK_KEY_MASK="0x0010"
+RESUME_KEY_MASK="0x0010"
+ABORT_KEY_MASK="0x0020"
 CLEAN_EXISTING="true"
 LOCOMOTION="amo"
 SONIC_PROFILE="slow_walk"
+SONIC_ARM_PRESET="none"
 
 usage() {
   cat <<'EOF'

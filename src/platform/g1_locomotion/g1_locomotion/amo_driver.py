@@ -378,18 +378,17 @@ def run_control(net_if, device, observe_only) -> int:
                 'stabilize=%.1fs | observe_only=%s',
                 INFER_HZ, BLEND_S, GAIN_RAMP_S, STABILIZE_S, observe_only)
 
-    last_state_t = time.perf_counter()
     tick = 0
     try:
         while not stop['flag']:
-            now = time.perf_counter()
-
             # ── safety guards ──────────────────────────────────────────────
-            if io.has_state():
-                last_state_t = now
-            elif (now - last_state_t) > STATE_TIMEOUT_S:
-                logger.error('lowstate stale for %.2fs; aborting',
-                             now - last_state_t)
+            # state_age() reflects the last FRESH lowstate; a dead DDS stream
+            # makes it grow past the timeout. has_state() must NOT be used here:
+            # it latches True on the first sample and never sees staleness, so
+            # the driver would keep streaming motor targets on frozen state.
+            state_age = io.state_age()
+            if state_age is not None and state_age > STATE_TIMEOUT_S:
+                logger.error('lowstate stale for %.2fs; aborting', state_age)
                 break
             tilt = io.base_tilt_rad()
             if tilt > SAFETY_TILT_RAD:

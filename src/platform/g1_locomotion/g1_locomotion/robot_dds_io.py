@@ -83,19 +83,34 @@ def quat_to_euler(quat) -> np.ndarray:
 
 
 class _DataBuffer:
-    """Thread-safe single-slot buffer (robot_body.py:55-66)."""
+    """Thread-safe single-slot buffer (robot_body.py:55-66).
+
+    set() stamps a monotonic arrival time so consumers can tell a *fresh*
+    sample from the last one that keeps sitting in the buffer after the DDS
+    stream dies. The freshness guards (state/odom staleness aborts) depend on
+    this: without it, get() alone cannot distinguish "still streaming" from
+    "frozen on the last sample".
+    """
 
     def __init__(self):
         self._data = None
+        self._t = None
         self._lock = threading.Lock()
 
     def get(self):
         with self._lock:
             return self._data
 
+    def get_with_age(self):
+        """Return (data, seconds_since_last_set) or (None, None) if never set."""
+        with self._lock:
+            age = None if self._t is None else (time.perf_counter() - self._t)
+            return self._data, age
+
     def set(self, data):
         with self._lock:
             self._data = data
+            self._t = time.perf_counter()
 
 
 class G1DDSInterface:
@@ -216,8 +231,10 @@ class G1DDSInterface:
                 return False
             time.sleep(0.01)
         # Initialize the mode_machine and seed targets to the measured pose so
-        # the publisher holds position (robot_body.py:137-142).
-        self._msg.mode_machine = self._lowstate_sub.Read().mode_machine
+        # the publisher holds position (robot_body.py:137-142). Read from the
+        # buffer the subscribe thread fills, not a second Read() on the shared
+        # subscriber: that Read() can race the subscribe thread and return None.
+        self._msg.mode_machine = self._lowstate_buf.get().mode_machine
         self._q_target = self.get_motor_q()
         return True
 
@@ -306,8 +323,13 @@ class G1DDSInterface:
                         dtype=np.float64)
 
     def get_imu(self):
-        """Raw IMU sub-message (quaternion wxyz / gyroscope / rpy). robot_body.py:337-339."""
-        return self._lowstate_sub.Read().imu_state
+        """Raw IMU sub-message (quaternion wxyz / gyroscope / rpy). robot_body.py:337-339.
+
+        Reads the buffer the subscribe thread fills (same source as get_motor_q),
+        NOT a direct Read() on the shared subscriber: a second Read() races the
+        subscribe thread and can return None, crashing every per-tick caller.
+        """
+        return self._lowstate_buf.get().imu_state
 
     def get_odom(self):
         """Base odometry dict from rt/odommodestate. robot_body.py:172-182."""
@@ -353,7 +375,27 @@ class G1DDSInterface:
         return float(np.arccos(c))
 
     def has_state(self) -> bool:
+        """True once any lowstate has ever arrived (NOT a freshness check).
+
+        This latches True for the buffer's lifetime, so it cannot detect a dead
+        DDS stream -- use state_age() for the staleness guard.
+        """
         return self._lowstate_buf.get() is not None
+
+    def state_age(self) -> float | None:
+        """Seconds since the last *fresh* lowstate, or None if none has arrived.
+
+        The subscribe thread only refreshes the buffer on a genuinely new sample,
+        so a frozen/dead rt/lowstate stream makes this grow without bound. This is
+        the signal the AMO driver's stale-state abort must use (has_state() cannot
+        see staleness because it never un-latches)."""
+        _, age = self._lowstate_buf.get_with_age()
+        return age
+
+    def odom_age(self) -> float | None:
+        """Seconds since the last *fresh* rt/odommodestate, or None if none yet."""
+        _, age = self._odom_buf.get_with_age()
+        return age
 
     # -----------------------------------------------------------------------
     def request_damping(self) -> None:

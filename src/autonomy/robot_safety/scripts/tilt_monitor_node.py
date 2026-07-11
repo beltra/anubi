@@ -57,8 +57,17 @@ class TiltMonitor(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
             reliability=ReliabilityPolicy.RELIABLE,
         )
+        # IMU publishers on /imu/data are BEST_EFFORT sensor streams (g1_state_bridge,
+        # go2 lowstate). A RELIABLE subscriber is QoS-incompatible and receives NOTHING,
+        # which would leave the tilt estop permanently blind. Subscribe BEST_EFFORT so it
+        # is compatible with both best-effort and reliable IMU sources.
+        imu_qos = QoSProfile(
+            depth=10,
+            durability=DurabilityPolicy.VOLATILE,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+        )
         self._tilt_pub = self.create_publisher(Bool, tilt_topic, latched_qos)
-        self._imu_sub = self.create_subscription(Imu, imu_topic, self._on_imu, 10)
+        self._imu_sub = self.create_subscription(Imu, imu_topic, self._on_imu, imu_qos)
         self._joy_sub = self.create_subscription(
             WirelessController, joystick_topic, self._on_joystick, 10
         )
