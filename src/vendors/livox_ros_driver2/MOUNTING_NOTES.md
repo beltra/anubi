@@ -50,7 +50,7 @@ Unitree defaults:
 | Role            | IP                | Notes                                  |
 |-----------------|-------------------|----------------------------------------|
 | Lidar (Mid-360) | `192.168.123.120` | `lidar_configs[0].ip`                  |
-| Host (compute)  | `192.168.123.222` | `host_net_info` cmd/push/point/imu IPs |
+| Host (compute)  | `192.168.123.224` | `host_net_info` cmd/push/point/imu IPs |
 
 If the driver reports no data, first confirm these IPs match the actual robot
 network and that the host NIC is on the `192.168.123.0/24` subnet.
