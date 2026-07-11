@@ -1,0 +1,70 @@
+# DLIO parameters for OFFLINE REPLAY of LIVE-STACK G1 recordings
+# (bags recorded by run_g1_real.sh --record-rosbag, e.g. bags/g1_planner_tune_*).
+# Replay scaffolding -- never shipped to hardware.
+#
+# Differs from dlio_params_g1_bag.yaml (the legacy inverted lidar_record bag) in
+# the LIDAR extrinsic only: these bags carry the LIVE driver cloud (/livox/lidar),
+# which MID360_config.json roll:180 already rights, so the cloud extrinsic is the
+# UPRIGHT calibrated mount. The IMU is never righted by the driver, so its
+# extrinsic keeps the inverted (calibrated) matrix.
+#
+# Shares the replay decisions of dlio_params_g1_bag.yaml:
+# - publish_tf: true, frames/baselink: base_footprint (Replay TF Owner Override,
+#   ADR 0012 G1 section): DLIO owns odom -> base_footprint and anchors the odom
+#   floor datum at z=0 to match the live STVL height contract.
+# - Extrinsic rotations are the NOMINAL mount (as dlio_params_g1_real.yaml):
+#   the at-rest Livox accel in these recordings sits within ~0.7 deg of it.
+#   (The lidar_record bag's 7.2 deg tilt was that recording's stance, absorbed
+#   there by its own bag config; it does NOT apply to live-stack bags.)
+# - t = pelvis->sensor + 0.78 standing height.
+
+/**:
+  ros__parameters:
+    use_sim_time: true
+    publish_tf: true
+    map/waitUntilMove: false
+
+    frames/odom: odom
+    frames/baselink: base_footprint
+    frames/lidar: dlio_lidar_link
+    frames/imu: dlio_imu_link
+
+    adaptive: false
+
+    pointcloud/deskew: true
+    pointcloud/voxelize: true
+    odom/preprocessing/voxelFilter/res: 0.25
+
+    odom/gicp/minNumPoints: 64
+    odom/gicp/kCorrespondences: 16
+    odom/gicp/maxCorrespondenceDistance: 0.5
+
+    odom/keyframe/threshD: 1.0
+    odom/keyframe/threshR: 45.0
+
+    # Held identical to dlio_params_g1_real.yaml (decision: do not retune the
+    # odometry proven on hardware from a single bag).
+    odom/geo/Kab: 0.85
+    odom/geo/abias_max: 1.0
+
+    odom/computeTimeOffset: true
+
+    odom/imu/approximateGravity: true
+    odom/imu/calibration/gyro: true
+    odom/imu/calibration/accel: true
+    odom/imu/calibration/time: 3.0
+    odom/imu/bufferSize: 5000
+
+    # base_footprint(floor) -> Mid-360 LiDAR, UPRIGHT driver cloud:
+    # nominal Ry(0.04014), as dlio_params_g1_real.yaml.
+    extrinsics/baselink2lidar/t: [-0.00368, 0.00003, 1.24018]
+    extrinsics/baselink2lidar/R: [ 0.99919457, 0.0, 0.04012671,
+                                   0.0,        1.0, 0.0,
+                                  -0.04012671, 0.0, 0.99919457]
+
+    # base_footprint(floor) -> Mid-360 IMU, still INVERTED (driver never rights
+    # the IMU): nominal Ry(0.04014) * Rx(pi), as dlio_params_g1_real.yaml.
+    extrinsics/baselink2imu/t: [-0.00368, 0.00003, 1.24018]
+    extrinsics/baselink2imu/R: [ 0.99919457, 0.0, -0.04012671,
+                                 0.0,       -1.0,  0.0,
+                                -0.04012671, 0.0, -0.99919457]

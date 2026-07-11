@@ -70,6 +70,10 @@ add_pids < <(pgrep -f 'wireless_key_inspector' || true)
 add_pids < <(pgrep -f 'route_server' || true)
 add_pids < <(pgrep -f 'ros2 bag' || true)
 add_pids < <(pgrep -f 'rosbag2_transport' || true)
+# Offline bag-replay tuning stacks
+add_pids < <(pgrep -f 'bag_perception.launch.py' || true)
+add_pids < <(pgrep -f 'bag_perception_g1.launch.py' || true)
+add_pids < <(pgrep -f 'joint_state_publisher' || true)
 
 add_pids < <(pgrep -f 'champ' || true)
 

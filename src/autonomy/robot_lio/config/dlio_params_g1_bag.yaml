@@ -1,0 +1,86 @@
+# DLIO parameters for OFFLINE REPLAY of the recorded G1 LiDAR bag
+# (bags/g1/lidar_record). Replay scaffolding -- never shipped to hardware.
+#
+# Copy of dlio_params_g1_real.yaml with the bag-required deltas:
+#
+# 1. publish_tf: true -- the documented Replay TF Owner Override (ADR 0012).
+#    The bag has no body odometry and no body IMU, so the EKF cannot run;
+#    DLIO owns odom -> base_footprint for the duration of the replay.
+#
+# 2. frames/baselink: base_footprint (NOT base_link). The live costmap contract
+#    puts the floor at odom z=0 (EKF tracks base_footprint at floor level), and
+#    the STVL obstacle heights tuned by this replay are odom-frame z values.
+#    DLIO anchors odom at its tracked frame's start pose, so the tracked frame
+#    must be the floor-level base_footprint or every tuned height would be
+#    offset by the 0.78 m standing height. The extrinsic translations below are
+#    therefore base_footprint -> sensor: pelvis->sensor z 0.46018 plus the
+#    0.78 m standing height = 1.24018.
+#
+# 3. The recorded cloud is INVERTED: the MID360_config.json roll:180 righting
+#    that the LIVE driver applies was not active at record time (floor above
+#    the sensor in livox_frame, confirmed against the bag). Both extrinsic R
+#    matrices are the MEASURED total righting from the floor-plane fit over
+#    the bag's stationary segment: R_corr * Ry(0.04014) * Rx(pi), where R_corr
+#    removes the 7.2 deg residual tilt the nominal URDF mount leaves. Using
+#    the nominal extrinsic instead makes DLIO's gravity-aligned init assign
+#    that 7.2 deg to base_footprint's attitude, which then tilts the whole
+#    static TF chain (and every leveled cloud consumer) in odom.
+#    The IMU shares the matrix: it is inverted the same way as the bag cloud.
+#
+# 4. map/waitUntilMove: false -- process all frames of the short bag.
+
+/**:
+  ros__parameters:
+    use_sim_time: true
+    publish_tf: true
+    map/waitUntilMove: false
+
+    frames/odom: odom
+    frames/baselink: base_footprint
+    frames/lidar: dlio_lidar_link
+    frames/imu: dlio_imu_link
+
+    adaptive: false
+
+    # The bag cloud carries valid absolute per-point Livox timestamps, so DLIO
+    # auto-detects SensorType::LIVOX and motion-deskews, as on live hardware.
+    pointcloud/deskew: true
+    pointcloud/voxelize: true
+    odom/preprocessing/voxelFilter/res: 0.25
+
+    odom/gicp/minNumPoints: 64
+    odom/gicp/kCorrespondences: 16
+    odom/gicp/maxCorrespondenceDistance: 0.5
+
+    odom/keyframe/threshD: 1.0
+    odom/keyframe/threshR: 45.0
+
+    # Held identical to dlio_params_g1_real.yaml (decision: do not retune the
+    # odometry proven on hardware from a single bag).
+    odom/geo/Kab: 0.85
+    odom/geo/abias_max: 1.0
+
+    odom/computeTimeOffset: true
+
+    odom/imu/approximateGravity: true
+    odom/imu/calibration/gyro: true
+    odom/imu/calibration/accel: true
+    odom/imu/calibration/time: 3.0
+    odom/imu/bufferSize: 5000
+
+    # base_footprint(floor) -> Mid-360 LiDAR for the INVERTED bag cloud:
+    # t = pelvis->sensor + standing height (0.46018 + 0.78);
+    # R = measured righting (header point 3). Floor-fit sensor height is
+    # ~1.18 m, so the odom floor datum carries a known +0.06 m bias vs the
+    # 1.24 assumed here -- kept, matching live standing_height uncertainty.
+    extrinsics/baselink2lidar/t: [-0.00368, 0.00003, 1.24018]
+    extrinsics/baselink2lidar/R: [ 0.99635170,  0.00077543,  0.08533873,
+                                  -0.00027991, -0.99992365,  0.01235380,
+                                   0.08534179, -0.01233262, -0.99627541]
+
+    # base_footprint(floor) -> Mid-360 IMU: inverted the same way as the bag
+    # cloud, so it shares the measured righting matrix.
+    extrinsics/baselink2imu/t: [-0.00368, 0.00003, 1.24018]
+    extrinsics/baselink2imu/R: [ 0.99635170,  0.00077543,  0.08533873,
+                                -0.00027991, -0.99992365,  0.01235380,
+                                 0.08534179, -0.01233262, -0.99627541]

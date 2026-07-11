@@ -1,0 +1,72 @@
+# distortion_corrector parameters for OFFLINE REPLAY of the recorded G1 LiDAR bag
+# (bags/g1/lidar_record). Replay scaffolding -- never shipped to hardware.
+#
+# Copy of distortion_corrector_g1.yaml with the bag-required deltas:
+#
+# 1. gravity_align stays ON, fed by /lidar/imu. The Livox IMU carries an
+#    IDENTITY orientation, so R_body is identity and the gravity path reduces
+#    to the static sensor_mount_rpy righting -- the output cloud is published
+#    already leveled in lidar_stabilized, the same data-path shape as live
+#    (where the body IMU adds the gait roll/pitch on top). Gait tilt is NOT
+#    corrected in replay (plan decision 4).
+#
+# 2. sensor_mount_rpy is the MEASURED total sensor-to-gravity righting from a
+#    floor-plane fit over the bag's stationary segment (residual spread 0.03
+#    deg across frames). It folds together (a) roll pi: the recording predates
+#    the live driver's MID360_config.json roll:180, so the cloud is INVERTED;
+#    (b) the calibrated mount/stance pitch of -0.085 rad, NOT the URDF's
+#    +0.040 -- the nominal value leaves a 7.2 deg tilt that lifts floor
+#    returns above the STVL min_obstacle_height at range and floods the
+#    costmap with false floor marks. A wrong sign here silently mis-rotates
+#    both the output cloud and the self-filter box: verify the filtered cloud
+#    has the floor level and the body removed before trusting results.
+#
+# The self-filter box itself is the TUNED live value and must stay identical
+# to distortion_corrector_g1.yaml so nav2/scan tuning transfers.
+
+distortion_corrector:
+  ros__parameters:
+    input_topic: /lidar/points
+    output_topic: /lidar/points_undistorted
+    odom_topic: /odom
+    imu_topic: /lidar/imu
+
+    # Deskew stays OFF as on live G1 (DLIO deskews its own copy). use_imu ON
+    # only to drive the gravity path; the identity-orientation Livox IMU makes
+    # it a pure static righting (see header).
+    use_twist: false
+    use_imu: true
+    use_3d_distortion_correction: true
+    deskew_enabled: false
+    scan_period: 0.1  # Mid-360 published at 10 Hz
+
+    # Measured righting for the inverted bag cloud: floor-plane fit gives
+    # rpy(R_corr * Ry(0.04014) * Rx(pi)); see header point 2.
+    sensor_mount_rpy: [-3.12921, -0.08545, -0.00028]
+    mount_rotation_mode: direct
+
+    output_stamp_mode: input
+
+    gravity_align: true
+    gravity_align_frame: lidar_stabilized
+
+    # Self-filter: SAME body box as distortion_corrector_g1.yaml (the live
+    # tuned value). Box is the G1 standing envelope in base_link (pelvis).
+    filter_self: true
+    robot_min_x: -0.18
+    robot_max_x: 0.25
+    robot_min_y: -0.26
+    robot_max_y: 0.26
+    robot_min_z: -0.90
+    robot_max_z: 0.55
+    min_radius: 0.20
+
+    # Mid-360 position in base_link(pelvis) frame (real mount, from the official URDF).
+    sensor_x_in_base: -0.00368
+    sensor_y_in_base: 0.00003
+    sensor_z_in_base: 0.46018
+
+    imu_timeout_sec: 0.25
+    odom_timeout_sec: 0.25
+    publish_diagnostics: false
+    diagnostics_topic: /diagnostics/lidar_correction
