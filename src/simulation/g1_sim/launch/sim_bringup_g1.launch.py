@@ -38,7 +38,9 @@ def generate_launch_description():
     robot_nav_share = get_package_share_directory("robot_nav")
 
     default_world = os.path.join(sim_worlds_share, "worlds", "indoor_office.world")
-    default_slam_params = os.path.join(robot_nav_share, "config", "slam_toolbox_params.yaml")
+    # G1-specific slam_toolbox tuning (trusts DLIO/ground-truth odometry; the shared
+    # slam_toolbox_params.yaml stays loose for the Go2's drifting leg odometry).
+    default_slam_params = os.path.join(robot_nav_share, "config", "slam_toolbox_params_g1.yaml")
     default_rviz_config = os.path.join(robot_nav_share, "rviz", "nav2.rviz")
     g1_nav2_params = os.path.join(robot_nav_share, "config", "nav2_params_g1.yaml")
     # SONIC velocity-envelope variants (same files g1_bringup.launch.py uses on
@@ -196,6 +198,10 @@ def generate_launch_description():
                 "use_imu": False,
                 "use_3d_distortion_correction": False,
                 "gravity_align": False,
+                # gpu_lidar clouds are instantaneous (no spin): the shared
+                # config's deskew would fall back to azimuth timing and warp
+                # the cloud whenever the base yaws.
+                "deskew_enabled": False,
             },
         ],
         condition=IfCondition(start_nav),

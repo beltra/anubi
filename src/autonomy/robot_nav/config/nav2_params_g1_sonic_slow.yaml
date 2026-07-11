@@ -269,8 +269,16 @@ local_costmap:
       stvl_layer:
         plugin: "spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer"
         enabled: true
-        voxel_decay: 0.5
-        decay_model: 0
+        # Shared by G1 sim and real. On the REAL Mid-360 (non-repetitive) a voxel
+        # is not re-confirmed every frame (sparse returns at range and at the
+        # vertical FOV edges), so a short linear decay drops real obstacles
+        # between sweeps; exponential decay holds them across the sweep. The dense
+        # Mid-360 re-confirms nearer obstacles faster than the Go2 L1, so ~1 s is
+        # enough. In sim the Gazebo gpu_lidar cloud is effectively repetitive so
+        # the persistence is not needed, but stays benign: clearing + raytrace
+        # (raytrace_range 10 m) still frees vacated cells. Confirm on a bag.
+        voxel_decay: 1.0
+        decay_model: 1
         voxel_size: 0.05
         track_unknown_space: false
         unknown_threshold: 15
@@ -324,8 +332,12 @@ local_costmap:
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 2.0
-        inflation_radius: 0.80
+        # Sized to the G1 footprint, not the Go2's. Inscribed radius is 0.20 m
+        # (half the 0.40 m fore-aft footprint). A 0.35 m halo keeps ~0.15 m
+        # clearance past the body without flooding tight 7-8 m rooms; the steeper
+        # scale (3.0) preserves a usable cost gradient inside the smaller radius.
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.35
         inflate_unknown: false
         inflate_around_unknown: false
 
@@ -357,8 +369,10 @@ global_costmap:
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 2.0
-        inflation_radius: 0.85
+        # Match the local costmap so the static-map global planner and the
+        # rolling local planner agree on viable corridors (see local_costmap).
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.35
         inflate_unknown: false
         inflate_around_unknown: false
 

@@ -15,17 +15,28 @@ distortion_corrector:
     odom_topic: /odom
     imu_topic: /imu/data
 
-    # Real robot tilts while walking: re-level the cloud from the body IMU. Deskew
-    # is left OFF (as on the Go2): DLIO already deskews its own copy for odometry,
-    # and the nav cloud only needs gravity leveling + self-filtering.
+    # Real robot tilts while walking: re-level the cloud from the body IMU.
+    # Deskew is ON for the nav cloud: the Mid-360 needs ~0.1 s per sweep, so
+    # while yawing the sweep smears tangentially (measured 6.4 -> 4.9 cm
+    # median wall error on turning sweeps with deskew, quiet sweeps ~3 cm).
+    # DLIO still deskews its own copy independently. The sim overrides this
+    # to false (gpu_lidar clouds are instantaneous; the azimuth-time fallback
+    # would invent motion that never happened).
     use_twist: false
     use_imu: true
     use_3d_distortion_correction: true
-    deskew_enabled: false
+    deskew_enabled: true
     scan_period: 0.1  # Mid-360 published at 10 Hz
 
     # The Mid-360 is inverted but MID360_config.json roll:180 rights the CLOUD, so
     # it arrives upright like the sim mount: a small forward pitch only.
+    # Keep this the NOMINAL mount: the at-rest Livox accel in
+    # bags/g1_planner_tune_20260710_175531 confirms the sensor sits within ~0.7 deg
+    # of it. (The older bags/g1/lidar_record showed a 7.2 deg sensor-to-gravity
+    # tilt, but that was the robot's stance in that recording -- body attitude is
+    # the gravity_align path's job, from the body IMU, not a mount constant.
+    # Recalibrate here only if the Livox accel disagrees with the body IMU + this
+    # mount while standing.)
     sensor_mount_rpy: [0.0, 0.04014, 0.0]
     mount_rotation_mode: direct
 

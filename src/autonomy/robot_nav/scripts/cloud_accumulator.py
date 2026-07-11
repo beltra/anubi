@@ -20,6 +20,7 @@ newest. This keeps the accumulator's output rate locked to the LiDAR input
 rate even when /odom or the fixed_frame TF tree lags.
 """
 
+import math
 from collections import deque
 
 import numpy as np
@@ -85,6 +86,25 @@ class CloudAccumulator(Node):
         # which the sensor pose at different timestamps is observable (odom).
         self.declare_parameter("fixed_frame", "odom")
         self.declare_parameter("tf_lookup_timeout_sec", 0.05)
+        # Mapping-scan yaw gate: sweeps captured while the body yaws fast are
+        # tangentially smeared (the Mid-360 needs ~0.1 s per sweep and the
+        # gait adds attitude error), so they thicken map walls along yaw.
+        # When > 0, frames whose sensor yaw rate in fixed_frame exceeds this
+        # are not published at all; quasi-static sweeps repaint the same
+        # walls moments later. 0 disables the gate (safety consumers must
+        # keep using the ungated cloud/scan path).
+        self.declare_parameter("max_yaw_rate_rad_s", 0.0)
+        # Input clouds already expressed in fixed_frame (e.g. DLIO's
+        # registered scan): frames are world-anchored by the odometry's own
+        # registration, so accumulation is plain concatenation with no TF
+        # reprojection. The yaw gate then samples sensor_frame instead of the
+        # cloud's frame_id.
+        self.declare_parameter("input_cloud_in_fixed_frame", False)
+        self.declare_parameter("sensor_frame", "lidar_stabilized")
+        # World-frame inputs bypass the distortion corrector's body-box
+        # self-filter, so remove near-body returns here: drop points within
+        # this horizontal radius of sensor_frame's origin. 0 disables.
+        self.declare_parameter("self_filter_radius", 0.0)
 
         self.input_topic = str(self.get_parameter("input_topic").value)
         self.output_topic = str(self.get_parameter("output_topic").value)
@@ -94,6 +114,13 @@ class CloudAccumulator(Node):
         self.tf_timeout = Duration(
             seconds=float(self.get_parameter("tf_lookup_timeout_sec").value)
         )
+        self.max_yaw_rate = float(self.get_parameter("max_yaw_rate_rad_s").value)
+        self.input_in_fixed_frame = bool(
+            self.get_parameter("input_cloud_in_fixed_frame").value)
+        self.sensor_frame = str(self.get_parameter("sensor_frame").value)
+        self.self_filter_radius = float(self.get_parameter("self_filter_radius").value)
+        self.last_yaw_sample = None  # (tf_stamp_sec, yaw in fixed_frame)
+        self.gate_engaged = False
 
         self.frames = deque()
         self.frame_id = ""
@@ -175,8 +202,94 @@ class CloudAccumulator(Node):
         transformed.header.frame_id = newest.header.frame_id
         return transformed
 
+    def yaw_rate_exceeded(self, msg, stamp_sec):
+        """True when the sensor yaw rate in fixed_frame exceeds the gate.
+
+        The rate is sampled from the LATEST available transform, not the
+        frame's exact stamp: the odom TF for this cloud is published by the
+        odometry at the same instant the cloud arrives, so an exact-stamp
+        lookup races it and a lookup failure would silently disable the gate
+        during exactly the fast-turn frames it exists for. A latest-sample
+        estimate lags one TF period at most, which the hysteresis below
+        absorbs at turn onset.
+        """
+        if self.max_yaw_rate <= 0.0:
+            return False
+        gate_frame = (
+            self.sensor_frame if self.input_in_fixed_frame else msg.header.frame_id
+        )
+        try:
+            tf = self.tf_buffer.lookup_transform(
+                self.fixed_frame,
+                gate_frame,
+                Time(),
+            )
+        except (
+            tf2_ros.LookupException,
+            tf2_ros.ConnectivityException,
+            tf2_ros.ExtrapolationException,
+            tf2_ros.TransformException,
+        ):
+            # No pose at all yet: let the frame through rather than starving
+            # consumers during TF startup gaps.
+            return False
+        tf_sec = float(tf.header.stamp.sec) + float(tf.header.stamp.nanosec) * 1e-9
+        q = tf.transform.rotation
+        yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y),
+                         1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+        prev = self.last_yaw_sample
+        if prev is None or tf_sec > prev[0]:
+            self.last_yaw_sample = (tf_sec, yaw)
+        if prev is None or tf_sec <= prev[0]:
+            return self.gate_engaged
+        dyaw = (yaw - prev[1] + math.pi) % (2.0 * math.pi) - math.pi
+        rate = abs(dyaw) / (tf_sec - prev[0])
+        # Hysteresis: once gated, stay gated until the rate falls below half
+        # the threshold, so turn-onset/exit boundary sweeps are dropped too.
+        threshold = self.max_yaw_rate * (0.5 if self.gate_engaged else 1.0)
+        self.gate_engaged = rate > threshold
+        return self.gate_engaged
+
+    def filter_near_body(self, frames, newest):
+        """Drop points within self_filter_radius (horizontal) of the sensor.
+
+        Used only in fixed-frame input mode, where the registered cloud has
+        not passed the distortion corrector's body-box self-filter. The
+        radius test runs against the sensor position at each frame's own
+        stamp so body returns stay filtered while walking.
+        """
+        out = []
+        for frame in frames:
+            try:
+                tf = self.tf_buffer.lookup_transform(
+                    self.fixed_frame,
+                    self.sensor_frame,
+                    Time.from_msg(frame.header.stamp),
+                    timeout=self.tf_timeout,
+                )
+                ox = tf.transform.translation.x
+                oy = tf.transform.translation.y
+            except (
+                tf2_ros.LookupException,
+                tf2_ros.ConnectivityException,
+                tf2_ros.ExtrapolationException,
+                tf2_ros.TransformException,
+            ):
+                out.append(frame)
+                continue
+            pts = read_points(frame, field_names=("x", "y", "z"), skip_nans=False)
+            xyz = np.column_stack((pts["x"], pts["y"], pts["z"])).astype(np.float32)
+            keep = np.hypot(xyz[:, 0] - ox, xyz[:, 1] - oy) > self.self_filter_radius
+            if not keep.any():
+                continue
+            out.append(create_cloud_xyz32(frame.header, xyz[keep]))
+        return out
+
     def cloud_callback(self, msg):
         if msg.point_step == 0 or not msg.data:
+            return
+
+        if self.yaw_rate_exceeded(msg, stamp_to_sec(msg)):
             return
 
         # Reduce to xyz-only up front so every frame in the buffer has the
@@ -194,14 +307,24 @@ class CloudAccumulator(Node):
             return
 
         newest = self.frames[-1][1]
-        transformed_frames = []
-        for _, frame in self.frames:
-            projected = self.transform_to_newest(frame, newest)
-            if projected is not None:
-                transformed_frames.append(projected)
+        if self.input_in_fixed_frame:
+            # World-anchored frames: the odometry already registered each
+            # frame in fixed_frame, so the window is a plain concatenation.
+            transformed_frames = [f for _, f in self.frames]
+        else:
+            transformed_frames = []
+            for _, frame in self.frames:
+                projected = self.transform_to_newest(frame, newest)
+                if projected is not None:
+                    transformed_frames.append(projected)
 
         if not transformed_frames:
             return
+
+        if self.input_in_fixed_frame and self.self_filter_radius > 0.0:
+            transformed_frames = self.filter_near_body(transformed_frames, newest)
+            if not transformed_frames:
+                return
 
         point_count = sum(len(f.data) // f.point_step for f in transformed_frames)
         if point_count == 0:

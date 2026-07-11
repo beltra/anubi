@@ -1,0 +1,102 @@
+# slam_toolbox async SLAM parameters for the Unitree G1 (mapping and localization).
+# SLAM mode is selected by the launch executable, not by this file.
+#
+# G1-specific copy of slam_toolbox_params.yaml (which stays tuned for the Go2 and
+# is NOT used by the G1 launches). The two robots need opposite scan-matching
+# trust: the Go2's default real odometry (sport-mode legged odom + EKF, no LIO)
+# drifts, so its scan matcher is deliberately loose and free to correct it. The
+# G1's odometry IS DLIO (3D GICP), which tracks within centimeters at room
+# scale, while the Mid-360's non-repetitive sampling mutates single-sweep /scan
+# appearance and misleads the 2D correlative matcher.
+#
+# use_scan_matching is therefore OFF for the G1: slam_toolbox acts as a
+# rasterizer of the DLIO trajectory (map -> odom stays identity during
+# mapping). Measured on bags/g1_planner_tune_20260710_175531: any matching
+# either snapped (10-24 deg transient map->odom with loose gates) or steadily
+# drifted (8.6 deg accumulated with a 4-deg refine-only window), while
+# matcher-off walls agree with the DLIO 3D map to ~0.10 m median. The strict
+# matcher gates below are kept tuned as the documented fallback if matching is
+# ever re-enabled (e.g. building-scale mapping where DLIO drift needs loop
+# closure):
+#
+#   distance_variance_penalty  0.5   -> 0.3    (steeper penalty for solutions
+#   angle_variance_penalty     1.0   -> 0.349   that deviate from odometry)
+#   correlation_search_space_dimension 0.5 -> 0.3  (DLIO inter-scan error is cm-level)
+#   coarse_search_angle_offset 0.349 -> 0.175  (bound per-match yaw snap to ~10 deg)
+#   use_response_expansion     true  -> false  (never WIDEN the yaw search on a poor
+#                                               response: a poor match must lose to
+#                                               the odometry prior)
+#   link_match_minimum_response_fine 0.1 -> 0.35 (reject poor sequential matches)
+#   loop_match_minimum_chain_size 10 -> 20      (self-similar corridor segments
+#   loop_match_minimum_response_coarse 0.35 -> 0.5  pass the loose gates falsely)
+#   loop_match_minimum_response_fine   0.45 -> 0.6
+
+slam_toolbox:
+  ros__parameters:
+    solver_plugin: solver_plugins::CeresSolver
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner: SCHUR_JACOBI
+    ceres_trust_strategy: LEVENBERG_MARQUARDT
+    ceres_dogleg_type: TRADITIONAL_DOGLEG
+    ceres_loss_function: None
+
+    odom_frame:  odom
+    map_frame:   map
+    base_frame:  base_footprint
+    scan_topic:  /scan
+
+    use_map_saver: true
+    mode: mapping
+
+    # With the matcher off, graph nodes only paint the map (no matching risk),
+    # so a denser cadence buys wall coverage for free. 0.25/0.25 doubles the
+    # painted views of a room walk vs the 0.5 defaults.
+    minimum_travel_distance: 0.25  # [m]
+    minimum_travel_heading: 0.25   # [rad]
+    minimum_time_interval:  0.25   # [s]
+
+    use_scan_matching:   false
+    use_scan_barycenter: true
+
+    resolution: 0.05
+    max_laser_range: 25.0
+    min_laser_range: 0.15
+
+    do_loop_closing: true
+    loop_match_minimum_chain_size: 20
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_coarse: 0.5
+    loop_match_minimum_response_fine:   0.6
+
+    scan_buffer_size: 20
+    scan_buffer_maximum_scan_distance: 25.0
+    scan_queue_size: 50
+    throttle_scans: 1
+
+    link_match_minimum_response_fine:   0.35
+    link_scan_maximum_distance:         1.5
+    loop_search_maximum_distance:       3.0
+
+    correlation_search_space_dimension: 0.3
+    correlation_search_space_resolution: 0.01
+    correlation_search_space_smear_deviation: 0.1
+
+    loop_search_space_dimension: 8.0
+    loop_search_space_resolution: 0.05
+    loop_search_space_smear_deviation: 0.08
+
+    distance_variance_penalty: 0.3
+    angle_variance_penalty:    0.349
+
+    fine_search_angle_offset:     0.00349
+    coarse_search_angle_offset:   0.175
+    coarse_angle_resolution:      0.0349
+    minimum_angle_penalty:        0.9
+    minimum_distance_penalty:     0.5
+    use_response_expansion:       false
+
+    transform_publish_period:     0.02
+    transform_timeout:            0.5
+    tf_buffer_duration:          30.0
+    map_update_interval:          0.5
+    map_start_at_dock:           false

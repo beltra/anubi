@@ -262,7 +262,15 @@ local_costmap:
       stvl_layer:
         plugin: "spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer"
         enabled: true
-        voxel_decay: 0.5
+        # Shared by G1 sim and real. Decay MUST be linear (decay_model 0): the
+        # exponential model computes time-until-decay as voxel_decay*exp(-dt),
+        # which never reaches zero, and without a per-source decay_acceleration
+        # (unset here) voxels then NEVER expire -- measured on
+        # bags/g1_planner_tune_20260710_175531 as a monotonically growing
+        # lethal disk (0 -> 21k cells) from floor smear and a walking person.
+        # Linear 3.0 s holds obstacles across non-repetitive Mid-360 sweeps
+        # (~8-10 Hz re-confirmation) while letting transient marks self-heal.
+        voxel_decay: 3.0
         decay_model: 0
         voxel_size: 0.05
         track_unknown_space: false
@@ -283,9 +291,18 @@ local_costmap:
           topic: /lidar/points_undistorted
           marking: true
           clearing: true
-          obstacle_range: 8.0
+          # Marking range bounded to 5 m: gait leveling residual (0.7 deg
+          # median, 2.6 deg p90 while walking) tilts far floor returns above
+          # the height gate; z error grows with range, so a shorter marking
+          # range keeps common-case floor out while walls stay covered by the
+          # static layer + planner map.
+          obstacle_range: 5.0
           raytrace_range: 10.0
-          min_obstacle_height: 0.12
+          # Floor sits at odom z ~= +0.08 while walking (DLIO z drift + sensor
+          # height calibration), not 0: 0.25 clears it with margin for p90
+          # leveling tilt at 5 m. Obstacles below 0.25 m are not marked
+          # (accepted; the /scan band starts at ~0.29 m above the floor too).
+          min_obstacle_height: 0.25
           max_obstacle_height: 2.3
           expected_update_rate: 0.0
           observation_persistence: 0.0
@@ -317,8 +334,12 @@ local_costmap:
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 2.0
-        inflation_radius: 0.80
+        # Sized to the G1 footprint, not the Go2's. Inscribed radius is 0.20 m
+        # (half the 0.40 m fore-aft footprint). A 0.35 m halo keeps ~0.15 m
+        # clearance past the body without flooding tight 7-8 m rooms; the steeper
+        # scale (3.0) preserves a usable cost gradient inside the smaller radius.
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.35
         inflate_unknown: false
         inflate_around_unknown: false
 
@@ -350,8 +371,10 @@ global_costmap:
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 2.0
-        inflation_radius: 0.85
+        # Match the local costmap so the static-map global planner and the
+        # rolling local planner agree on viable corridors (see local_costmap).
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.35
         inflate_unknown: false
         inflate_around_unknown: false
 

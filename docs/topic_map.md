@@ -16,7 +16,7 @@ the G1-specific publishers/frames (only those differ -- the canonical contract i
 |-------|------|-----------|-------------|-----|----|-------|
 | `/lidar/points` | `sensor_msgs/PointCloud2` | gazebo_bridge (sim) / `robot_lio` relay of `/utlidar/cloud` (HW) | `distortion_corrector`, `dlio_odom_node` (opt.) | frame: `lidar_link` | frame: `utlidar_lidar` by default | Raw sensor output. HW keeps the driver `frame_id` and publishes an identity `lidar_link -> utlidar_lidar` TF alias; the HW `lidar_link` orientation is set to the measured Unitree driver frame. **Not consumed directly by Nav2 or SLAM**. |
 | `/lidar/points_undistorted` | `sensor_msgs/PointCloud2` | `distortion_corrector` | `scan_cloud_accumulator` (HW), Nav2 STVL costmap, `collision_monitor` | same | same | Frame: `lidar_stabilized` when IMU state is available. Single processed cloud: self-filtered, trunk-stabilized, and optionally deskewed on HW. No ground/floor removal. |
-| `/lidar/points_scan_accumulated` | `sensor_msgs/PointCloud2` | `scan_cloud_accumulator` (HW real bringup) | `pointcloud_to_laserscan` | absent | published | Short rolling window (default 0.20 s / 3 frames) of `/lidar/points_undistorted` frames, each re-projected into the newest sensor pose through `odom` so accumulated points reflect the current pose. Used only to densify `/scan` for the non-repetitive Unitree L1 pattern. Graceful degradation: if older frames' TF lookups fail, the newest is still published, so output rate is locked to the LiDAR input rate. Nav2 STVL and collision monitoring still consume the latest corrected cloud directly. |
+| `/lidar/points_scan_accumulated` | `sensor_msgs/PointCloud2` | `scan_cloud_accumulator` (HW real bringup) | `pointcloud_to_laserscan` | absent | published | Short rolling window (default 0.20 s / 3 frames) of `/lidar/points_undistorted` frames, each re-projected into the newest sensor pose through `odom` so accumulated points reflect the current pose. Used only to densify `/scan` for non-repetitive LiDAR patterns (Unitree L1, Livox Mid-360). On the G1 a yaw gate (`max_yaw_rate_rad_s`, 0.20 on G1-real) additionally drops sweeps captured while yawing fast so rotation-smeared sweeps never reach the map. Graceful degradation: if older frames' TF lookups fail, the newest is still published, so output rate is locked to the LiDAR input rate. Nav2 STVL and collision monitoring still consume the latest corrected cloud directly. |
 | `/scan` | `sensor_msgs/LaserScan` | `pointcloud_to_laserscan` | `slam_toolbox`, `obstacle_layer` | same | same | Sim derives directly from `/lidar/points_undistorted`; HW derives from `/lidar/points_scan_accumulated` to avoid sparse radial scans from single non-repetitive L1 frames. |
 | `/imu/data` | `sensor_msgs/Imu` | gazebo_bridge (sim) / `go2_hw_bridge` (HW) | EKF (`footprint_to_odom_ekf` in sim, `ekf_filter_node` on HW), `distortion_corrector` | published | published | Body IMU in `imu_link`. Default correction IMU. Set `distortion_imu_topic:=/lidar/imu` to compare LiDAR IMU timing. |
 | `/lidar/imu` | `sensor_msgs/Imu` | `robot_lio` relay (sim/HW) | optional LIO backend | same | same | Canonical LiDAR-integrated IMU topic for LIO. |
@@ -141,9 +141,13 @@ controller: the AMO driver over WebSocket (`locomotion:=amo`, default) or the SO
 whole-body controller (`g1_deploy_onnx_ref` on the Jetson) over ZMQ (`locomotion:=sonic`,
 see `docs/g1_sonic_locomotion.md`). Exactly one controller may run at a time (single
 writer on `rt/lowcmd`). The state side (`g1_state_bridge`, DLIO, EKF) is identical for both.
-The G1 does NOT use scan accumulation: `/scan` is derived from single Mid-360 frames
-(`accumulate_scan_cloud:=false`), so `/lidar/points_scan_accumulated` is absent on the G1
-(unlike the Go2 real bringup); sim and G1-real share this behavior.
+G1-real uses scan accumulation for the MAPPING scan only: `/scan` feeds slam_toolbox
+(collision_monitor and STVL consume `/lidar/points_undistorted` directly), so
+`g1_bringup` enables `accumulate_scan_cloud` (3-frame / 0.20 s window on
+`/lidar/points_scan_accumulated`) plus a 0.20 rad/s yaw gate
+(`scan_accumulation_max_yaw_rate`) that drops rotation-smeared Mid-360 sweeps from the
+map paint path. The G1 sim keeps accumulation off (gpu_lidar clouds are dense and
+instantaneous), so `/lidar/points_scan_accumulated` exists on G1-real only.
 
 ## Optional Topics (route_server, disabled by default)
 

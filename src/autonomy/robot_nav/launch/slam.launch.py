@@ -97,6 +97,17 @@ def generate_launch_description():
         # was sized for the much sparser +/-0.12 m slice.
         DeclareLaunchArgument("scan_accumulation_window_sec", default_value="0.20"),
         DeclareLaunchArgument("scan_accumulation_max_frames", default_value="3"),
+        # Yaw gate for the mapping scan: drop sweeps captured above this yaw
+        # rate (rad/s) so rotation-smeared sweeps never paint the map. 0.0
+        # disables the gate. Only meaningful for the accumulated (mapping)
+        # path; safety consumers must keep using the ungated cloud.
+        DeclareLaunchArgument("scan_accumulation_max_yaw_rate", default_value="0.0"),
+        # scan_cloud_topic already expressed in odom (e.g. DLIO's registered
+        # /lidar/points_registered): accumulate by concatenation and apply the
+        # near-body radius filter (that cloud bypasses the distortion
+        # corrector's body-box self-filter).
+        DeclareLaunchArgument("scan_cloud_in_fixed_frame", default_value="false"),
+        DeclareLaunchArgument("scan_self_filter_radius", default_value="0.0"),
         # Skip slam_toolbox itself (mapping AND localization nodes) while
         # still running the perception pipeline that produces /scan. Used by
         # bag-replay flows where the bag already carries /map and the
@@ -158,6 +169,9 @@ def generate_launch_description():
             "output_topic": scan_accumulated_cloud_topic,
             "accumulation_window_sec": scan_accumulation_window_sec,
             "max_frames": scan_accumulation_max_frames,
+            "max_yaw_rate_rad_s": LaunchConfiguration("scan_accumulation_max_yaw_rate"),
+            "input_cloud_in_fixed_frame": LaunchConfiguration("scan_cloud_in_fixed_frame"),
+            "self_filter_radius": LaunchConfiguration("scan_self_filter_radius"),
         }],
         condition=IfCondition(accumulate_scan_cloud),
     )

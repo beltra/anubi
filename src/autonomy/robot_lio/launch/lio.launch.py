@@ -158,6 +158,10 @@ def generate_launch_description():
             ("pointcloud", lidar_points_topic),
             ("imu", lidar_imu_topic),
             ("odom", lidar_odom_topic),
+            # GICP-registered per-scan cloud in the odom frame: each scan is
+            # placed by the same registration that builds the DLIO map, so
+            # consumers (G1 mapping scan) inherit DLIO-map-coherent geometry.
+            ("deskewed", "/lidar/points_registered"),
         ],
         condition=IfCondition(LaunchConfiguration("use_lio")),
     )

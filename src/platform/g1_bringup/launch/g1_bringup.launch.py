@@ -130,7 +130,9 @@ def generate_launch_description():
     collision_params_g1 = os.path.join(robot_nav_share, "config", "collision_monitor_params_g1.yaml")
     scan_params_g1 = os.path.join(robot_nav_share, "config", "scan_from_cloud_g1.yaml")
     distortion_params_g1 = os.path.join(robot_nav_share, "config", "distortion_corrector_g1.yaml")
-    slam_params = os.path.join(robot_nav_share, "config", "slam_toolbox_params.yaml")
+    # G1-specific slam_toolbox tuning (trusts DLIO odometry; the shared
+    # slam_toolbox_params.yaml stays loose for the Go2's drifting leg odometry).
+    slam_params = os.path.join(robot_nav_share, "config", "slam_toolbox_params_g1.yaml")
     dlio_params_g1_real = os.path.join(robot_lio_share, "config", "dlio_params_g1_real.yaml")
 
     # livox_ros_driver2 is a real-robot-only C++ package (needs the Livox SDK) and may
@@ -472,11 +474,21 @@ def generate_launch_description():
             "distortion_params": distortion_params_g1,
             "distortion_imu_topic": distortion_imu_topic,
             "scan_params": scan_params_g1,
-            # Scan accumulation disabled on the G1: /scan is taken from single
-            # Mid-360 frames, matching the sim path (which has no accumulator), so
-            # sim and real share the same 2D scan behavior. If the scan proves too
-            # sparse on hardware, re-enable accumulate_scan_cloud.
-            "accumulate_scan_cloud": "false",
+            # /scan feeds slam_toolbox only on the G1 (collision_monitor and
+            # STVL consume /lidar/points_undistorted directly), so the mapping
+            # scan is built from DLIO's registered cloud: each sweep is placed
+            # by the same GICP registration that builds the DLIO map, which
+            # removes per-sweep yaw error from the painted map entirely. The
+            # accumulator concatenates the world-anchored frames (no TF
+            # reprojection), radius-filters near-body returns (that cloud
+            # bypasses the corrector's body-box self-filter), and the yaw gate
+            # still drops sweeps captured while turning fast. The sim keeps
+            # accumulation off (gpu_lidar clouds are dense and instantaneous).
+            "accumulate_scan_cloud": "true",
+            "scan_cloud_topic": "/lidar/points_registered",
+            "scan_cloud_in_fixed_frame": "true",
+            "scan_self_filter_radius": "0.45",
+            "scan_accumulation_max_yaw_rate": "0.20",
         }.items(),
     )
 

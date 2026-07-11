@@ -16,7 +16,10 @@
   ros__parameters:
     use_sim_time: false
     publish_tf: false
-    map/waitUntilMove: true
+    # false: the registered cloud (/lidar/points_registered) feeds the G1
+    # mapping scan, and gating it on first motion would leave the map empty
+    # while the robot stands at mission start.
+    map/waitUntilMove: false
 
     frames/odom: odom
     frames/baselink: base_link
@@ -37,6 +40,16 @@
 
     odom/keyframe/threshD: 1.0
     odom/keyframe/threshR: 45.0
+
+    # Accel-bias handling for the head-mounted Mid-360 IMU under bipedal gait.
+    # G1 heel-strike impacts reach the head IMU as accel spikes; the vendor gains
+    # (Kab 2.25, abias_max 5.0) let those absorb into the accel-bias estimate.
+    # Kab 0.85 slows that adaptation (matches dlio_params_g1_sim.yaml); abias_max
+    # 1.0 caps the bias so a single bad GICP frame cannot drive a large position
+    # jump. Without the cap, sustained walking can push the bias to the 5 m/s^2
+    # ceiling and teleport the odometry.
+    odom/geo/Kab: 0.85
+    odom/geo/abias_max: 1.0
 
     odom/computeTimeOffset: true
 
