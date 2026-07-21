@@ -1,0 +1,139 @@
+# slam_toolbox params for the ISAAC SIM G1 (copy of
+# robot_nav/config/slam_toolbox_params_g1.yaml with one sim-scoped change).
+#
+# transform_timeout is raised 0.5 -> 2.0 s: slam_toolbox stamps the
+# republished map->odom transform at (last scan stamp + transform_timeout).
+# The Isaac RTX lidar annotator delivers ~3.9 Hz effective with 0.4-0.8 s
+# scan holes plus multi-second dead phases, so with the hardware 0.5 s the
+# map->odom stamp falls behind the 50 Hz odom->base_footprint stamps on
+# every hole and Nav2 robot-pose lookups fail with "extrapolation into the
+# future" (MPPI aborts the goal; same failure class as the
+# RotationShimController removal documented in nav2_params_g1_sonic_slow.yaml).
+#
+# 2.0 covers the routine holes with margin. Larger values do NOT buy dead-
+# phase immunity and backfire on recovery (both measured): the lead must
+# stay well below the ~10 s tf2 cache of the Nav2 consumers (60 s kept the
+# buffered map->odom window permanently ahead of the clock -- activation
+# never completed), and after a dead phase longer than the tf cache the
+# buffer holds only the fresh future-dated entry, so lookups at current
+# time fail "extrapolation into the past" for a full lead-length after
+# recovery (8 s was tried; ~16 wall-seconds of post-recovery blackout).
+# Dead phases longer than the lead abort the active goal either way --
+# re-send it once the stream has been back for a few seconds. map->odom
+# corrections apply with up to 2 s lag, benign here because
+# use_scan_matching is false (map->odom stays identity during mapping).
+# Hardware keeps 0.5.
+#
+# Original header of the shared file follows.
+#
+# slam_toolbox async SLAM parameters for the Unitree G1 (mapping and localization).
+# SLAM mode is selected by the launch executable, not by this file.
+#
+# G1-specific copy of slam_toolbox_params.yaml (which stays tuned for the Go2 and
+# is NOT used by the G1 launches). The two robots need opposite scan-matching
+# trust: the Go2's default real odometry (sport-mode legged odom + EKF, no LIO)
+# drifts, so its scan matcher is deliberately loose and free to correct it. The
+# G1's odometry IS DLIO (3D GICP), which tracks within centimeters at room
+# scale, while the Mid-360's non-repetitive sampling mutates single-sweep /scan
+# appearance and misleads the 2D correlative matcher.
+#
+# use_scan_matching is therefore OFF for the G1: slam_toolbox acts as a
+# rasterizer of the DLIO trajectory (map -> odom stays identity during
+# mapping). Measured on bags/g1_planner_tune_20260710_175531: any matching
+# either snapped (10-24 deg transient map->odom with loose gates) or steadily
+# drifted (8.6 deg accumulated with a 4-deg refine-only window), while
+# matcher-off walls agree with the DLIO 3D map to ~0.10 m median. The strict
+# matcher gates below are kept tuned as the documented fallback if matching is
+# ever re-enabled (e.g. building-scale mapping where DLIO drift needs loop
+# closure):
+#
+#   distance_variance_penalty  0.5   -> 0.3    (steeper penalty for solutions
+#   angle_variance_penalty     1.0   -> 0.349   that deviate from odometry)
+#   correlation_search_space_dimension 0.5 -> 0.3  (DLIO inter-scan error is cm-level)
+#   coarse_search_angle_offset 0.349 -> 0.175  (bound per-match yaw snap to ~10 deg)
+#   use_response_expansion     true  -> false  (never WIDEN the yaw search on a poor
+#                                               response: a poor match must lose to
+#                                               the odometry prior)
+#   link_match_minimum_response_fine 0.1 -> 0.35 (reject poor sequential matches)
+#   loop_match_minimum_chain_size 10 -> 20      (self-similar corridor segments
+#   loop_match_minimum_response_coarse 0.35 -> 0.5  pass the loose gates falsely)
+#   loop_match_minimum_response_fine   0.45 -> 0.6
+
+slam_toolbox:
+  ros__parameters:
+    solver_plugin: solver_plugins::CeresSolver
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner: SCHUR_JACOBI
+    ceres_trust_strategy: LEVENBERG_MARQUARDT
+    ceres_dogleg_type: TRADITIONAL_DOGLEG
+    ceres_loss_function: None
+
+    odom_frame:  odom
+    map_frame:   map
+    base_frame:  base_footprint
+    scan_topic:  /scan
+
+    use_map_saver: true
+    mode: mapping
+
+    # With the matcher off, graph nodes only paint the map (no matching risk),
+    # so a denser cadence buys wall coverage and paint latency. Measured on
+    # bags/g1_planner_tune_20260710_175531: 0.15 gates double the visible map
+    # update rate vs 0.25 (median gap 1.5 s -> 1.0 s, max 13 s -> 7.8 s) and
+    # raise DLIO-wall coverage 55 -> 70% for a 2.5-point wall-halo cost
+    # (matched 92.7 -> 90.2%, median error steady at 0.05 m). 0.10 gates
+    # trade too much halo (88.4%).
+    minimum_travel_distance: 0.15  # [m]
+    minimum_travel_heading: 0.15   # [rad]
+    minimum_time_interval:  0.15   # [s]
+
+    use_scan_matching:   false
+    use_scan_barycenter: true
+
+    resolution: 0.05
+    # 25 -> 10 in sim: with static-only cloud righting, gait pitch raises
+    # floor returns by ~range*pitch, so the far field carries the largest
+    # phantom-obstacle risk (see scan_from_cloud_g1_isaac.yaml).
+    max_laser_range: 10.0
+    min_laser_range: 0.15
+
+    do_loop_closing: true
+    loop_match_minimum_chain_size: 20
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_coarse: 0.5
+    loop_match_minimum_response_fine:   0.6
+
+    scan_buffer_size: 20
+    scan_buffer_maximum_scan_distance: 25.0
+    scan_queue_size: 50
+    throttle_scans: 1
+
+    link_match_minimum_response_fine:   0.35
+    link_scan_maximum_distance:         1.5
+    loop_search_maximum_distance:       3.0
+
+    correlation_search_space_dimension: 0.3
+    correlation_search_space_resolution: 0.01
+    correlation_search_space_smear_deviation: 0.1
+
+    loop_search_space_dimension: 8.0
+    loop_search_space_resolution: 0.05
+    loop_search_space_smear_deviation: 0.08
+
+    distance_variance_penalty: 0.3
+    angle_variance_penalty:    0.349
+
+    fine_search_angle_offset:     0.00349
+    coarse_search_angle_offset:   0.175
+    coarse_angle_resolution:      0.0349
+    minimum_angle_penalty:        0.9
+    minimum_distance_penalty:     0.5
+    use_response_expansion:       false
+
+    transform_publish_period:     0.02
+    transform_timeout:            2.0
+    tf_buffer_duration:          30.0
+    # 4 Hz re-render so inserted scans appear promptly in RViz; the insertion
+    # gates above are the real throttle, this only bounds render latency.
+    map_update_interval:          0.25
+    map_start_at_dock:           false

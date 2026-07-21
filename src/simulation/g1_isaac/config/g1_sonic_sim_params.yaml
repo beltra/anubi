@@ -1,0 +1,36 @@
+# g1_sonic_sim_params.yaml
+# cmd_vel_to_sonic profile for the ISAAC SIM SONIC deploy (g1_deploy_onnx_ref
+# running against isaac_dds_host.py on the same host). NOT for hardware.
+#
+# The sim deploy ticks WALL time against sim-time physics (RTF ~0.5-0.8), so a
+# commanded speed s realizes ~1.36*s in sim time: 0.28 commanded ~= 0.4 m/s sim,
+# the validated walking regime (faster walks destabilized localization).
+# speed_gain stays 1.0 -- the hardware profile's 1.18 planner-realization gain
+# must not stack onto the sim over-tick.
+cmd_vel_to_sonic:
+  ros__parameters:
+    # No robot_safety velocity_limiter in the sim harness: consume the
+    # collision-monitor output directly (the g1_bringup use_safety:=false path).
+    cmd_vel_topic:   "/cmd_vel_collision_free"
+    # EKF-fused body pose (owns odom->base_footprint), same as hardware.
+    odom_topic:      "/odom"
+    zmq_bind_host:   "*"
+    zmq_port:        5556
+    rate_hz:         30.0
+    # LocomotionMode 1 = SLOW_WALK.
+    locomotion_mode: 1
+    # Sim caps (see over-tick note above); tighter than the slow_walk hardware
+    # envelope on purpose. wz cap matches nav2_params_g1_sonic_slow.yaml.
+    max_forward_vel: 0.28
+    max_reverse_vel: 0.10
+    max_lateral_vel: 0.12
+    max_yaw_rate:    0.4
+    speed_gain:      1.0
+    facing_lookahead_sec: 0.4
+    cmd_timeout:     0.3
+    start_resend_sec: 1.0
+    start_settle_sec: 1.0
+    hold_drift_absorb_rad_s: 0.01
+    movement_deadband_rad: 0.05
+    facing_deadband_rad:   0.05
+    speed_deadband:        0.03

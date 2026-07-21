@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>g1_isaac</name>
+  <version>0.1.0</version>
+  <description>
+    Unitree G1 humanoid -- Isaac Sim adapter. Thin relay layer that maps the
+    Isaac Sim DDS host topics (/livox/lidar, /livox/imu_raw on ROS_DOMAIN_ID 42,
+    sim time via /clock) onto the canonical anubi sensor contract
+    (/lidar/points, /lidar/imu per docs/topic_map.md) and publishes the static
+    TFs the Isaac bringup needs (no URDF/robot_state_publisher runs here).
+    Pending host support for the pelvis IMU (/imu/data) and ground-truth
+    odometry (/odom_raw) is pre-wired behind launch args that default off.
+  </description>
+  <maintainer email="gabriel.voss01@gmail.com">Maintainer</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>nav_msgs</depend>
+
+  <exec_depend>tf2_ros</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -1,0 +1,60 @@
+# collision_monitor params for the ISAAC SIM G1 (copy of
+# robot_nav/config/collision_monitor_params_g1.yaml with one sim-scoped change).
+#
+# source_timeout is raised 0.5 -> 1.5 s: the Isaac 6.0 RTX lidar annotator
+# delivers ~3.9 Hz sim with periodic 0.4-0.8 s scan holes (documented Isaac
+# bug), so the hardware 0.5 s timeout would zero /cmd_vel_collision_free on
+# every hole and make the walk stutter. 1.5 s rides out the holes; the
+# multi-second dead phases still stop the robot (intended). Hardware keeps 0.5.
+collision_monitor:
+  ros__parameters:
+    use_sim_time: true
+    enabled: True
+    base_frame_id: "base_footprint"
+    odom_frame_id: "odom"
+    cmd_vel_in_topic: "/cmd_vel"
+    cmd_vel_out_topic: "/cmd_vel_collision_free"
+    transform_tolerance: 0.2
+    source_timeout: 1.5
+    base_shift_correction: True
+    stop_pub_timeout: 2.0
+
+    polygons: ["ApproachZone", "SlowZone", "StopZone"]
+
+    ApproachZone:
+      type: "polygon"
+      points: [0.25, 0.30, 0.25, -0.30, -0.25, -0.30, -0.25, 0.30]
+      action_type: "approach"
+      time_before_collision: 1.5
+      simulation_time_step: 0.1
+      max_points: 5
+      visualize: True
+      polygon_pub_topic: "/collision_monitor/approach_zone"
+      enabled: True
+
+    SlowZone:
+      type: "polygon"
+      points: [0.50, 0.38, 0.50, -0.38, -0.40, -0.38, -0.40, 0.38]
+      action_type: "slowdown"
+      slowdown_ratio: 0.5
+      max_points: 3
+      visualize: True
+      polygon_pub_topic: "/collision_monitor/slow_zone"
+      enabled: True
+
+    StopZone:
+      type: "polygon"
+      points: [0.30, 0.28, 0.30, -0.28, -0.28, -0.28, -0.28, 0.28]
+      action_type: "stop"
+      max_points: 2
+      visualize: True
+      polygon_pub_topic: "/collision_monitor/stop_zone"
+      enabled: True
+
+    observation_sources: ["pointcloud"]
+    pointcloud:
+      type: "pointcloud"
+      topic: "/lidar/points_undistorted"
+      min_height: 0.08
+      max_height: 2.3
+      enabled: True
