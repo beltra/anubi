@@ -400,7 +400,14 @@ def generate_launch_description():
             "use_sim_time": use_sim_time,
             "input_topic": "/lidar_odom",
             "output_topic": "/lidar_odom_reliable",
-            "pose_cov": [0.03, 0.03, 0.05, 0.03, 0.03, 0.02],
+            # G1 DLIO publishes at IMU rate (100 Hz) and is the authoritative
+            # pose source; the EKF must track its x/y/yaw tightly or the
+            # odom->base_footprint TF lags DLIO during turns and STVL marks
+            # (placed via EKF TF) rotate with the robot. Measured on
+            # bags/g1_planner_tune_20260710_175531: yaw 0.02->0.004 and
+            # x/y 0.03->0.01 cut EKF-vs-DLIO turn error p90 9.0->2.5 deg and
+            # yaw lag 140->20 ms with output jitter still below DLIO's own.
+            "pose_cov": [0.01, 0.01, 0.05, 0.03, 0.03, 0.004],
             "twist_cov": [0.02, 0.02, 0.05, 0.02, 0.02, 0.02],
             "max_pos_speed": 1.5,
             "max_scale": 100.0,
@@ -427,6 +434,12 @@ def generate_launch_description():
             "user_config_path": livox_config,
             "cmdline_input_bd_code": "livox0000000001",
         }],
+        # The Mid-360 driver can drop its UDP stream (SDK dlopen hiccup, transient
+        # network stall) and silently stop publishing, which starves DLIO and the whole
+        # perception chain. Respawn it so a stall self-recovers rather than needing a
+        # full relaunch (confirmed-working behaviour on the reference real-robot deploy).
+        respawn=True,
+        respawn_delay=3.0,
         condition=IfCondition(use_livox),
     )
     imu_rescale = Node(
@@ -449,6 +462,11 @@ def generate_launch_description():
             "use_sim_time": use_sim_time,
             "use_lio": use_lio,
             "start_lidar_points_relay": "true",
+            # Mid-360 cloud headers ride the sensor's unsynchronized timebase
+            # (drifts ~20 ms/s vs host); restamp onto the host clock so STVL,
+            # collision_monitor and the distortion corrector transform the
+            # cloud at a pose that is actually current.
+            "restamp_lidar_points": "true",
             "lidar_points_input_topic": "/livox/lidar",
             "lidar_points_frame": "lidar_link",
             "publish_lidar_points_frame_tf": "false",
@@ -480,15 +498,29 @@ def generate_launch_description():
             # by the same GICP registration that builds the DLIO map, which
             # removes per-sweep yaw error from the painted map entirely. The
             # accumulator concatenates the world-anchored frames (no TF
-            # reprojection), radius-filters near-body returns (that cloud
-            # bypasses the corrector's body-box self-filter), and the yaw gate
-            # still drops sweeps captured while turning fast. The sim keeps
+            # reprojection) and radius-filters near-body returns (that cloud
+            # bypasses the corrector's body-box self-filter). The sim keeps
             # accumulation off (gpu_lidar clouds are dense and instantaneous).
             "accumulate_scan_cloud": "true",
             "scan_cloud_topic": "/lidar/points_registered",
             "scan_cloud_in_fixed_frame": "true",
             "scan_self_filter_radius": "0.45",
-            "scan_accumulation_max_yaw_rate": "0.20",
+            # 0.60 keeps painting through normal turns: with GICP-registered
+            # sweeps the old 0.20 gate only starved the map (replay-measured:
+            # gate 0.60 improved wall error 0.092 -> 0.083 m mean while adding
+            # 12% more mapping sweeps). Very fast spins are still dropped.
+            "scan_accumulation_max_yaw_rate": "0.60",
+            # When the yaw gate trips, emit the newest GICP-registered sweep
+            # alone instead of dropping the cycle: /scan holds >= 6 Hz through
+            # sustained spins (was 3.6 Hz with 1.5 s gaps) without thickening
+            # the accumulated map walls, and coverage/walls stay within noise.
+            "scan_accumulation_yaw_gate_mode": "single",
+            # Keep the trailing operator out of the painted map (map path
+            # only; STVL/collision keep seeing everything behind the robot).
+            # Sector measured on bags/g1_planner_tune_20260710_175531:
+            # operator at |azimuth| >= 140 deg, 0.5-2.8 m.
+            "scan_exclude_rear_sector_half_width_deg": "40.0",
+            "scan_exclude_rear_sector_max_range": "3.0",
         }.items(),
     )
 

@@ -15,8 +15,9 @@ the G1-specific publishers/frames (only those differ -- the canonical contract i
 | Topic | Type | Publisher | Consumer(s) | Sim | HW | Notes |
 |-------|------|-----------|-------------|-----|----|-------|
 | `/lidar/points` | `sensor_msgs/PointCloud2` | gazebo_bridge (sim) / `robot_lio` relay of `/utlidar/cloud` (HW) | `distortion_corrector`, `dlio_odom_node` (opt.) | frame: `lidar_link` | frame: `utlidar_lidar` by default | Raw sensor output. HW keeps the driver `frame_id` and publishes an identity `lidar_link -> utlidar_lidar` TF alias; the HW `lidar_link` orientation is set to the measured Unitree driver frame. **Not consumed directly by Nav2 or SLAM**. |
-| `/lidar/points_undistorted` | `sensor_msgs/PointCloud2` | `distortion_corrector` | `scan_cloud_accumulator` (HW), Nav2 STVL costmap, `collision_monitor` | same | same | Frame: `lidar_stabilized` when IMU state is available. Single processed cloud: self-filtered, trunk-stabilized, and optionally deskewed on HW. No ground/floor removal. |
-| `/lidar/points_scan_accumulated` | `sensor_msgs/PointCloud2` | `scan_cloud_accumulator` (HW real bringup) | `pointcloud_to_laserscan` | absent | published | Short rolling window (default 0.20 s / 3 frames) of `/lidar/points_undistorted` frames, each re-projected into the newest sensor pose through `odom` so accumulated points reflect the current pose. Used only to densify `/scan` for non-repetitive LiDAR patterns (Unitree L1, Livox Mid-360). On the G1 a yaw gate (`max_yaw_rate_rad_s`, 0.20 on G1-real) additionally drops sweeps captured while yawing fast so rotation-smeared sweeps never reach the map. Graceful degradation: if older frames' TF lookups fail, the newest is still published, so output rate is locked to the LiDAR input rate. Nav2 STVL and collision monitoring still consume the latest corrected cloud directly. |
+| `/lidar/points_undistorted` | `sensor_msgs/PointCloud2` | `distortion_corrector` | `scan_cloud_accumulator` (HW), Nav2 STVL costmap, `collision_monitor` | same | same | Frame: `lidar_stabilized`. Single processed cloud: self-filtered, mount-righted, and optionally deskewed on HW. No ground/floor removal. On the G1 the mount righting is STATIC only (`gravity_align_attenuation: 0.0`): the head is gait-stabilized by the locomotion controller, so injecting pelvis-IMU roll/pitch made the walking floor tilt WORSE (2.76 deg vs 1.75 deg median). Near-field self-return guard `min_radius: 0.55` m on the G1 (was 0.20) removes head/shoulder-band returns at 0.19-0.51 m; this is a documented 0.55 m blind sphere around the sensor that collision_monitor/STVL share. |
+| `/lidar/points_registered` | `sensor_msgs/PointCloud2` | `dlio_odom_node` (remapped from `deskewed`) | `scan_cloud_accumulator` (G1) | absent | published | Per-scan cloud placed in `odom` by DLIO's own GICP registration (the same transform that builds the DLIO map), deskewed by DLIO. The G1 mapping scan is derived from it so the painted `/map` inherits DLIO-map-coherent wall geometry; it bypasses the distortion corrector, so the accumulator applies a near-body radius self-filter (0.45 m) instead of the body box. |
+| `/lidar/points_scan_accumulated` | `sensor_msgs/PointCloud2` | `scan_cloud_accumulator` (HW real bringup) | `pointcloud_to_laserscan` | absent | published | Short rolling window (default 0.20 s / 3 frames) of `/lidar/points_undistorted` frames, each re-projected into the newest sensor pose through `odom` so accumulated points reflect the current pose. Used only to densify `/scan` for non-repetitive LiDAR patterns (Unitree L1, Livox Mid-360). On the G1 a yaw gate (`max_yaw_rate_rad_s`, 0.60 on G1-real; registered sweeps paint correctly through normal turns, only fast spins are dropped) and a rear-sector filter (`exclude_rear_sector_half_width_deg` 40 / `exclude_rear_sector_max_range` 3.0 m on G1-real, keeps a trailing operator out of the painted map) additionally shape the MAPPING path only. Graceful degradation: if older frames' TF lookups fail, the newest is still published, so output rate is locked to the LiDAR input rate. Nav2 STVL and collision monitoring still consume the latest corrected cloud directly. |
 | `/scan` | `sensor_msgs/LaserScan` | `pointcloud_to_laserscan` | `slam_toolbox`, `obstacle_layer` | same | same | Sim derives directly from `/lidar/points_undistorted`; HW derives from `/lidar/points_scan_accumulated` to avoid sparse radial scans from single non-repetitive L1 frames. |
 | `/imu/data` | `sensor_msgs/Imu` | gazebo_bridge (sim) / `go2_hw_bridge` (HW) | EKF (`footprint_to_odom_ekf` in sim, `ekf_filter_node` on HW), `distortion_corrector` | published | published | Body IMU in `imu_link`. Default correction IMU. Set `distortion_imu_topic:=/lidar/imu` to compare LiDAR IMU timing. |
 | `/lidar/imu` | `sensor_msgs/Imu` | `robot_lio` relay (sim/HW) | optional LIO backend | same | same | Canonical LiDAR-integrated IMU topic for LIO. |
@@ -30,7 +31,7 @@ the G1-specific publishers/frames (only those differ -- the canonical contract i
 |-------|------|-----------|-------------|-----|----|-------|
 | `/odom_raw` | `nav_msgs/Odometry` | CHAMP odom bridge (sim) / `go2_hw_bridge` (HW) | EKF fusion node | same | same | Raw body odometry input to EKF. |
 | `/lidar_odom` | `nav_msgs/Odometry` | optional LIO backend (via `robot_lio`) | `lidar_odom_relay` | optional | optional | Default OFF on the Go2 (`use_lio:=false`); **default ON for the G1 real robot** (`use_lio:=true`, DLIO is its primary odometry). All-zero covariances (DLIO limitation) - never feed directly to the EKF. |
-| `/lidar_odom_reliable` | `nav_msgs/Odometry` | `lidar_odom_relay` | EKF fusion node | optional | optional | `/lidar_odom` with injected diagonal covariances. Active only when `use_lio:=true`. This is the topic the EKF consumes. |
+| `/lidar_odom_reliable` | `nav_msgs/Odometry` | `lidar_odom_relay` | EKF fusion node | optional | optional | `/lidar_odom` with injected diagonal covariances. Active only when `use_lio:=true`. This is the topic the EKF consumes. The relay's position-jump detector evaluates displacement over >= `nominal_dt` windows (not per message) so 100 Hz IMU-propagated DLIO streams are judged at scan cadence; G1 launches inject tight x/y/yaw covariances so the EKF tracks DLIO without turn lag. |
 | `/odom` | `nav_msgs/Odometry` | `footprint_to_odom_ekf` (sim) / `ekf_filter_node` (HW) | `slam_toolbox`, Nav2, `cmd_vel_to_sonic` (yaw source, `locomotion:=sonic`) | same | same | Fused odometry output. frame_id=`odom`, child_frame_id=`base_footprint`. G1 SONIC bridge reads yaw here to anchor its closed-loop body->world heading conversion. |
 | `/map` | `nav_msgs/OccupancyGrid` | `slam_toolbox` | Nav2 global costmap `StaticLayer`, RViz | same | same | Published during mapping mode; used as localization reference in localization mode and by STVL profiles for map-backed global planning. |
 
@@ -41,7 +42,7 @@ the G1-specific publishers/frames (only those differ -- the canonical contract i
 | Transform | Publisher | Sim | HW | Notes |
 |-----------|-----------|-----|----|-------|
 | `map -> odom` | `slam_toolbox` | same | same | Published by slam_toolbox during active SLAM. Static identity fallback available via `publish_map_to_odom_tf:=true` launch arg (for testing without SLAM). |
-| `odom -> base_footprint` | EKF (`footprint_to_odom_ekf` in sim / `ekf_filter_node` on HW) | same | same | EKF owns this TF in both environments. Offline bag replay is the documented exception: on the Go2 flow (`scripts/replay_bag_perception.sh`) DLIO owns `odom -> base_link` directly; on the G1 flow (`scripts/replay_bag_perception_g1.sh`) DLIO owns `odom -> base_footprint` so the odom floor datum matches the live contract. See ADR 0012. |
+| `odom -> base_footprint` | EKF (`footprint_to_odom_ekf` in sim / `ekf_filter_node` on HW) | same | same | EKF owns this TF in both environments. Offline bag replay is the documented exception: on the Go2 flow (`scripts/replay_bag_perception.sh`) DLIO owns `odom -> base_link` directly; on the G1 flow (`scripts/replay_bag_perception_g1.sh`) the DLIO estimate owns `odom -> base_footprint` so the odom floor datum matches the live contract; it is rebroadcast from the 100 Hz `/lidar_odom` topic by `odom_to_tf` (DLIO itself sends TF only per scan, ~8 Hz, which left TF consumers up to ~120 ms stale). `odom_to_tf` de-duplicates non-increasing header stamps (`dedup_stamps`, default on): DLIO republishes ~17% of poses under an already-used stamp (scan-match corrections) plus rare zero stamps, which would otherwise be rebroadcast as non-monotonic TF; the node holds each pose one step and emits the LAST of a duplicate-stamp group. The EKF path (`lidar_odom_relay` -> `/lidar_odom_reliable`) does NOT de-duplicate: robot_localization resolves same-stamp measurements itself and de-duplicating there added latency that degraded turn tracking. See ADR 0012. |
 | `base_footprint -> base_link` | `static_transform_publisher` (sim) / `go2_hw_bridge` (HW) | same | same | Sim uses fixed standing-height offset; HW includes body roll/pitch plus standing height. |
 | `base_link -> lidar_link` | URDF / `robot_state_publisher` | rpy=(0, -0.26180, 0) | rpy=(0, 2.88000, 0) | xyz=(0.28945, 0, -0.046825). Sim uses a right-side-up Fortress workaround; HW orientation is derived from matching `/utlidar/cloud` to `/utlidar/cloud_base`. |
 | `lidar_link -> utlidar_lidar` | `robot_lio` static TF (HW default) | absent | identity | Driver frame alias for real `/utlidar/cloud` pointclouds. Identity is valid because HW `lidar_link` matches the measured driver frame. `scripts/run_go2_real.sh --lidar-points-frame <frame>` changes the child frame when the driver reports a different name. |
@@ -122,7 +123,7 @@ EKF frame ownership (`odom -> base_footprint`) are identical to the Go2.
 
 | Canonical topic / TF | Go2 publisher (HW) | G1 publisher (HW) |
 |----------------------|--------------------|-------------------|
-| `/lidar/points` | `robot_lio` relay of `/utlidar/cloud` | `robot_lio` relay of `/livox/lidar` (Livox Mid-360 driver, frame `lidar_link`) |
+| `/lidar/points` | `robot_lio` relay of `/utlidar/cloud` | `robot_lio` RESTAMPING relay of `/livox/lidar` (`cloud_restamp_relay`, frame `lidar_link`): header.stamp rewritten to host clock minus one sweep because the Mid-360 timebase drifts ~20 ms/s vs the host; per-point timestamps untouched (DLIO reconciles internally) |
 | `/lidar/imu` | `robot_lio` relay of `/utlidar/imu` | `robot_lio` relay of `/livox/imu_ms2` (= `imu_rescale` of `/livox/imu`, g -> m/s^2) |
 | `/odom_raw` | `go2_hw_bridge` (SportModeState) | `g1_state_bridge` (DDS `rt/odommodestate`) |
 | `/imu/data` | `go2_hw_bridge` (body IMU) | `g1_state_bridge` (DDS `rt/lowstate` pelvis IMU) |
@@ -141,13 +142,39 @@ controller: the AMO driver over WebSocket (`locomotion:=amo`, default) or the SO
 whole-body controller (`g1_deploy_onnx_ref` on the Jetson) over ZMQ (`locomotion:=sonic`,
 see `docs/g1_sonic_locomotion.md`). Exactly one controller may run at a time (single
 writer on `rt/lowcmd`). The state side (`g1_state_bridge`, DLIO, EKF) is identical for both.
-G1-real uses scan accumulation for the MAPPING scan only: `/scan` feeds slam_toolbox
-(collision_monitor and STVL consume `/lidar/points_undistorted` directly), so
-`g1_bringup` enables `accumulate_scan_cloud` (3-frame / 0.20 s window on
-`/lidar/points_scan_accumulated`) plus a 0.20 rad/s yaw gate
-(`scan_accumulation_max_yaw_rate`) that drops rotation-smeared Mid-360 sweeps from the
-map paint path. The G1 sim keeps accumulation off (gpu_lidar clouds are dense and
-instantaneous), so `/lidar/points_scan_accumulated` exists on G1-real only.
+G1-real derives the MAPPING scan from DLIO's registered cloud: `/scan` feeds
+slam_toolbox only (collision_monitor and STVL consume `/lidar/points_undistorted`
+directly), so `g1_bringup` points the scan accumulator at `/lidar/points_registered`
+(`scan_cloud_in_fixed_frame:=true`, plain 3-frame concatenation of world-anchored
+sweeps, 0.45 m near-body radius filter) with a 0.60 rad/s yaw gate
+(`scan_accumulation_max_yaw_rate`, drops only fast spins) whose trip mode is
+`single` (`scan_accumulation_yaw_gate_mode`): a gated cycle still emits the
+newest registered sweep alone instead of publishing nothing, so `/scan` holds
+>= 6 Hz through sustained spins (was 3.6 Hz with 1.5 s gaps) without thickening
+the accumulated walls. A rear-sector operator filter (rear +/-40 deg within
+3.0 m, mapping path only -- STVL and collision_monitor keep the full unfiltered
+view behind the robot) also shapes this path.
+Each painted sweep is thus placed by the same GICP registration that builds the DLIO
+map, which is what keeps the 2D `/map` walls coherent with the DLIO 3D map. The G1
+sim keeps accumulation off (gpu_lidar clouds are dense and instantaneous), so
+`/lidar/points_registered` and `/lidar/points_scan_accumulated` exist on G1-real only.
+
+### G1 Isaac Sim Adapter (g1_isaac)
+
+The Isaac Sim variant (`src/simulation/g1_isaac`, full detail in its README)
+reuses the canonical contract with these publishers (all on ROS_DOMAIN_ID 42,
+sim time from the Isaac host `/clock`):
+
+| Canonical topic / TF | Isaac publisher |
+|----------------------|-----------------|
+| `/lidar/points`, `/lidar/imu` | `frame_relay_node` of the host `/livox/lidar` + `/livox/imu_raw` (frame -> `lidar_link`; stamps and per-point `time`/`intensity` fields preserved; host IMU already m/s^2, no `imu_rescale`) |
+| `/imu/data` | `frame_relay_node` of `/pelvis/imu_raw` (synthesized pelvis IMU; frame `imu_link` by default -- real G1 uses `imu`, team decision pending) |
+| `/odom_raw` | `frame_relay_node` of `/odom_gt` (ground-truth pelvis world pose, all-zero covariance; child `base_footprint`) |
+| `base_footprint -> base_link` TF | g1_isaac bringup static TF (standing height 0.80; real ~0.78, calibrate) |
+| `base_link -> lidar_link` TF | g1_isaac bringup static TF (upright Mid-360 mount, pitch 0.0401) |
+| `/odom` + `odom -> base_footprint` TF | `footprint_to_odom_ekf` (g1_isaac_nav.launch.py; absolute x/y/yaw from `/odom_raw`, no DLIO -- the Isaac lidar stream cannot support it) |
+| `map -> odom` | `slam_toolbox` (sim params copy `slam_toolbox_params_g1_isaac.yaml`, transform_timeout 2 s -- see file header) |
+| `/cmd_vel_safe` consumer | none in sim (no robot_safety): `cmd_vel_to_sonic` reads `/cmd_vel_collision_free` directly (`g1_sonic_sim_params.yaml`) |
 
 ## Optional Topics (route_server, disabled by default)
 

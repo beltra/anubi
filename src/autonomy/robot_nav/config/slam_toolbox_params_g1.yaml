@@ -49,11 +49,15 @@ slam_toolbox:
     mode: mapping
 
     # With the matcher off, graph nodes only paint the map (no matching risk),
-    # so a denser cadence buys wall coverage for free. 0.25/0.25 doubles the
-    # painted views of a room walk vs the 0.5 defaults.
-    minimum_travel_distance: 0.25  # [m]
-    minimum_travel_heading: 0.25   # [rad]
-    minimum_time_interval:  0.25   # [s]
+    # so a denser cadence buys wall coverage and paint latency. Measured on
+    # bags/g1_planner_tune_20260710_175531: 0.15 gates double the visible map
+    # update rate vs 0.25 (median gap 1.5 s -> 1.0 s, max 13 s -> 7.8 s) and
+    # raise DLIO-wall coverage 55 -> 70% for a 2.5-point wall-halo cost
+    # (matched 92.7 -> 90.2%, median error steady at 0.05 m). 0.10 gates
+    # trade too much halo (88.4%).
+    minimum_travel_distance: 0.15  # [m]
+    minimum_travel_heading: 0.15   # [rad]
+    minimum_time_interval:  0.15   # [s]
 
     use_scan_matching:   false
     use_scan_barycenter: true
@@ -98,5 +102,7 @@ slam_toolbox:
     transform_publish_period:     0.02
     transform_timeout:            0.5
     tf_buffer_duration:          30.0
-    map_update_interval:          0.5
+    # 4 Hz re-render so inserted scans appear promptly in RViz; the insertion
+    # gates above are the real throttle, this only bounds render latency.
+    map_update_interval:          0.25
     map_start_at_dock:           false

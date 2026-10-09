@@ -1,0 +1,311 @@
+<?xml version="1.0"?>
+<!--
+  industrial_dynamic.world
+  20 x 15 m industrial indoor validation world for predictive dynamic obstacle
+  avoidance with Unitree Go2 in Gazebo Fortress.
+
+  Coordinate contract:
+    - World origin (0, 0, 0) is the geometric centre of the 4 x 4 m clear
+      robot spawn area.
+    - Robot spawn defaults in robot_sim/sim_bringup.launch.py are x=0, y=0,
+      yaw=0, matching the AMCL initial pose in the Nav2 profiles.
+    - The primary navigation corridor runs along +X through y ~= 0.
+
+  Dynamic validation actors:
+    - worker_straight_crossing: straight perpendicular crossing 4 m ahead.
+    - worker_curved_approach: curved arc with non-zero yaw rate.
+    - worker_diagonal_open_area: diagonal pass through open spawn area.
+    - forklift_aisle_patrol: larger rigid actor patrolling the south forklift aisle.
+
+  All static geometry is primitive SDF to avoid committing downloaded meshes and
+  to keep Fortress compatibility explicit.
+-->
+<sdf version="1.8">
+  <world name="industrial_dynamic">
+
+    <!-- Inline ground plane to avoid dependency on external model://ground_plane -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1.2</mu>
+                <mu2>1.2</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <specular>0.8 0.8 0.8 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <plugin filename="ignition-gazebo-physics-system" name="ignition::gazebo::systems::Physics"/>
+    <plugin filename="ignition-gazebo-sensors-system" name="ignition::gazebo::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="ignition-gazebo-imu-system" name="ignition::gazebo::systems::Imu"/>
+    <plugin filename="ignition-gazebo-contact-system" name="ignition::gazebo::systems::Contact"/>
+    <plugin filename="ignition-gazebo-user-commands-system" name="ignition::gazebo::systems::UserCommands"/>
+    <plugin filename="ignition-gazebo-scene-broadcaster-system" name="ignition::gazebo::systems::SceneBroadcaster"/>
+
+    <physics name="default" default="0" type="ode">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1</real_time_factor>
+      <real_time_update_rate>1000</real_time_update_rate>
+    </physics>
+
+    <scene>
+      <ambient>0.42 0.43 0.45 1</ambient>
+      <background>0.70 0.74 0.78 1</background>
+      <shadows>true</shadows>
+    </scene>
+
+    <light name="sun" type="directional">
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.85 0.84 0.78 1</diffuse>
+      <specular>0.15 0.15 0.12 1</specular>
+      <direction>-0.45 0.20 -0.87</direction>
+      <cast_shadows>true</cast_shadows>
+    </light>
+    <light name="overhead_west_aisle" type="point">
+      <pose>-4.5 0 5.2 0 0 0</pose>
+      <diffuse>0.88 0.90 0.96 1</diffuse>
+      <specular>0.08 0.08 0.08 1</specular>
+      <attenuation>
+        <range>18</range>
+        <constant>0.55</constant>
+        <linear>0.025</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <cast_shadows>false</cast_shadows>
+    </light>
+    <light name="overhead_east_aisle" type="point">
+      <pose>4.5 0 5.2 0 0 0</pose>
+      <diffuse>0.88 0.90 0.96 1</diffuse>
+      <specular>0.08 0.08 0.08 1</specular>
+      <attenuation>
+        <range>18</range>
+        <constant>0.55</constant>
+        <linear>0.025</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <cast_shadows>false</cast_shadows>
+    </light>
+
+    <!-- <model name="floor_slab">
+      <static>true</static>
+      <pose>0 0 -0.1 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>20.0 15.0 0.01</size></box></geometry>
+          <surface>
+            <friction>
+              <ode><mu>1.2</mu><mu2>1.2</mu2></ode>
+            </friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>20.0 15.0 0.06</size></box></geometry>
+          <material>
+            <ambient>0.48 0.50 0.50 1</ambient>
+            <diffuse>0.54 0.56 0.56 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model> -->
+
+    <!-- Perimeter walls: operational area is x=[-10,10], y=[-7.5,7.5]. -->
+    <model name="wall_south">
+      <static>true</static>
+      <pose>0 -7.5 1.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>20.3 0.18 3.0</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>20.3 0.18 3.0</size></box></geometry>
+          <material><ambient>0.62 0.64 0.65 1</ambient><diffuse>0.62 0.64 0.65 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="wall_north">
+      <static>true</static>
+      <pose>0 7.5 1.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>20.3 0.18 3.0</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>20.3 0.18 3.0</size></box></geometry>
+          <material><ambient>0.62 0.64 0.65 1</ambient><diffuse>0.62 0.64 0.65 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="wall_west">
+      <static>true</static>
+      <pose>-10 0 1.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.18 15.0 3.0</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.18 15.0 3.0</size></box></geometry>
+          <material><ambient>0.62 0.64 0.65 1</ambient><diffuse>0.62 0.64 0.65 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="wall_east">
+      <static>true</static>
+      <pose>10 0 1.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.18 15.0 3.0</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.18 15.0 3.0</size></box></geometry>
+          <material><ambient>0.62 0.64 0.65 1</ambient><diffuse>0.62 0.64 0.65 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Shelving rows parallel to the long axis.  Each segment is 2 x 0.8 m. -->
+    <model name="shelf_south_west_1"><static>true</static><pose>-7.4 -2.6 1.1 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>2.0 0.8 2.2</size></box></geometry></collision><visual name="visual"><geometry><box><size>2.0 0.8 2.2</size></box></geometry><material><ambient>0.32 0.36 0.40 1</ambient><diffuse>0.34 0.38 0.42 1</diffuse></material></visual></link></model>
+    <model name="shelf_south_west_2"><static>true</static><pose>-5.0 -2.6 1.1 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>2.0 0.8 2.2</size></box></geometry></collision><visual name="visual"><geometry><box><size>2.0 0.8 2.2</size></box></geometry><material><ambient>0.32 0.36 0.40 1</ambient><diffuse>0.34 0.38 0.42 1</diffuse></material></visual></link></model>
+    <model name="shelf_south_west_3"><static>true</static><pose>-2.6 -2.6 1.1 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>2.0 0.8 2.2</size></box></geometry></collision><visual name="visual"><geometry><box><size>2.0 0.8 2.2</size></box></geometry><material><ambient>0.32 0.36 0.40 1</ambient><diffuse>0.34 0.38 0.42 1</diffuse></material></visual></link></model>
+    <model name="shelf_south_east_1"><static>true</static><pose>2.6 -2.6 1.1 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>2.0 0.8 2.2</size></box></geometry></collision><visual name="visual"><geometry><box><size>2.0 0.8 2.2</size></box></geometry><material><ambient>0.32 0.36 0.40 1</ambient><diffuse>0.34 0.38 0.42 1</diffuse></material></visual></link></model>
+    <model name="shelf_south_east_2"><static>true</static><pose>5.0 -2.6 1.1 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>2.0 0.8 2.2</size></box></geometry></collision><visual name="visual"><geometry><box><size>2.0 0.8 2.2</size></box></geometry><material><ambient>0.32 0.36 0.40 1</ambient><diffuse>0.34 0.38 0.42 1</diffuse></material></visual></link></model>
+    <model name="shelf_south_east_3"><static>true</static><pose>7.4 -2.6 1.1 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>2.0 0.8 2.2</size></box></geometry></collision><visual name="visual"><geometry><box><size>2.0 0.8 2.2</size></box></geometry><material><ambient>0.32 0.36 0.40 1</ambient><diffuse>0.34 0.38 0.42 1</diffuse></material></visual></link></model>
+
+    <model name="shelf_north_west_1"><static>true</static><pose>-7.4 2.6 1.1 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>2.0 0.8 2.2</size></box></geometry></collision><visual name="visual"><geometry><box><size>2.0 0.8 2.2</size></box></geometry><material><ambient>0.32 0.36 0.40 1</ambient><diffuse>0.34 0.38 0.42 1</diffuse></material></visual></link></model>
+    <model name="shelf_north_west_2"><static>true</static><pose>-5.0 2.6 1.1 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>2.0 0.8 2.2</size></box></geometry></collision><visual name="visual"><geometry><box><size>2.0 0.8 2.2</size></box></geometry><material><ambient>0.32 0.36 0.40 1</ambient><diffuse>0.34 0.38 0.42 1</diffuse></material></visual></link></model>
+    <model name="shelf_north_west_3"><static>true</static><pose>-2.6 2.6 1.1 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>2.0 0.8 2.2</size></box></geometry></collision><visual name="visual"><geometry><box><size>2.0 0.8 2.2</size></box></geometry><material><ambient>0.32 0.36 0.40 1</ambient><diffuse>0.34 0.38 0.42 1</diffuse></material></visual></link></model>
+    <model name="shelf_north_east_1"><static>true</static><pose>2.6 2.6 1.1 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>2.0 0.8 2.2</size></box></geometry></collision><visual name="visual"><geometry><box><size>2.0 0.8 2.2</size></box></geometry><material><ambient>0.32 0.36 0.40 1</ambient><diffuse>0.34 0.38 0.42 1</diffuse></material></visual></link></model>
+    <model name="shelf_north_east_2"><static>true</static><pose>5.0 2.6 1.1 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>2.0 0.8 2.2</size></box></geometry></collision><visual name="visual"><geometry><box><size>2.0 0.8 2.2</size></box></geometry><material><ambient>0.32 0.36 0.40 1</ambient><diffuse>0.34 0.38 0.42 1</diffuse></material></visual></link></model>
+    <model name="shelf_north_east_3"><static>true</static><pose>7.4 2.6 1.1 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>2.0 0.8 2.2</size></box></geometry></collision><visual name="visual"><geometry><box><size>2.0 0.8 2.2</size></box></geometry><material><ambient>0.32 0.36 0.40 1</ambient><diffuse>0.34 0.38 0.42 1</diffuse></material></visual></link></model>
+
+    <!-- Static pallet stacks and safety bollards; included in the static map. -->
+    <model name="pallet_stack_nw"><static>true</static><pose>-8.2 5.3 0.35 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>1.2 0.9 0.7</size></box></geometry></collision><visual name="visual"><geometry><box><size>1.2 0.9 0.7</size></box></geometry><material><ambient>0.48 0.30 0.14 1</ambient><diffuse>0.52 0.34 0.16 1</diffuse></material></visual></link></model>
+    <model name="pallet_stack_ne"><static>true</static><pose>8.1 5.3 0.35 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>1.2 0.9 0.7</size></box></geometry></collision><visual name="visual"><geometry><box><size>1.2 0.9 0.7</size></box></geometry><material><ambient>0.48 0.30 0.14 1</ambient><diffuse>0.52 0.34 0.16 1</diffuse></material></visual></link></model>
+    <model name="charging_barrier"><static>true</static><pose>-3.2 -5.8 0.45 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>1.8 0.12 0.9</size></box></geometry></collision><visual name="visual"><geometry><box><size>1.8 0.12 0.9</size></box></geometry><material><ambient>0.78 0.70 0.16 1</ambient><diffuse>0.80 0.72 0.18 1</diffuse></material></visual></link></model>
+
+    <actor name="worker_straight_crossing">
+      <pose>0.0 5.0 1.0 0 0 0</pose>
+      <skin>
+        <filename>/usr/share/gazebo-11/media/models/walk.dae</filename>
+        <scale>1.0</scale>
+      </skin>
+      <animation name="walking">
+        <filename>/usr/share/gazebo-11/media/models/walk.dae</filename>
+        <interpolate_x>true</interpolate_x>
+      </animation>
+      <script>
+        <loop>true</loop>
+        <delay_start>1.0</delay_start>
+        <auto_start>true</auto_start>
+        <trajectory id="0" type="walking" tension="0.85">
+          <waypoint><time>0.0</time><pose>-10.0 0.0 0.0 0 0 0</pose></waypoint>
+          <waypoint><time>24.0</time><pose>10.0 0.0 0.0 0 0 0</pose></waypoint>
+          <waypoint><time>25.6</time><pose>10.0 0.0 0.0 0 0 3.14159</pose></waypoint>
+          <waypoint><time>49.6</time><pose>-10.0 0.0 0.0 0 0 3.14159</pose></waypoint>
+          <waypoint><time>51.2</time><pose>-10.0 0.0 0.0 0 0 0</pose></waypoint>
+        </trajectory>
+      </script>
+    </actor>
+
+    <actor name="worker_curved_approach">
+      <pose>6.8 5.2 1.0 0 0 -2.45</pose>
+      <skin>
+        <filename>/usr/share/gazebo-11/media/models/walk.dae</filename>
+        <scale>1.0</scale>
+      </skin>
+      <animation name="walking">
+        <filename>/usr/share/gazebo-11/media/models/walk.dae</filename>
+        <interpolate_x>true</interpolate_x>
+      </animation>
+      <script>
+        <loop>true</loop>
+        <delay_start>4.5</delay_start>
+        <auto_start>true</auto_start>
+        <trajectory id="0" type="walking" tension="0.25">
+          <waypoint><time>0.0</time><pose>6.8 5.2 0.0 0 0 -2.45</pose></waypoint>
+          <waypoint><time>3.0</time><pose>5.6 4.1 0.0 0 0 -2.15</pose></waypoint>
+          <waypoint><time>6.0</time><pose>4.5 2.6 0.0 0 0 -1.90</pose></waypoint>
+          <waypoint><time>8.2</time><pose>3.7 1.0 0.0 0 0 -1.45</pose></waypoint>
+          <waypoint><time>11.2</time><pose>4.7 2.9 0.0 0 0 0.98</pose></waypoint>
+          <waypoint><time>14.8</time><pose>6.8 5.2 0.0 0 0 0.78</pose></waypoint>
+          <waypoint><time>16.0</time><pose>6.8 5.2 0.0 0 0 -2.45</pose></waypoint>
+        </trajectory>
+      </script>
+    </actor>
+
+    <actor name="worker_diagonal_open_area">
+      <pose>-4.2 -1.9 1.0 0 0 0.58</pose>
+      <skin>
+        <filename>/usr/share/gazebo-11/media/models/walk.dae</filename>
+        <scale>1.0</scale>
+      </skin>
+      <animation name="walking">
+        <filename>/usr/share/gazebo-11/media/models/walk.dae</filename>
+        <interpolate_x>true</interpolate_x>
+      </animation>
+      <script>
+        <loop>true</loop>
+        <delay_start>8.0</delay_start>
+        <auto_start>true</auto_start>
+        <trajectory id="0" type="walking" tension="0.70">
+          <waypoint><time>0.0</time><pose>-4.2 -1.9 0.0 0 0 0.58</pose></waypoint>
+          <waypoint><time>8.0</time><pose>3.6 2.5 0.0 0 0 0.58</pose></waypoint>
+          <waypoint><time>9.6</time><pose>3.6 2.5 0.0 0 0 -2.56</pose></waypoint>
+          <waypoint><time>17.6</time><pose>-4.2 -1.9 0.0 0 0 -2.56</pose></waypoint>
+          <waypoint><time>19.0</time><pose>-4.2 -1.9 0.0 0 0 0.58</pose></waypoint>
+        </trajectory>
+      </script>
+    </actor>
+
+    <actor name="forklift_aisle_patrol">
+      <pose>-8.0 -5.0 0.55 0 0 0</pose>
+      <skin>
+        <filename>/usr/share/gazebo-11/media/models/stand.dae</filename>
+        <scale>0.001</scale>
+      </skin>
+      <animation name="patrol">
+        <filename>/usr/share/gazebo-11/media/models/stand.dae</filename>
+        <scale>0.001</scale>
+        <interpolate_x>true</interpolate_x>
+      </animation>
+      <link name="body">
+        <pose>0 0 0.55 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>2.8 1.35 1.1</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>2.8 1.35 1.1</size></box></geometry><material><ambient>0.86 0.54 0.06 1</ambient><diffuse>0.90 0.58 0.08 1</diffuse></material></visual>
+      </link>
+      <link name="mast">
+        <pose>1.15 0 1.45 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>0.22 1.10 1.8</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.22 1.10 1.8</size></box></geometry><material><ambient>0.12 0.12 0.12 1</ambient><diffuse>0.14 0.14 0.14 1</diffuse></material></visual>
+      </link>
+      <script>
+        <loop>true</loop>
+        <delay_start>2.5</delay_start>
+        <auto_start>true</auto_start>
+        <trajectory id="0" type="patrol" tension="0.95">
+          <waypoint><time>0.0</time><pose>-8.0 -5.0 0.0 0 0 0.0</pose></waypoint>
+          <waypoint><time>10.0</time><pose>8.0 -5.0 0.0 0 0 0.0</pose></waypoint>
+          <waypoint><time>11.5</time><pose>8.3 -4.5 0.0 0 0 0.75</pose></waypoint>
+          <waypoint><time>13.3</time><pose>8.0 -4.0 0.0 0 0 3.1416</pose></waypoint>
+          <waypoint><time>23.3</time><pose>-8.0 -4.0 0.0 0 0 3.1416</pose></waypoint>
+          <waypoint><time>25.0</time><pose>-8.3 -4.5 0.0 0 0 -2.40</pose></waypoint>
+          <waypoint><time>26.8</time><pose>-8.0 -5.0 0.0 0 0 0.0</pose></waypoint>
+        </trajectory>
+      </script>
+    </actor>
+
+  </world>
+</sdf>

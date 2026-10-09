@@ -39,7 +39,7 @@ What runs
 7. slam.launch.py: distortion_corrector (distortion_corrector_g1_bag.yaml)
    -> pointcloud_to_laserscan (scan_from_cloud_g1.yaml) -> /scan
    -> slam_toolbox (owns map -> odom, publishes /map) + map_saver.
-   Scan accumulation + the 0.20 rad/s mapping yaw gate are ON by default,
+   Scan accumulation + the 0.60 rad/s mapping yaw gate are ON by default,
    matching live G1 bringup.
 8. Nav2 controller_server + planner_server hosting the local/global costmaps
    (STVL marks off /lidar/points_undistorted). Just enough for costmap tuning;
@@ -77,7 +77,8 @@ distortion_imu_topic : IMU for the distortion corrector (default: /lidar/imu;
 standing_height   : base_footprint -> base_link z offset (default: 0.78)
 accumulate_scan_cloud : accumulate LiDAR frames before /scan (default: true, as live)
 scan_accumulation_max_yaw_rate : drop mapping sweeps above this yaw rate
-                    [rad/s] (default: 0.20, as live; 0 disables)
+                    [rad/s] (default: 0.60, as live; 0 disables)
+scan_accumulation_yaw_gate_mode : gate behavior, drop|single (default: drop)
 use_rviz          : start RViz (default: true)
 """
 
@@ -121,11 +122,27 @@ def generate_launch_description():
         DeclareLaunchArgument("nav_params", default_value=default_nav_params),
         DeclareLaunchArgument("dlio_params", default_value=default_dlio_params),
         DeclareLaunchArgument("lidar_input_topic", default_value="/livox/lidar_filtered"),
+        # Live-stack bags carry Mid-360 hardware-clock cloud stamps that drift
+        # vs every other stream; the wrapper enables restamping for them. The
+        # legacy inverted-bag flow keeps original stamps (default false).
+        DeclareLaunchArgument("restamp_lidar_points", default_value="false"),
+        DeclareLaunchArgument("restamp_offset_mode", default_value="fixed"),
+        DeclareLaunchArgument("restamp_offset_sec", default_value="0.10"),
+        DeclareLaunchArgument("restamp_transport_offset_sec", default_value="0.0"),
         DeclareLaunchArgument("use_body_imu", default_value="false"),
         DeclareLaunchArgument("distortion_imu_topic", default_value="/lidar/imu"),
         DeclareLaunchArgument("standing_height", default_value="0.78"),
         DeclareLaunchArgument("accumulate_scan_cloud", default_value="true"),
-        DeclareLaunchArgument("scan_accumulation_max_yaw_rate", default_value="0.20"),
+        # Defaults mirror the live g1_bringup mapping-scan settings so a
+        # plain replay exercises exactly what ships.
+        DeclareLaunchArgument("scan_accumulation_max_yaw_rate", default_value="0.60"),
+        # "single" mirrors live g1_bringup: a gated cycle emits the newest
+        # registered sweep alone so /scan stays >= 6 Hz through spins.
+        DeclareLaunchArgument("scan_accumulation_yaw_gate_mode", default_value="single"),
+        DeclareLaunchArgument("scan_exclude_rear_sector_half_width_deg",
+                              default_value="40.0"),
+        DeclareLaunchArgument("scan_exclude_rear_sector_max_range",
+                              default_value="3.0"),
         DeclareLaunchArgument("use_rviz", default_value="true"),
         DeclareLaunchArgument("rviz_config", default_value=default_rviz_config),
     ]
@@ -255,13 +272,37 @@ def generate_launch_description():
             "use_sim_time": use_sim_time,
             "use_lio": "true",
             "start_lidar_points_relay": "true",
+            "restamp_lidar_points": LaunchConfiguration("restamp_lidar_points"),
+            "restamp_offset_mode": LaunchConfiguration("restamp_offset_mode"),
+            "restamp_offset_sec": LaunchConfiguration("restamp_offset_sec"),
+            "restamp_transport_offset_sec": LaunchConfiguration(
+                "restamp_transport_offset_sec"),
             "lidar_points_input_topic": LaunchConfiguration("lidar_input_topic"),
             "publish_lidar_points_frame_tf": "false",
             "start_lidar_imu_relay": "false",
             "publish_lidar_imu_tf": "false",
-            "dlio_publish_tf": "true",
+            # DLIO sends TF only per processed scan (~8 Hz) even though its
+            # odometry topic runs at IMU rate; odom_to_tf below rebroadcasts
+            # the 100 Hz /lidar_odom stream instead so TF consumers (STVL
+            # marking/footprint clearing, scan accumulation) track the pose
+            # at live-EKF-like rate. Two publishers of the same transform
+            # would fight, so DLIO's own TF stays off.
+            "dlio_publish_tf": "false",
             "dlio_params_file": LaunchConfiguration("dlio_params"),
         }.items(),
+    )
+
+    dlio_odom_to_tf = Node(
+        package="robot_nav",
+        executable="odom_to_tf.py",
+        name="bag_replay_dlio_odom_to_tf",
+        output="screen",
+        parameters=[{
+            "use_sim_time": use_sim_time,
+            "odom_topic": "/lidar_odom",
+            "parent_frame": "odom",
+            "child_frame": "base_footprint",
+        }],
     )
 
     # /livox/imu (accel in g) -> /lidar/imu (m/s^2). Live G1 rescales to
@@ -293,6 +334,12 @@ def generate_launch_description():
             "accumulate_scan_cloud": LaunchConfiguration("accumulate_scan_cloud"),
             "scan_accumulation_max_yaw_rate": LaunchConfiguration(
                 "scan_accumulation_max_yaw_rate"),
+            "scan_accumulation_yaw_gate_mode": LaunchConfiguration(
+                "scan_accumulation_yaw_gate_mode"),
+            "scan_exclude_rear_sector_half_width_deg": LaunchConfiguration(
+                "scan_exclude_rear_sector_half_width_deg"),
+            "scan_exclude_rear_sector_max_range": LaunchConfiguration(
+                "scan_exclude_rear_sector_max_range"),
             # Mapping scan from DLIO's registered cloud, as live G1 bringup.
             "scan_cloud_topic": "/lidar/points_registered",
             "scan_cloud_in_fixed_frame": "true",
@@ -351,6 +398,7 @@ def generate_launch_description():
         lidar_stabilized_static,
         lidar_level_frame_publisher,
         lio,
+        dlio_odom_to_tf,
         imu_rescale,
         slam,
         controller_server,

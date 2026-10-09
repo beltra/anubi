@@ -76,9 +76,13 @@
     # base_link(pelvis) -> Mid-360 IMU. Unlike the cloud, the driver does NOT right
     # the IMU, so it stays inverted: R = Ry(+0.04014) * Rx(180) re-orients it into
     # base_link (the talos reference uses a pure Rx(180) with base_link at the sensor;
-    # the extra Ry is the pelvis mount pitch). Translation co-located with the LiDAR
-    # to first order; calibrate the lever arm on hardware.
-    extrinsics/baselink2imu/t: [-0.00368, 0.00003, 0.46018]
+    # the extra Ry is the pelvis mount pitch). Translation = LiDAR mount point plus
+    # the Mid-360 internal lidar->IMU lever arm ([11.0, 23.29, -44.12] mm in the
+    # housing frame per the Livox manual), righted by the mount's Rx(180) and
+    # pitched through Ry(0.04014). Replay-measured on
+    # bags/g1_planner_tune_20260710_175531: worst turn-time DLIO correction
+    # steps -28%, map coherence unchanged.
+    extrinsics/baselink2imu/t: [0.00908, -0.02326, 0.50382]
     extrinsics/baselink2imu/R: [ 0.99919457, 0.0, -0.04012671,
                                  0.0,       -1.0,  0.0,
                                 -0.04012671, 0.0, -0.99919457]

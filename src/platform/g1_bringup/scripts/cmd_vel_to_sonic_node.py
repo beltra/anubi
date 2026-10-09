@@ -42,12 +42,22 @@ yaw catches up and Nav2 shrinks wz. This is the drift-free replacement for the s
 bridge's open-loop `theta += wz*dt`, whose integrated heading accumulates error and
 resets on a bridge restart.
 
-Idle heading hold: with no translation and no turn command the world frame is LATCHED
-(facing pinned, yaw0 re-anchored every tick) so measured-yaw drift is ABSORBED instead
-of turning the torso to chase it. Without this the robot slowly rotates to follow odom
-yaw drift while just standing (worst on a hoist, where the yaw estimate wanders --
-"not staying still until commanded a goal"). Reactivation is seamless: dth resumes
-from the held angle when a real command arrives.
+Idle heading hold: with no translation and no turn command the held facing is LATCHED.
+SLOW measured-yaw change (odom/DLIO drift) is absorbed into the frame anchor so the
+torso does not rotate to chase it while just standing (worst on a hoist, where the yaw
+estimate wanders -- "not staying still until commanded a goal"); anything FASTER (real
+rotation: a hoist swing, balance steps) flows into the held facing instead, so this
+bridge's frame stays aligned with SONIC's internal world frame -- otherwise the next
+facing command starts its heading correction in the WRONG direction. Reactivation is
+seamless: dth resumes from the held angle when a real command arrives.
+
+Replan-storm guard: SONIC replans its ~28 ms planner model on ANY change of movement /
+facing / speed, and this bridge recomputes those from the MEASURED yaw every tick, so
+yaw noise alone would make SONIC replan at 30 Hz -- saturating its planner core and
+starving the DDS LowState receive threads (past the 500 ms LowState-absent safety the
+robot collapses). The SENT vectors are deadbanded against the last sent value so a
+steady walk emits a byte-identical vector (0 replans) while the 30 Hz message still
+flows as SONIC's input heartbeat.
 
 Velocity semantics: the caps below are REALIZED m/s. The SONIC target-velocity
 planner realizes ~0.85x of the commanded speed, so the Twist is clamped to the
@@ -204,6 +214,32 @@ class CmdVelToSonic(Node):
         self.declare_parameter("cmd_timeout", 0.3)
         # Period for re-sending the (idempotent) start/planner-mode command.
         self.declare_parameter("start_resend_sec", 1.0)
+        # After the start={1,planner=1} handshake, SONIC switches from its soft-hold
+        # to full planner-driven control -- a brief transient. Hold this long BEFORE
+        # subscribing to cmd_vel/odom (so no command can reach _tick early) to let
+        # that control-mode switch settle before the first real velocity is sent.
+        self.declare_parameter("start_settle_sec", 1.0)
+        # Max rate (rad/s) of measured-yaw change absorbed into the frame anchor while
+        # HOLDING (idle). Slow change is DLIO/EKF yaw drift and must be absorbed (or the
+        # torso chases it); faster change is REAL rotation (a hoist swing, balance
+        # steps) and must flow into the held facing instead -- absorbing it skews this
+        # bridge's frame against SONIC's internal world frame, and a later facing
+        # command then starts a large heading correction in the WRONG direction (SONIC
+        # turns shortest path toward the skewed target). 0.01 rad/s (~34 deg/min) covers
+        # drift; any hand/balance rotation is orders of magnitude faster.
+        self.declare_parameter("hold_drift_absorb_rad_s", 0.01)
+        # Replan-storm guard. SONIC replans its ~28 ms planner model on ANY change of
+        # movement/facing/speed. This bridge recomputes those from the MEASURED yaw every
+        # tick, so yaw noise alone changes them every tick -> SONIC replans at 30 Hz,
+        # saturating its planner core and starving the DDS LowState receive threads; the
+        # robot then sags on a stale-hold and re-balances (or, past the 500 ms
+        # LowState-absent safety, SONIC hard-stops and the robot collapses). Deadband the
+        # SENT vectors against the last sent value so a steady walk emits a byte-identical
+        # vector (0 replans) while the 30 Hz message keeps flowing as SONIC's input
+        # heartbeat. 0 disables a band.
+        self.declare_parameter("movement_deadband_rad", 0.05)  # ~2.9 deg
+        self.declare_parameter("facing_deadband_rad", 0.05)    # ~2.9 deg
+        self.declare_parameter("speed_deadband", 0.03)         # m/s
         # Fixed upper-body pose held while walking: 'none' (default; arms swing with
         # the gait), 'default' (nominal standing arms), or 'carry' (two-handed carry).
         self.declare_parameter("arm_preset", "none")
@@ -222,6 +258,14 @@ class CmdVelToSonic(Node):
         self._lookahead = float(self.get_parameter("facing_lookahead_sec").value)
         self._timeout = float(self.get_parameter("cmd_timeout").value)
         start_resend = float(self.get_parameter("start_resend_sec").value)
+        self._start_settle_sec = float(self.get_parameter("start_settle_sec").value)
+        self._drift_rate = max(0.0, float(self.get_parameter("hold_drift_absorb_rad_s").value))
+        # Deadbands -> cos thresholds for the unit-vector hold (dot >= min_cos =>
+        # within band => hold last sent). A 0 band gives min_cos = cos(0) = 1.0, so the
+        # hold fires only on an exactly-equal vector == the old always-send behaviour.
+        self._move_min_cos = math.cos(max(0.0, float(self.get_parameter("movement_deadband_rad").value)))
+        self._face_min_cos = math.cos(max(0.0, float(self.get_parameter("facing_deadband_rad").value)))
+        self._speed_deadband = max(0.0, float(self.get_parameter("speed_deadband").value))
         # None -> arms follow the gait; a 17-DOF vector -> pinned every tick. Raises
         # on an unknown preset so a typo fails at startup, not silently on hardware.
         self._arm_preset = (self.get_parameter("arm_preset").value or "none").strip().lower()
@@ -244,12 +288,28 @@ class CmdVelToSonic(Node):
         self._yaw0 = None            # anchor: odom yaw at control start (SONIC frame origin)
         self._need_anchor = True     # latch yaw0 on the first tick with a yaw available
         self._idle_face = None       # latched heading held while idle [rad]
+        self._last_hold_t = 0.0      # monotonic stamp for the hold-anchor dt
+        # Last COMMITTED planner vectors (replan-storm guard). None => next active tick
+        # commits fresh; reset to None whenever we drop to IDLE so a new walk never holds
+        # a stale pre-idle direction.
+        self._last_sent_movement = None
+        self._last_sent_facing = None
+        self._last_sent_speed = None
+
+        # Send the start handshake and let the soft-hold -> planner-driven control
+        # switch settle BEFORE subscribing, so no cmd_vel can reach _tick until SONIC
+        # is ready for a real velocity command.
+        self._send_start()
+        if self._start_settle_sec > 0.0:
+            self.get_logger().info(
+                f"sent SONIC start handshake -- settling {self._start_settle_sec:.1f}s "
+                f"before subscribing to cmd_vel")
+            time.sleep(self._start_settle_sec)
 
         self.create_subscription(Twist, topic, self._on_twist, 10)
         self.create_subscription(Odometry, odom_topic, self._on_odom, 10)
         self.create_timer(self._dt, self._tick)
         self.create_timer(max(0.1, start_resend), self._send_start)
-        self._send_start()
 
         self.get_logger().info(
             f"bridging {topic} (+ yaw from {odom_topic}) -> ZMQ PUB "
@@ -307,15 +367,62 @@ class CmdVelToSonic(Node):
         # periodic re-send covers controller restarts and PUB/SUB slow joiners.
         self._send_command(start=True, stop=False, planner=True)
 
+    def _update_hold_anchor(self) -> None:
+        """Advance the heading hold (idle): absorb SLOW measured-yaw change (drift)
+        into the frame anchor `_yaw0`, capped at `hold_drift_absorb_rad_s`; let anything
+        FASTER (real rotation: a hoist swing, balance steps) flow into `_idle_face` so
+        the held facing follows the robot. Absorbing real rotation instead would skew
+        this bridge's frame against SONIC's internal world frame -- the classic symptom
+        is the NEXT heading correction starting in the wrong direction. Requires `_yaw`
+        and `_yaw0` set."""
+        now = time.monotonic()
+        dth = _wrap(self._yaw - self._yaw0)
+        if self._idle_face is None:
+            self._idle_face = dth
+            self._last_hold_t = now
+            return
+        dt = max(0.0, min(now - self._last_hold_t, 0.5))
+        self._last_hold_t = now
+        err = _wrap(dth - self._idle_face)
+        absorb = max(-self._drift_rate * dt, min(self._drift_rate * dt, err))
+        self._yaw0 = _wrap(self._yaw0 + absorb)
+        self._idle_face = _wrap(self._yaw - self._yaw0)
+
     def _facing_hold(self):
-        """`facing` unit vector that HOLDS heading. Uses the latched idle heading
-        when known, else falls back to SONIC's start heading before any odom/anchor
-        is available (world frame not yet built)."""
+        """`facing` unit vector that HOLDS heading while idle -- drift absorbed, real
+        rotation followed (see _update_hold_anchor). Falls back to SONIC's start heading
+        before any odom/anchor is available (world frame not yet built)."""
+        if self._yaw is not None and self._yaw0 is not None:
+            self._update_hold_anchor()
         if self._idle_face is not None:
             return [math.cos(self._idle_face), math.sin(self._idle_face), 0.0]
         return [1.0, 0.0, 0.0]
 
+    def _hold_vec(self, new, last, min_cos):
+        """Replan-storm guard: return `last` when unit vector `new` is within the
+        deadband of it (dot >= min_cos), else `new`. Re-sending the PREVIOUS vector
+        keeps the planner message byte-stable so SONIC does not replan on sub-deadband
+        jitter. `last is None` (first active tick) commits `new`."""
+        if last is None:
+            return new
+        dot = new[0] * last[0] + new[1] * last[1] + new[2] * last[2]
+        return last if dot >= min_cos else new
+
+    @staticmethod
+    def _hold_scalar(new, last, band):
+        """Scalar analogue of _hold_vec (for speed)."""
+        if last is None or abs(new - last) >= band:
+            return new
+        return last
+
+    def _reset_sent(self) -> None:
+        """Forget the committed walking vectors (called when we drop to IDLE)."""
+        self._last_sent_movement = None
+        self._last_sent_facing = None
+        self._last_sent_speed = None
+
     def _send_idle(self) -> None:
+        self._reset_sent()
         self._send_planner(MODE_IDLE, [0.0, 0.0, 0.0], self._facing_hold(),
                            speed=-1.0, upper_body=self._upper_body)
 
@@ -359,13 +466,14 @@ class CmdVelToSonic(Node):
         dth = _wrap(self._yaw - self._yaw0)
         speed_mag = math.hypot(vx, vy)
 
-        # No motion command -> HOLD heading. Latch `facing` on entering idle and
-        # re-anchor yaw0 each tick so measured-yaw drift is ABSORBED instead of
-        # turning the torso to chase it. Reactivation resumes from the held angle.
+        # No motion command -> HOLD heading. Slow measured-yaw drift is absorbed into
+        # the anchor (no torso chase while standing -- worst on a hoist, where the yaw
+        # estimate wanders); REAL rotation flows into the held facing instead so the
+        # bridge frame stays aligned with SONIC's (see _update_hold_anchor).
+        # Reactivation is seamless: dth resumes from the held angle.
         if speed_mag <= _EPS and abs(wz) <= _EPS:
-            if self._idle_face is None:
-                self._idle_face = dth
-            self._yaw0 = _wrap(self._yaw - self._idle_face)
+            self._update_hold_anchor()
+            self._reset_sent()   # next walk commits fresh vectors
             facing = [math.cos(self._idle_face), math.sin(self._idle_face), 0.0]
             self._send_planner(MODE_IDLE, [0.0, 0.0, 0.0], facing,
                                speed=-1.0, upper_body=self._upper_body)
@@ -389,6 +497,17 @@ class CmdVelToSonic(Node):
         # policy actually turns; converges to dth as wz -> 0.
         face = dth + wz * self._lookahead
         facing = [math.cos(face), math.sin(face), 0.0]
+        # Replan-storm guard: hold the previously sent vectors when the new ones are
+        # within the deadband, so SONIC sees no change and skips its ~28 ms replan. The
+        # message still goes out every tick (input heartbeat); only its CONTENT is
+        # stabilised. `speed < 0` is the turn-in-place sentinel (-1) -- leave it.
+        movement = self._hold_vec(movement, self._last_sent_movement, self._move_min_cos)
+        facing = self._hold_vec(facing, self._last_sent_facing, self._face_min_cos)
+        if speed >= 0.0:
+            speed = self._hold_scalar(speed, self._last_sent_speed, self._speed_deadband)
+        self._last_sent_movement = movement
+        self._last_sent_facing = facing
+        self._last_sent_speed = speed
         self._send_planner(self._mode, movement, facing, speed=speed,
                            upper_body=self._upper_body)
 

@@ -5,6 +5,134 @@ obstacle costmap in which the robot can walk, using the recorded G1 LiDAR bag as
 primary evidence, then confirm the tuned configs in the Gazebo Fortress sim across
 multiple worlds.
 
+Status: FIX-AND-VERIFY COMPLETE (2026-07-13). The independent verification
+(`docs/g1_perception_verification_report.md`) re-measured every claim and
+found real defects F1-F7; the fix session A/B-tested each and shipped the
+winners. Outcome and evidence: `docs/g1_perception_fix_ab_report.md`.
+SHIPPED: gravity_align OFF via `gravity_align_attenuation: 0.0` (the
+gait-stabilized head made pelvis-IMU leveling INJECT attitude - walking
+floor tilt 2.76 -> 1.75 deg median); `sensor_mount_rpy` calibrated from the
+Livox still-segment gravity to [-0.00892, 0.05147, 0.0] (levels the still
+floor, fixes the frame-label-vs-TF disagreement); `min_radius: 0.55`
+(near-field self-band guard: footprint-lethal grids 2 -> 0, self-band marks
+356 -> 8, documented 0.55 m blind sphere); accumulator `yaw_gate_mode:
+single` (/scan 3.6 -> 6.0 Hz through spins); `odom_to_tf` stamp dedup (TF
+non-increasing 17.2% -> 0%). REVISED TARGETS (proven unreachable, evidence
+in the fix report): F2 placement lag (restamp offset is a DC no-op; DLIO Kq
+trades placement for map coherence; intrinsic, needs hardware capture
+timestamping - but F1 already improved the operational costmap C5 to 89.5%
+moving-matched) and F5 coverage (~2 pt vs pre-fix is benign single-
+observation redundancy, walls precision unchanged). REJECTED after
+measurement: relay-side dedup (regressed the C8 EKF gate 2.78 -> 4.22 deg),
+DLIO Kq=7/Kp=7 (map coverage 68 -> 63), slam min_pass_through=1 (walls
+-4.3 pt). Live-hardware confirmation on a fresh bag is the one remaining
+user action.
+
+Prior status (superseded): CLOCK-DOMAIN FIX (2026-07-12, after the spec
+loop below). Root cause of the while-moving "cloud/costmap rotates off the
+map": the Mid-360 stamps cloud headers from its UNSYNCHRONIZED internal
+timebase, which drifts ~20 ms/s against the host clock (-0.15 s at bag
+start to -2.9 s at end on bags/g1_planner_tune_20260710_175531; see
+report/32_clock_domains.png). Everything else (/livox/imu, /imu/data,
+/lidar_odom) is host-clocked. Consequences: the distortion corrector's
+stamp-based IMU matching exceeded its 0.25 s timeout ~10 s into any run,
+silently disabling deskew AND gravity leveling; STVL, collision_monitor
+and RViz transformed the cloud at its stale stamp, placing marks with a
+pose up to ~3 s old (rigid turn-direction rotation of cloud+marks,
+report/31/33). DLIO is immune (it reconciles timebases internally), which
+is why the 2D map stayed coherent while the costmap misbehaved. Fix:
+`cloud_restamp_relay` replaces the plain relay on /livox/lidar ->
+/lidar/points (G1 only, opt-in `restamp_lidar_points` in lio.launch.py;
+Go2 utlidar is host-stamped and unaffected), rewriting header.stamp =
+now - one sweep; DLIO reads the RAW driver topic
+(`dlio_pointcloud_topic`) because restamped headers measurably blur its
+deskew (walls 90 -> 88%). The relay also shifts the per-point FLOAT64 timestamp field by the same
+delta as the header, so the cloud stays internally consistent and the
+WHOLE stack (DLIO included) lives on one clock: feeding DLIO raw stamps
+while restamping the corrector path put slam's map->odom on the hardware
+clock and broke every map-frame transform of the cloud (RViz showed no
+cloud at all). Final validated state (runT5, zero overrides): wall
+coherence 91.1%/0.05 m median, mean 0.097 m, p95 0.30 m -- the BEST of
+the whole effort, because the unified clock also fixed the accumulator
+yaw gate and the scan band slicing, which previously sampled TF ~2.5 s in
+the past. Lethal placement while moving 93-95% within 0.30 m (p90
+0.18-0.22 m vs 0.55 before), still 99%; footprint-lethal transients 1/553
+states; cloud visually anchored during 1.2 rad/s turns
+(report/33_restamp_before_after.png). NOTE: DLIO-map coverage reads 65%
+under corrected timing vs 70-72% before -- the old number included
+mis-projected paint (broken-clock band slicing); a yaw-gate relax to 1.0
+recovers nothing (65.2%) while costing walls (89.1%), so the M2 >= 70%
+spec bar was calibrated on broken-clock data and needs recalibration
+(~65%) or the spec's visibility analysis. Live G1 bringup ships the same
+relay. Long-term alternative: PTP/gPTP sync of the Mid-360; the relay
+makes the stack robust either way.
+
+Status: SPEC GATE LOOP (2026-07-12). A quantitative 9-gate acceptance spec
+(M1-M9: wall fidelity, coverage, traversed-space-free, paint staleness,
+pipeline freshness, footprint-never-lethal, lethal placement, self-healing,
+EKF turn-yaw fidelity) was defined independently and evaluated on canonical
+replays of the same bag. Verdicts: PASS M1@0.15+median (89.1-90.8% across
+5 runs, gate sits at run noise), M2 (70.1-71.2%), M3 (0 violations), M5
+(after fix below), M8, M9 (2.5 deg p90 / 13.2 max / 20 ms). Unreachable per
+the spec's own criteria: M1@0.30 ghosts are real far-range walls absent
+from the DLIO reference (82% reproduce run-to-run, median 11 m out, 0%
+operator); M4 residual gaps coincide with >0.60 rad/s spins (gate-off
+smears walls to 87.6%) plus the startup-calibration window. Open, blocked
+on design choices: M6 has 3-4/~570 transient 1-2-cell footprint states
+(robot walks into 1-3 s-old marks through the near-field blind zone;
+candidate fix = footprint_padding bump, a controller-conservatism trade);
+M7-moving is floored at ~78% matched because the trailing operator is
+continuously and CORRECTLY re-marked and a moving obstacle cannot match a
+static reference (87% of unmatched attributes to operator wake/decay age;
+voxel_decay 2.0 was tried and bought nothing, NOT shipped). Shipped by the
+loop: replay `odom_to_tf` rebroadcast of the 100 Hz /lidar_odom (DLIO
+itself sends TF only per scan, ~8 Hz, which left replay STVL/accumulator
+poses up to 120 ms stale) and `always_send_full_costmap: true` on the
+local costmap (rolling-window costmap_updates carry no origin; RViz and
+offline consumers placed patches against stale origins).
+
+Status: THIRD PASS (2026-07-11) on the same bag, targeting the two
+while-moving issues (slow map paint / "robot jumps in map"; costmap
+"rotates with the robot" and floods lethal during turns). Shipped:
+(f) EKF-vs-DLIO turn lag fixed at the source: `lidar_odom_relay`'s
+position-jump detector evaluated displacement per message, so at the G1's
+100 Hz DLIO rate a normal cm-scale GICP correction step read as >1.5 m/s
+and pinned covariance at 100x for ~5% of the live run (all of it during
+motion); the detector now evaluates over >= nominal_dt windows (Go2 10 Hz
+behavior unchanged). G1 relay trust tightened (pose_cov x/y 0.03 -> 0.01,
+yaw 0.02 -> 0.004 in `g1_bringup`/`sim_g1`). Offline EKF replay of the
+bag's own odometry inputs: turn yaw error p90 9.0 -> 2.5 deg, max 23 -> 13
+deg (single 20 ms samples, no longer sustained), yaw lag 140 -> 20 ms,
+EKF output still smoother than DLIO's own yaw. This was the live
+"costmap rotates while turning" mechanism (STVL transforms clouds with
+the EKF TF). (g) Mapping cadence: slam insertion gates 0.25 -> 0.15,
+`map_update_interval` 0.5 -> 0.25, accumulator yaw gate 0.20 -> 0.60
+(registered sweeps paint fine during turns: wall error improved with the
+gate relaxed). Visible map changes 14 -> 31 per bag, median gap 1.5 ->
+0.9 s, max 13 -> 8 s, DLIO-wall coverage 55 -> 70%, wall matched 92.7 ->
+90.6% (accepted trade, user-approved; median error steady at 0.05 m).
+(h) Trailing-operator ghosting removed from the painted map by a
+rear-sector filter in `cloud_accumulator` (|azimuth| >= 140 deg within
+3.0 m, map path ONLY -- STVL/collision still see everything). Measured:
+phantom open-floor returns 0.40% -> 0.13% of scan points. (i) The
+"mostly pink costmap when moving" RViz report does NOT reproduce in the
+current configs (5 Hz composite costmap+updates streams: max 8% colored
+cells, still or moving); it matches the pre-(b) exponential-decay flood.
+(j) DLIO `baselink2imu/t` now folds in the Mid-360's internal lidar->IMU
+lever arm ([11.0, 23.29, -44.12] mm housing frame, Livox manual; found via
+the Relo02/Navigation G1 cross-check, which also validated our mount pitch
+0.04014 rad exactly). Replay-measured: worst turn-time DLIO correction
+steps -28% (max 7.8 -> 5.6 m/s-equivalent per-frame), map coherence
+unchanged (90.8%/0.05 m). (k) RViz `nav2.rviz` TopDownOrtho view had
+`Target Frame: base_footprint`, which yaw-locks the camera to the robot
+and makes the whole scene (map, clouds, costmaps) appear to rotate around
+a stationary robot -- this was a large part of the reported "map/costmap
+rotates with the robot". Now `map`. The while-moving costmap "flood" in
+RViz decomposes to real structure: at the fast turn, 75% of lethal cells
+lie within 0.3 m of DLIO 3D structure (99% when still); the visual mass
+is inscribed-radius inflation plus the 3 s decay trail of 3 m-range
+marks (see report/30_local_costmap_5hz_frames.png).
+
 Status: SECOND PASS (2026-07-11) on the live-stack bag
 `bags/g1_planner_tune_20260710_175531` (maps + evidence in
 `maps/g1_map_compare/`, tooling `scripts/compare_slam_dlio_maps.py` +
@@ -14,10 +142,12 @@ source and any 2D matching measurably snapped (10-24 deg) or drifted (8.6 deg)
 against it; (b) STVL decay switched to linear 3.0 s: the exponential model
 with no per-source `decay_acceleration` NEVER expires voxels (lethal cells
 grew monotonically, 0 -> 21k over one bag); (c) STVL `min_obstacle_height`
-0.25 / `obstacle_range` 5.0 -- the floor sits at odom z ~= +0.08 while
-walking and gait leveling residual tilts far floor returns above the old
-0.12 gate; (d) nav-cloud deskew ON (turning sweeps 6.4 -> 4.9 cm wall error);
-(e) mapping scan accumulated + yaw-gated at 0.20 rad/s on G1-real
+0.25 / `obstacle_range` 3.0, plus the 3D-lidar frustum (`model_type: 1`,
+`decay_acceleration: 5.0`) so re-observed empty space clears immediately --
+the floor sits at odom z ~= +0.08 while walking, gait leveling residual
+tilts/smears far marks, and frustum clearing + short range cut in-motion
+lethal cells ~65% vs time-decay alone; (d) nav-cloud deskew ON (turning sweeps 6.4 -> 4.9 cm wall error);
+(e) mapping scan built from DLIO registered cloud (/lidar/points_registered), accumulated + yaw-gated at 0.20 rad/s on G1-real -- slam walls match the DLIO map at 93% within 0.15 m, median 0.05 m
 (`/scan` feeds slam only; safety consumers read the raw cloud).
 
 Status: IMPLEMENTED (2026-07-10). The harness exists

@@ -33,6 +33,7 @@ using sensor_msgs::msg::PointCloud2;
 using sensor_msgs::msg::PointField;
 
 constexpr double kPi = 3.14159265358979323846;
+constexpr double kGravity = 9.80665;
 
 double stamp_to_sec(const builtin_interfaces::msg::Time & stamp)
 {
@@ -126,6 +127,91 @@ Vec3 cross(const Vec3 & a, const Vec3 & b)
 Vec3 add(const Vec3 & a, const Vec3 & b)
 {
   return {a.x + b.x, a.y + b.y, a.z + b.z};
+}
+
+double dot(const Vec3 & a, const Vec3 & b)
+{
+  return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+Vec3 normalize(const Vec3 & a)
+{
+  const double n = std::sqrt(dot(a, a));
+  if (n < 1e-12) {
+    return {0.0, 0.0, 1.0};
+  }
+  return {a.x / n, a.y / n, a.z / n};
+}
+
+Mat3 identity3()
+{
+  return {{1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0}};
+}
+
+Mat3 mat_mul(const Mat3 & a, const Mat3 & b)
+{
+  Mat3 c{};
+  for (int r = 0; r < 3; ++r) {
+    for (int col = 0; col < 3; ++col) {
+      double s = 0.0;
+      for (int k = 0; k < 3; ++k) {
+        s += a.m[r * 3 + k] * b.m[k * 3 + col];
+      }
+      c.m[r * 3 + col] = s;
+    }
+  }
+  return c;
+}
+
+Mat3 skew(const Vec3 & v)
+{
+  return {{0.0, -v.z, v.y, v.z, 0.0, -v.x, -v.y, v.x, 0.0}};
+}
+
+Mat3 rotation_axis_angle(const Vec3 & axis, double angle)
+{
+  const Vec3 a = normalize(axis);
+  const Mat3 k = skew(a);
+  const Mat3 kk = mat_mul(k, k);
+  const double sn = std::sin(angle);
+  const double cs = std::cos(angle);
+  Mat3 r = identity3();
+  for (int i = 0; i < 9; ++i) {
+    r.m[i] += sn * k.m[i] + (1.0 - cs) * kk.m[i];
+  }
+  return r;
+}
+
+// Minimal (shortest-arc) rotation mapping unit-ish vector `from` onto `to`.
+Mat3 rotation_between(const Vec3 & from, const Vec3 & to)
+{
+  const Vec3 a = normalize(from);
+  const Vec3 b = normalize(to);
+  const Vec3 v = cross(a, b);
+  const double s = std::sqrt(dot(v, v));
+  const double c = dot(a, b);
+  if (s < 1e-8) {
+    if (c > 0.0) {
+      return identity3();  // already aligned
+    }
+    // Antiparallel: rotate 180 deg about any axis perpendicular to a.
+    const Vec3 perp = std::abs(a.x) < 0.9 ? Vec3{1.0, 0.0, 0.0} : Vec3{0.0, 1.0, 0.0};
+    const Mat3 k = skew(normalize(cross(a, perp)));
+    const Mat3 kk = mat_mul(k, k);
+    Mat3 r = identity3();
+    for (int i = 0; i < 9; ++i) {
+      r.m[i] += 2.0 * kk.m[i];
+    }
+    return r;
+  }
+  const Mat3 k = skew(v);
+  const Mat3 kk = mat_mul(k, k);
+  const double f = (1.0 - c) / (s * s);
+  Mat3 r = identity3();
+  for (int i = 0; i < 9; ++i) {
+    r.m[i] += k.m[i] + f * kk.m[i];
+  }
+  return r;
 }
 
 struct FieldInfo
@@ -231,6 +317,16 @@ public:
       imu_topic_, rclcpp::SensorDataQoS(),
       std::bind(&DistortionCorrector::imu_callback, this, std::placeholders::_1));
 
+    if (head_imu_leveling_) {
+      const std::string lev_topic = leveling_imu_topic_.empty() ? imu_topic_ : leveling_imu_topic_;
+      leveling_imu_sub_ = create_subscription<Imu>(
+        lev_topic, rclcpp::SensorDataQoS(),
+        std::bind(&DistortionCorrector::leveling_imu_callback, this, std::placeholders::_1));
+      RCLCPP_INFO(
+        get_logger(), "head_imu_leveling ON: complementary filter on %s (gain=%.3f)",
+        lev_topic.c_str(), head_imu_comp_gain_);
+    }
+
     RCLCPP_INFO(
       get_logger(),
       "LiDAR processor: %s -> %s (deskew=%s, gravity_align=%s->%s, "
@@ -262,11 +358,75 @@ private:
     declare_parameter<std::string>("timestamp_unit", "auto");
     declare_parameter<std::string>("fallback_mode", "azimuth");
     declare_parameter<std::string>("azimuth_direction", "cw");
+    // Deskew reference instant: "start" (earliest point), "median", or "mean".
+    // "median" matches DLIO's deskewed cloud so the two align in yaw during turns.
+    declare_parameter<std::string>("deskew_reference", "start");
     declare_parameter<double>("imu_timeout_sec", 0.25);
     declare_parameter<double>("odom_timeout_sec", 0.25);
     declare_parameter<std::string>("output_stamp_mode", "input");
     declare_parameter<bool>("gravity_align", true);
     declare_parameter<std::string>("gravity_align_frame", "lidar_stabilized");
+    // Head-IMU leveling: level the cloud from the sensor's OWN IMU (Mid-360),
+    // which physically rides on the head and observes head-tilt excursions the
+    // static mount and the pelvis IMU cannot (there is no neck encoder). A
+    // complementary filter on that IMU (gyro for fast tilt, low-passed accel for
+    // drift-free gravity) estimates the gravity direction; the leveling rotation
+    // then maps the estimated floor normal to +z. Overrides the orientation-based
+    // gravity_align path when enabled. leveling_imu_topic must carry gyro (rad/s)
+    // and accel; empty falls back to imu_topic. head_imu_ref_up / cloud_ref_up are
+    // the still-segment calibration (head-IMU gravity-up unit vector and the
+    // matching cloud floor-normal-up); their shortest-arc rotation is the
+    // head-IMU->cloud extrinsic used to map the live gravity estimate.
+    declare_parameter<bool>("head_imu_leveling", false);
+    // Floor-plane leveling: fit the ground plane in each sweep and rotate its
+    // normal to +z, so the floor is level BY CONSTRUCTION -- no IMU, no gyro bias,
+    // no extrinsic calibration, and robust to head tilt. Takes precedence over
+    // head_imu_leveling. Caveats: it levels to the VISIBLE ground (wrong on a
+    // ramp/slope -- it would make the ramp horizontal, not gravity-level), and it
+    // needs enough floor points, so it holds the last good normal when the fit
+    // fails. The normal is low-passed across sweeps to reject fit jitter.
+    declare_parameter<bool>("floor_plane_leveling", false);
+    declare_parameter<double>("floor_z_min", -1.6);
+    declare_parameter<double>("floor_z_max", -0.7);
+    declare_parameter<double>("floor_r_min", 0.5);
+    declare_parameter<double>("floor_r_max", 6.0);
+    declare_parameter<int>("floor_min_points", 250);
+    declare_parameter<double>("floor_inlier_thresh", 0.05);
+    declare_parameter<double>("floor_normal_lowpass", 0.2);
+    declare_parameter<double>("floor_max_tilt_deg", 12.0);
+    declare_parameter<std::string>("leveling_imu_topic", "");
+    declare_parameter<std::vector<double>>("head_imu_ref_up", {0.0, 0.0, -1.0});
+    declare_parameter<std::vector<double>>("cloud_ref_up", {0.0, 0.0, 1.0});
+    // The still-pose calibration fixes only 2 of 3 extrinsic DOF; this pins the
+    // remaining yaw-about-gravity DOF (fit by minimizing run-wide floor tilt).
+    declare_parameter<double>("head_imu_extrinsic_yaw_deg", 0.0);
+    declare_parameter<double>("head_imu_comp_gain", 0.01);
+    declare_parameter<double>("head_imu_max_dt", 0.1);
+    // Gyro bias (rad/s) subtracted before propagation; the Mid-360 gyro carries a
+    // large bias (~0.24 rad/s) that otherwise drags the estimate ~8 deg off level.
+    // Left at zero, it is auto-estimated by averaging the first
+    // head_imu_bias_init_sec of leveling-IMU samples (the launch holds the robot
+    // still during the nav-delay for DLIO gravity calibration -- same window).
+    declare_parameter<std::vector<double>>("head_imu_gyro_bias", {0.0, 0.0, 0.0});
+    declare_parameter<double>("head_imu_bias_init_sec", 2.0);
+    // Online gyro-bias adaptation (Mahony-style integral feedback from the
+    // accelerometer): the Mid-360 gyro bias DRIFTS ~0.08 rad/s over minutes
+    // (warmup), so a one-shot init is not enough -- it would leave a ~3 deg
+    // steady-state leveling error. Adapts only on near-gravity samples
+    // (|accel|-g within tolerance) so gait acceleration does not corrupt it.
+    declare_parameter<double>("head_imu_bias_learn_rate", 0.02);
+    declare_parameter<double>("head_imu_bias_accel_tol", 1.0);
+    // Scale on the IMU roll/pitch injected by gravity_align. 1.0 = full IMU
+    // leveling; 0.0 = static mount righting only (no IMU attitude enters the
+    // cloud; the align rotation degenerates to the mount rotation, so the
+    // output frame equals the body-oriented frame at the sensor). On robots
+    // whose head is already gait-stabilized (G1), full pelvis-IMU leveling
+    // INJECTS attitude the sensor never had.
+    declare_parameter<double>("gravity_align_attenuation", 1.0);
+    // Warn when the IMU sample matched to a cloud stamp is much older than
+    // now(): stale cloud stamps silently pull old samples out of the history
+    // buffer (imu_timeout_sec never fires inside the buffered past).
+    declare_parameter<double>("imu_stale_warn_sec", 0.5);
     declare_parameter<bool>("filter_self", false);
     declare_parameter<double>("robot_min_x", -0.40);
     declare_parameter<double>("robot_max_x", 0.36);
@@ -305,11 +465,55 @@ private:
     timestamp_unit_ = get_parameter("timestamp_unit").as_string();
     fallback_mode_ = get_parameter("fallback_mode").as_string();
     azimuth_direction_ = get_parameter("azimuth_direction").as_string();
+    deskew_reference_ = get_parameter("deskew_reference").as_string();
     imu_timeout_sec_ = get_parameter("imu_timeout_sec").as_double();
     odom_timeout_sec_ = get_parameter("odom_timeout_sec").as_double();
     output_stamp_mode_ = get_parameter("output_stamp_mode").as_string();
     gravity_align_ = get_parameter("gravity_align").as_bool();
     gravity_align_frame_ = get_parameter("gravity_align_frame").as_string();
+    head_imu_leveling_ = get_parameter("head_imu_leveling").as_bool();
+    floor_plane_leveling_ = get_parameter("floor_plane_leveling").as_bool();
+    floor_z_min_ = get_parameter("floor_z_min").as_double();
+    floor_z_max_ = get_parameter("floor_z_max").as_double();
+    floor_r_min_ = get_parameter("floor_r_min").as_double();
+    floor_r_max_ = get_parameter("floor_r_max").as_double();
+    floor_min_points_ =
+      static_cast<size_t>(std::max<int64_t>(0, get_parameter("floor_min_points").as_int()));
+    floor_inlier_thresh_ = get_parameter("floor_inlier_thresh").as_double();
+    floor_normal_lowpass_ = std::max(
+      0.0, std::min(1.0, get_parameter("floor_normal_lowpass").as_double()));
+    floor_max_tilt_cos_ = std::cos(get_parameter("floor_max_tilt_deg").as_double() * kPi / 180.0);
+    leveling_imu_topic_ = get_parameter("leveling_imu_topic").as_string();
+    head_imu_comp_gain_ = std::max(0.0, std::min(1.0, get_parameter("head_imu_comp_gain").as_double()));
+    head_imu_max_dt_ = get_parameter("head_imu_max_dt").as_double();
+    {
+      const auto ru = get_parameter("head_imu_ref_up").as_double_array();
+      const auto cu = get_parameter("cloud_ref_up").as_double_array();
+      const Vec3 ref_up{
+        ru.size() > 0 ? ru[0] : 0.0, ru.size() > 1 ? ru[1] : 0.0, ru.size() > 2 ? ru[2] : -1.0};
+      const Vec3 cloud_up{
+        cu.size() > 0 ? cu[0] : 0.0, cu.size() > 1 ? cu[1] : 0.0, cu.size() > 2 ? cu[2] : 1.0};
+      // Shortest-arc head-IMU-up -> cloud-up (2 DOF), then the fitted
+      // yaw-about-gravity DOF pins the full extrinsic.
+      const double yaw = get_parameter("head_imu_extrinsic_yaw_deg").as_double() * kPi / 180.0;
+      R_head_imu_to_cloud_ = mat_mul(
+        rotation_between(ref_up, cloud_up), rotation_axis_angle(ref_up, yaw));
+    }
+    {
+      const auto gb = get_parameter("head_imu_gyro_bias").as_double_array();
+      head_imu_gyro_bias_ = {
+        gb.size() > 0 ? gb[0] : 0.0, gb.size() > 1 ? gb[1] : 0.0, gb.size() > 2 ? gb[2] : 0.0};
+      head_imu_bias_init_sec_ = get_parameter("head_imu_bias_init_sec").as_double();
+      // Auto-estimate only when no explicit bias was provided.
+      bias_estimated_ =
+        head_imu_gyro_bias_.x != 0.0 || head_imu_gyro_bias_.y != 0.0 ||
+        head_imu_gyro_bias_.z != 0.0 || head_imu_bias_init_sec_ <= 0.0;
+    }
+    head_imu_bias_learn_rate_ = get_parameter("head_imu_bias_learn_rate").as_double();
+    head_imu_bias_accel_tol_ = get_parameter("head_imu_bias_accel_tol").as_double();
+    gravity_align_attenuation_ = std::max(
+      0.0, std::min(1.0, get_parameter("gravity_align_attenuation").as_double()));
+    imu_stale_warn_sec_ = get_parameter("imu_stale_warn_sec").as_double();
     filter_self_ = get_parameter("filter_self").as_bool();
     robot_min_x_ = get_parameter("robot_min_x").as_double();
     robot_max_x_ = get_parameter("robot_max_x").as_double();
@@ -339,6 +543,73 @@ private:
     while (imu_history_.size() > 400) {
       imu_history_.pop_front();
     }
+  }
+
+  // Complementary filter tracking the gravity-up direction in the (head) IMU
+  // frame: gyro propagates it (a world-fixed vector's IMU coords evolve as
+  // d(up)/dt = -w x up), the accelerometer slowly corrects gyro drift. The small
+  // gain rejects gait acceleration; the gyro carries the fast tilt excursions.
+  void leveling_imu_callback(const Imu::SharedPtr msg)
+  {
+    const double t = stamp_to_sec(msg->header.stamp);
+    const Vec3 a_raw{
+      msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z};
+    const double a_mag = std::sqrt(dot(a_raw, a_raw));
+    const Vec3 a = normalize(a_raw);
+    if (!std::isfinite(a.x) || !std::isfinite(a.y) || !std::isfinite(a.z)) {
+      return;
+    }
+    if (!bias_estimated_) {
+      if (bias_init_start_ < 0.0) {
+        bias_init_start_ = t;
+      }
+      bias_accum_ = add(
+        bias_accum_,
+        {msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z});
+      ++bias_count_;
+      if (t - bias_init_start_ >= head_imu_bias_init_sec_ && bias_count_ > 0) {
+        head_imu_gyro_bias_ = {
+          bias_accum_.x / bias_count_, bias_accum_.y / bias_count_, bias_accum_.z / bias_count_};
+        bias_estimated_ = true;
+        RCLCPP_INFO(
+          get_logger(), "head_imu_leveling: auto gyro bias [%.4f, %.4f, %.4f] rad/s (%zu samples)",
+          head_imu_gyro_bias_.x, head_imu_gyro_bias_.y, head_imu_gyro_bias_.z, bias_count_);
+      }
+    }
+    if (!have_grav_) {
+      grav_up_ = a;
+      have_grav_ = true;
+      last_leveling_imu_time_ = t;
+      return;
+    }
+    const double dt = t - last_leveling_imu_time_;
+    last_leveling_imu_time_ = t;
+    if (dt > 0.0 && dt < head_imu_max_dt_) {
+      const Vec3 w{
+        msg->angular_velocity.x - head_imu_gyro_bias_.x,
+        msg->angular_velocity.y - head_imu_gyro_bias_.y,
+        msg->angular_velocity.z - head_imu_gyro_bias_.z};
+      const Vec3 dgrav = cross(w, grav_up_);
+      grav_up_ = normalize(
+        {grav_up_.x - dgrav.x * dt, grav_up_.y - dgrav.y * dt, grav_up_.z - dgrav.z * dt});
+      // Online bias adaptation: only the gravity-perpendicular bias is observable
+      // from the accelerometer (it is the leveling-relevant part), and only on
+      // near-gravity samples so gait acceleration does not poison it. e = up x a
+      // is the residual the fixed bias leaves; integrating it tracks the drift.
+      if (head_imu_bias_learn_rate_ > 0.0 &&
+        std::abs(a_mag - kGravity) < head_imu_bias_accel_tol_)
+      {
+        const Vec3 e = cross(grav_up_, a);
+        head_imu_gyro_bias_.x -= head_imu_bias_learn_rate_ * e.x * dt;
+        head_imu_gyro_bias_.y -= head_imu_bias_learn_rate_ * e.y * dt;
+        head_imu_gyro_bias_.z -= head_imu_bias_learn_rate_ * e.z * dt;
+      }
+    }
+    const double k = head_imu_comp_gain_;
+    grav_up_ = normalize(
+      {grav_up_.x + k * (a.x - grav_up_.x),
+        grav_up_.y + k * (a.y - grav_up_.y),
+        grav_up_.z + k * (a.z - grav_up_.z)});
   }
 
   void odom_callback(const Odometry::SharedPtr msg)
@@ -650,6 +921,65 @@ private:
       get_logger(), *get_clock(), 2000, "distortion_corrector: %s", reason.c_str());
   }
 
+  // Fit the ground-plane normal (unit, pointing up) from the deskewed cloud by
+  // least squares (z = a*x + b*y + c) over floor-band candidates, with two
+  // outlier-rejection passes. Returns {false, _} when too few candidates.
+  std::pair<bool, Vec3> fit_floor_normal(
+    const std::vector<float> & cx, const std::vector<float> & cy,
+    const std::vector<float> & cz, const std::vector<bool> & finite, size_t n_points) const
+  {
+    std::vector<std::array<double, 3>> pts;
+    pts.reserve(4096);
+    for (size_t i = 0; i < n_points; i += 3) {  // subsample for speed
+      if (!finite[i]) {
+        continue;
+      }
+      const double xv = cx[i];
+      const double yv = cy[i];
+      const double zv = cz[i];
+      const double r = std::hypot(xv, yv);
+      if (zv > floor_z_min_ && zv < floor_z_max_ && r > floor_r_min_ && r < floor_r_max_) {
+        pts.push_back({xv, yv, zv});
+      }
+    }
+    if (pts.size() < floor_min_points_) {
+      return {false, Vec3{}};
+    }
+    double a = 0.0;
+    double b = 0.0;
+    double c = 0.0;
+    for (int iter = 0; iter < 3; ++iter) {
+      double sxx = 0, sxy = 0, sx = 0, syy = 0, sy = 0, s1 = 0, sxz = 0, syz = 0, sz = 0;
+      size_t used = 0;
+      for (const auto & p : pts) {
+        if (iter > 0 && std::abs(a * p[0] + b * p[1] + c - p[2]) > floor_inlier_thresh_) {
+          continue;
+        }
+        sxx += p[0] * p[0]; sxy += p[0] * p[1]; sx += p[0];
+        syy += p[1] * p[1]; sy += p[1]; s1 += 1.0;
+        sxz += p[0] * p[2]; syz += p[1] * p[2]; sz += p[2];
+        ++used;
+      }
+      if (used < floor_min_points_ / 2) {
+        break;
+      }
+      // Solve the 3x3 normal equations by Cramer's rule.
+      const double det =
+        sxx * (syy * s1 - sy * sy) - sxy * (sxy * s1 - sy * sx) + sx * (sxy * sy - syy * sx);
+      if (std::abs(det) < 1e-9) {
+        break;
+      }
+      a = (sxz * (syy * s1 - sy * sy) - sxy * (syz * s1 - sy * sz) + sx * (syz * sy - syy * sz)) / det;
+      b = (sxx * (syz * s1 - sy * sz) - sxz * (sxy * s1 - sy * sx) + sx * (sxy * sz - syz * sx)) / det;
+      c = (sxx * (syy * sz - syz * sy) - sxy * (sxy * sz - syz * sx) + sxz * (sxy * sy - syy * sx)) / det;
+    }
+    Vec3 n = normalize({-a, -b, 1.0});
+    if (n.z < 0.0) {
+      n = {-n.x, -n.y, -n.z};
+    }
+    return {true, n};
+  }
+
   void cloud_callback(const PointCloud2::SharedPtr msg)
   {
     const auto start_time = std::chrono::steady_clock::now();
@@ -688,6 +1018,20 @@ private:
     }
 
     StateSelection state = select_state(cloud_stamp);
+    if (state.has_imu && imu_stale_warn_sec_ > 0.0) {
+      // nearest_msg() always finds a buffered sample within ~10 ms of any
+      // stamp inside the buffered past, so imu_timeout_sec cannot catch
+      // stale cloud stamps; only an age check against now() can.
+      const double now_sec = stamp_to_sec(get_clock()->now());
+      const double sample_age = now_sec - stamp_to_sec(state.imu.header.stamp);
+      if (now_sec > 0.0 && sample_age > imu_stale_warn_sec_) {
+        RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 5000,
+          "distortion_corrector: matched IMU sample is %.2f s older than now(); "
+          "cloud stamps are likely stale (deskew/leveling would use old attitude)",
+          sample_age);
+      }
+    }
     const bool can_deskew =
       deskew_enabled_ &&
       (!use_twist_ || state.has_odom) &&
@@ -708,8 +1052,36 @@ private:
     std::vector<float> cx(n_points);
     std::vector<float> cy(n_points);
     std::vector<float> cz(n_points);
+    double deskew_ref_offset = 0.0;
     if (can_deskew) {
       const auto rel_t = relative_times(*msg, x, y, n_points);
+      // Reference instant the deskew unwinds to (and that the output stamp is
+      // shifted to). "start" (rel_t=0, earliest point) is the historical
+      // behavior; "median"/"mean" match DLIO's deskewed cloud, which references
+      // the sweep's MEDIAN point time -- so both clouds represent the same instant
+      // and stop disagreeing in yaw during turns (~half-sweep offset otherwise).
+      if (deskew_reference_ == "median" || deskew_reference_ == "mean") {
+        std::vector<double> valid;
+        valid.reserve(n_points);
+        for (size_t i = 0; i < n_points; ++i) {
+          if (finite[i] && std::isfinite(rel_t[i])) {
+            valid.push_back(rel_t[i]);
+          }
+        }
+        if (!valid.empty()) {
+          if (deskew_reference_ == "mean") {
+            double s = 0.0;
+            for (const double v : valid) {
+              s += v;
+            }
+            deskew_ref_offset = s / static_cast<double>(valid.size());
+          } else {
+            const size_t mid = valid.size() / 2;
+            std::nth_element(valid.begin(), valid.begin() + mid, valid.end());
+            deskew_ref_offset = valid[mid];
+          }
+        }
+      }
       const double wx = state.angular_sensor.x;
       const double wy = state.angular_sensor.y;
       const double wz = state.angular_sensor.z;
@@ -718,9 +1090,10 @@ private:
       const double vz = state.linear_sensor.z;
       for (size_t i = 0; i < n_points; ++i) {
         if (finite[i]) {
-          cx[i] = static_cast<float>(x[i] + rel_t[i] * (vx + wy * z[i] - wz * y[i]));
-          cy[i] = static_cast<float>(y[i] + rel_t[i] * (vy + wz * x[i] - wx * z[i]));
-          cz[i] = static_cast<float>(z[i] + rel_t[i] * (vz + wx * y[i] - wy * x[i]));
+          const double dt = rel_t[i] - deskew_ref_offset;
+          cx[i] = static_cast<float>(x[i] + dt * (vx + wy * z[i] - wz * y[i]));
+          cy[i] = static_cast<float>(y[i] + dt * (vy + wz * x[i] - wx * z[i]));
+          cz[i] = static_cast<float>(z[i] + dt * (vz + wx * y[i] - wy * x[i]));
         } else {
           cx[i] = static_cast<float>(x[i]);
           cy[i] = static_cast<float>(y[i]);
@@ -768,26 +1141,86 @@ private:
     }
 
     bool gravity_aligned = false;
-    if (gravity_align_ && use_imu_ && state.has_imu) {
-      const auto rp = roll_pitch_from_imu(state.imu.orientation);
-      const Mat3 R_body = rotation_from_rpy(rp.first, rp.second, 0.0);
+    Mat3 R_level;
+    bool have_R_level = false;
+    // Priority: floor-plane leveling (ground truth, no IMU) -> head-IMU leveling
+    // (tracks tilt where the floor is not visible) -> static mount righting below.
+    if (gravity_align_ && floor_plane_leveling_) {
+      const auto fit = fit_floor_normal(cx, cy, cz, finite, n_points);
+      if (fit.first && fit.second.z > floor_max_tilt_cos_) {
+        if (!have_floor_normal_) {
+          floor_normal_filt_ = fit.second;
+          have_floor_normal_ = true;
+        } else {
+          const double al = floor_normal_lowpass_;
+          floor_normal_filt_ = normalize(
+            {floor_normal_filt_.x + al * (fit.second.x - floor_normal_filt_.x),
+              floor_normal_filt_.y + al * (fit.second.y - floor_normal_filt_.y),
+              floor_normal_filt_.z + al * (fit.second.z - floor_normal_filt_.z)});
+        }
+      }
+      if (have_floor_normal_) {  // hold the last good normal when a sweep has no floor
+        R_level = rotation_between(floor_normal_filt_, Vec3{0.0, 0.0, 1.0});
+        have_R_level = true;
+      }
+    }
+    if (!have_R_level && gravity_align_ && head_imu_leveling_ && have_grav_) {
+      // Estimated cloud floor-normal = extrinsic * complementary-filtered gravity-up.
+      const Vec3 n_up = normalize(R_head_imu_to_cloud_ * grav_up_);
+      R_level = rotation_between(n_up, Vec3{0.0, 0.0, 1.0});
+      have_R_level = true;
+    }
+    if (have_R_level) {
       for (size_t i = 0; i < n_points; ++i) {
         if (!std::isfinite(cx[i]) || !std::isfinite(cy[i]) || !std::isfinite(cz[i])) {
           continue;
         }
-        const Vec3 p_cloud{cx[i], cy[i], cz[i]};
-        const Vec3 p_stab = R_body * (cloud_to_base_ * p_cloud);
+        const Vec3 p_stab = R_level * Vec3{cx[i], cy[i], cz[i]};
         cx[i] = static_cast<float>(p_stab.x);
         cy[i] = static_cast<float>(p_stab.y);
         cz[i] = static_cast<float>(p_stab.z);
       }
       gravity_aligned = true;
       last_gravity_aligned_ = true;
+    } else if (gravity_align_) {
+      // Attenuation 0 needs no IMU sample (pure mount righting); any IMU
+      // contribution keeps the original skip-on-missing-IMU fallback.
+      const bool imu_needed = gravity_align_attenuation_ > 0.0;
+      const bool imu_ready = use_imu_ && state.has_imu;
+      if (!imu_needed || imu_ready) {
+        double roll = 0.0;
+        double pitch = 0.0;
+        if (imu_needed) {
+          const auto rp = roll_pitch_from_imu(state.imu.orientation);
+          roll = gravity_align_attenuation_ * rp.first;
+          pitch = gravity_align_attenuation_ * rp.second;
+        }
+        const Mat3 R_body = rotation_from_rpy(roll, pitch, 0.0);
+        for (size_t i = 0; i < n_points; ++i) {
+          if (!std::isfinite(cx[i]) || !std::isfinite(cy[i]) || !std::isfinite(cz[i])) {
+            continue;
+          }
+          const Vec3 p_cloud{cx[i], cy[i], cz[i]};
+          const Vec3 p_stab = R_body * (cloud_to_base_ * p_cloud);
+          cx[i] = static_cast<float>(p_stab.x);
+          cy[i] = static_cast<float>(p_stab.y);
+          cz[i] = static_cast<float>(p_stab.z);
+        }
+        gravity_aligned = true;
+        last_gravity_aligned_ = true;
+      }
     }
 
     PointCloud2 out_msg = *msg;
     if (output_stamp_mode_ == "now") {
       out_msg.header.stamp = get_clock()->now();
+    } else if (deskew_ref_offset != 0.0) {
+      // Stamp the cloud at the deskew reference instant so the TF lookup that
+      // positions this body-frame cloud uses the matching pose (no yaw lag).
+      const double shifted = stamp_to_sec(msg->header.stamp) + deskew_ref_offset;
+      const double whole = std::floor(shifted);
+      out_msg.header.stamp.sec = static_cast<int32_t>(whole);
+      out_msg.header.stamp.nanosec = static_cast<uint32_t>((shifted - whole) * 1e9);
     }
     if (gravity_aligned) {
       out_msg.header.frame_id = gravity_align_frame_;
@@ -823,11 +1256,41 @@ private:
   std::string timestamp_unit_{"auto"};
   std::string fallback_mode_{"azimuth"};
   std::string azimuth_direction_{"cw"};
+  std::string deskew_reference_{"start"};
   double imu_timeout_sec_{0.25};
   double odom_timeout_sec_{0.25};
   std::string output_stamp_mode_{"input"};
   bool gravity_align_{true};
   std::string gravity_align_frame_{"lidar_stabilized"};
+  double gravity_align_attenuation_{1.0};
+  bool head_imu_leveling_{false};
+  bool floor_plane_leveling_{false};
+  double floor_z_min_{-1.6};
+  double floor_z_max_{-0.7};
+  double floor_r_min_{0.5};
+  double floor_r_max_{6.0};
+  size_t floor_min_points_{250};
+  double floor_inlier_thresh_{0.05};
+  double floor_normal_lowpass_{0.2};
+  double floor_max_tilt_cos_{0.978};
+  Vec3 floor_normal_filt_{0.0, 0.0, 1.0};
+  bool have_floor_normal_{false};
+  std::string leveling_imu_topic_;
+  double head_imu_comp_gain_{0.01};
+  double head_imu_max_dt_{0.1};
+  Mat3 R_head_imu_to_cloud_;
+  Vec3 head_imu_gyro_bias_{0.0, 0.0, 0.0};
+  double head_imu_bias_init_sec_{2.0};
+  double head_imu_bias_learn_rate_{0.02};
+  double head_imu_bias_accel_tol_{1.0};
+  bool bias_estimated_{false};
+  Vec3 bias_accum_{0.0, 0.0, 0.0};
+  size_t bias_count_{0};
+  double bias_init_start_{-1.0};
+  Vec3 grav_up_{0.0, 0.0, -1.0};
+  bool have_grav_{false};
+  double last_leveling_imu_time_{-1.0};
+  double imu_stale_warn_sec_{0.5};
   bool filter_self_{false};
   double robot_min_x_{-0.40};
   double robot_max_x_{0.36};
@@ -859,6 +1322,7 @@ private:
   rclcpp::Subscription<PointCloud2>::SharedPtr cloud_sub_;
   rclcpp::Subscription<Odometry>::SharedPtr odom_sub_;
   rclcpp::Subscription<Imu>::SharedPtr imu_sub_;
+  rclcpp::Subscription<Imu>::SharedPtr leveling_imu_sub_;
 };
 
 int main(int argc, char ** argv)

@@ -94,6 +94,14 @@ class CloudAccumulator(Node):
         # walls moments later. 0 disables the gate (safety consumers must
         # keep using the ungated cloud/scan path).
         self.declare_parameter("max_yaw_rate_rad_s", 0.0)
+        # What the yaw gate does when it trips:
+        #   drop   : publish nothing this cycle (original behavior; /scan
+        #            starves to the gated-sweep rate during sustained spins).
+        #   single : publish the newest frame alone (no concatenation) and
+        #            keep it out of the accumulation buffer, so /scan stays
+        #            at input rate while gated sweeps never thicken the
+        #            accumulated window.
+        self.declare_parameter("yaw_gate_mode", "drop")
         # Input clouds already expressed in fixed_frame (e.g. DLIO's
         # registered scan): frames are world-anchored by the odometry's own
         # registration, so accumulation is plain concatenation with no TF
@@ -105,6 +113,15 @@ class CloudAccumulator(Node):
         # self-filter, so remove near-body returns here: drop points within
         # this horizontal radius of sensor_frame's origin. 0 disables.
         self.declare_parameter("self_filter_radius", 0.0)
+        # Rear-sector exclusion for the MAPPING scan only: drop points whose
+        # azimuth relative to the robot heading lies within this half-width
+        # of straight-behind AND whose horizontal range is below the max
+        # range. Exists to keep a trailing operator out of the painted map;
+        # safety consumers (collision monitor, STVL) must keep using the
+        # unfiltered cloud so a person behind the robot still blocks motion.
+        # 0 disables. Fixed-frame input mode only.
+        self.declare_parameter("exclude_rear_sector_half_width_deg", 0.0)
+        self.declare_parameter("exclude_rear_sector_max_range", 1.5)
 
         self.input_topic = str(self.get_parameter("input_topic").value)
         self.output_topic = str(self.get_parameter("output_topic").value)
@@ -115,10 +132,19 @@ class CloudAccumulator(Node):
             seconds=float(self.get_parameter("tf_lookup_timeout_sec").value)
         )
         self.max_yaw_rate = float(self.get_parameter("max_yaw_rate_rad_s").value)
+        self.yaw_gate_mode = str(self.get_parameter("yaw_gate_mode").value)
+        if self.yaw_gate_mode not in ("drop", "single"):
+            self.get_logger().warn(
+                "unknown yaw_gate_mode '%s'; using 'drop'" % self.yaw_gate_mode)
+            self.yaw_gate_mode = "drop"
         self.input_in_fixed_frame = bool(
             self.get_parameter("input_cloud_in_fixed_frame").value)
         self.sensor_frame = str(self.get_parameter("sensor_frame").value)
         self.self_filter_radius = float(self.get_parameter("self_filter_radius").value)
+        self.rear_sector_half_width = math.radians(float(
+            self.get_parameter("exclude_rear_sector_half_width_deg").value))
+        self.rear_sector_max_range = float(
+            self.get_parameter("exclude_rear_sector_max_range").value)
         self.last_yaw_sample = None  # (tf_stamp_sec, yaw in fixed_frame)
         self.gate_engaged = False
 
@@ -251,12 +277,13 @@ class CloudAccumulator(Node):
         return self.gate_engaged
 
     def filter_near_body(self, frames, newest):
-        """Drop points within self_filter_radius (horizontal) of the sensor.
+        """Drop near-body returns and, when enabled, the rear sector.
 
         Used only in fixed-frame input mode, where the registered cloud has
-        not passed the distortion corrector's body-box self-filter. The
-        radius test runs against the sensor position at each frame's own
-        stamp so body returns stay filtered while walking.
+        not passed the distortion corrector's body-box self-filter. Both
+        tests run against the sensor pose at each frame's own stamp so body
+        returns and the rear sector stay anchored to the robot while walking.
+        sensor_frame is gravity-levelled, so its yaw is the body heading.
         """
         out = []
         for frame in frames:
@@ -269,6 +296,9 @@ class CloudAccumulator(Node):
                 )
                 ox = tf.transform.translation.x
                 oy = tf.transform.translation.y
+                q = tf.transform.rotation
+                heading = math.atan2(2.0 * (q.w * q.z + q.x * q.y),
+                                     1.0 - 2.0 * (q.y * q.y + q.z * q.z))
             except (
                 tf2_ros.LookupException,
                 tf2_ros.ConnectivityException,
@@ -279,7 +309,17 @@ class CloudAccumulator(Node):
                 continue
             pts = read_points(frame, field_names=("x", "y", "z"), skip_nans=False)
             xyz = np.column_stack((pts["x"], pts["y"], pts["z"])).astype(np.float32)
-            keep = np.hypot(xyz[:, 0] - ox, xyz[:, 1] - oy) > self.self_filter_radius
+            dx = xyz[:, 0] - ox
+            dy = xyz[:, 1] - oy
+            rng = np.hypot(dx, dy)
+            keep = rng > self.self_filter_radius
+            if self.rear_sector_half_width > 0.0:
+                azimuth = np.arctan2(dy, dx) - heading
+                # angular distance from straight-behind (pi), wrapped
+                from_rear = np.abs((azimuth % (2.0 * math.pi)) - math.pi)
+                in_sector = (from_rear <= self.rear_sector_half_width) & (
+                    rng <= self.rear_sector_max_range)
+                keep &= ~in_sector
             if not keep.any():
                 continue
             out.append(create_cloud_xyz32(frame.header, xyz[keep]))
@@ -290,6 +330,19 @@ class CloudAccumulator(Node):
             return
 
         if self.yaw_rate_exceeded(msg, stamp_to_sec(msg)):
+            if self.yaw_gate_mode == "single":
+                # Keep /scan alive during sustained spins: emit this frame
+                # alone (it is GICP-registered, not garbage) but keep it out
+                # of the accumulation buffer so gated sweeps never thicken
+                # the accumulated window.
+                single = strip_to_xyz(msg)
+                frames = [single]
+                if self.input_in_fixed_frame and (
+                        self.self_filter_radius > 0.0
+                        or self.rear_sector_half_width > 0.0):
+                    frames = self.filter_near_body(frames, single)
+                if frames:
+                    self.publish_frames(frames, single)
             return
 
         # Reduce to xyz-only up front so every frame in the buffer has the
@@ -321,12 +374,16 @@ class CloudAccumulator(Node):
         if not transformed_frames:
             return
 
-        if self.input_in_fixed_frame and self.self_filter_radius > 0.0:
+        if self.input_in_fixed_frame and (
+                self.self_filter_radius > 0.0 or self.rear_sector_half_width > 0.0):
             transformed_frames = self.filter_near_body(transformed_frames, newest)
             if not transformed_frames:
                 return
 
-        point_count = sum(len(f.data) // f.point_step for f in transformed_frames)
+        self.publish_frames(transformed_frames, newest)
+
+    def publish_frames(self, frames, newest):
+        point_count = sum(len(f.data) // f.point_step for f in frames)
         if point_count == 0:
             return
 
@@ -338,8 +395,8 @@ class CloudAccumulator(Node):
         out.is_bigendian = newest.is_bigendian
         out.point_step = newest.point_step
         out.row_step = out.point_step * out.width
-        out.is_dense = all(f.is_dense for f in transformed_frames)
-        out.data = b"".join(bytes(f.data) for f in transformed_frames)
+        out.is_dense = all(f.is_dense for f in frames)
+        out.data = b"".join(bytes(f.data) for f in frames)
 
         self.publisher.publish(out)
 

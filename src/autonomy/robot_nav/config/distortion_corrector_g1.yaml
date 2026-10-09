@@ -27,25 +27,96 @@ distortion_corrector:
     use_3d_distortion_correction: true
     deskew_enabled: true
     scan_period: 0.1  # Mid-360 published at 10 Hz
+    # Reference the sweep MEDIAN point time (as DLIO does) instead of the sweep
+    # start, and shift the output stamp to it, so /lidar/points_undistorted and
+    # DLIO's deskewed cloud place at the same instant -- removes the ~half-sweep
+    # (~50 ms) yaw lag between them on turns.
+    # TEMPORARILY REVERTED to "start" while investigating a turning-time perception
+    # regression; re-enable "median" only after the leveling regression is resolved.
+    deskew_reference: start
 
     # The Mid-360 is inverted but MID360_config.json roll:180 rights the CLOUD, so
-    # it arrives upright like the sim mount: a small forward pitch only.
-    # Keep this the NOMINAL mount: the at-rest Livox accel in
-    # bags/g1_planner_tune_20260710_175531 confirms the sensor sits within ~0.7 deg
-    # of it. (The older bags/g1/lidar_record showed a 7.2 deg sensor-to-gravity
-    # tilt, but that was the robot's stance in that recording -- body attitude is
-    # the gravity_align path's job, from the body IMU, not a mount constant.
-    # Recalibrate here only if the Livox accel disagrees with the body IMU + this
-    # mount while standing.)
-    sensor_mount_rpy: [0.0, 0.04014, 0.0]
+    # it arrives upright like the sim mount: a small forward pitch only. This is
+    # the STANDING mount CALIBRATED from the FLOOR RETURNS (not the Livox
+    # accelerometer: the Mid-360's internal IMU axis is misaligned from its
+    # optical frame by ~1 deg in roll, so leveling the accel does NOT level the
+    # floor - it made the still tilt worse, 1.11 -> 1.54 deg). Fit: solve the
+    # mount rotation that maps the still-segment floor-plane normal to +z on
+    # bags/g1_planner_tune_20260710_175531, giving roll 0.01769 rad, pitch
+    # 0.04832 rad (vs the earlier nominal 0.0 / 0.04014). With
+    # gravity_align_attenuation 0 (below) this constant is the ONLY leveling, so
+    # it must level the standing floor: this value drives the still-segment
+    # floor-normal tilt to ~0.02 deg (nominal left 1.11 deg, the same amount the
+    # output frame disagreed with the lidar_stabilized TF chain). Recalibrate
+    # from a fresh standing bag if the hardware neutral head pose changes; fit
+    # from the floor plane, not the internal IMU.
+    sensor_mount_rpy: [0.01769, 0.04832, 0.0]
     mount_rotation_mode: direct
 
     output_stamp_mode: input
 
-    # Gravity alignment: rotate points into lidar_stabilized (broadcast by
-    # lidar_level_frame_publisher) so the 2D scan stays level under body pitch/roll.
+    # Gravity alignment: the G1 locomotion controller already gait-stabilizes the
+    # head, so rotating the cloud by the PELVIS-IMU roll/pitch INJECTS attitude
+    # the head never had (measured: full IMU leveling drove walking floor-normal
+    # tilt to 2.76 deg median / 8.24 p90 / 10.6 turn max, WORSE than the raw
+    # gait-stabilized head). attenuation 0 keeps the static mount righting above
+    # but passes NO pelvis attitude into the cloud: walking tilt 1.75 deg median /
+    # 5.0 p90, turn max 5.2 (the single 5.2 deg turn sweep is real head attitude
+    # confirmed against the head-gyro integral, not a leveling error). The frame
+    # is still relabeled lidar_stabilized so the 2D scan slice stays level.
     gravity_align: true
+    gravity_align_attenuation: 0.0
     gravity_align_frame: lidar_stabilized
+
+    # Head-IMU leveling. The head can tilt on the neck (no neck encoder, sensor
+    # is fixed to base_link in the URDF), so the static sensor_mount_rpy cannot
+    # track it and the pelvis IMU does not ride on the head. The Mid-360's OWN
+    # IMU does: a complementary filter (head gyro for fast tilt, low-passed accel
+    # for drift-free gravity) estimates the gravity direction, and the cloud is
+    # leveled to it. When head_imu_leveling is true this OVERRIDES the static
+    # mount / gravity_align_attenuation path above (sensor_mount_rpy still drives
+    # the self-filter geometry). Bag-measured floor-normal tilt on
+    # g1_planner_tune_20260710_175531: static p50 1.40 / p90 3.02 / p99 5.24 deg
+    # vs head-IMU p50 0.42 / p90 2.60 / p99 6.32 deg -- clearly better typical,
+    # slightly worse worst-1% (estimate overshoot on the most dynamic sweeps).
+    # Floor-plane leveling (PRIMARY): fit the ground plane each sweep and rotate
+    # its normal to +z, so the floor is level by construction -- robust to head
+    # tilt, no IMU/gyro-bias/extrinsic dependence. Holds the last good normal when
+    # a sweep lacks floor; falls back to the static mount only until the first
+    # floor is seen. Assumes ~flat ground (would level to a ramp, not gravity).
+    # TEMPORARILY DISABLED: the per-sweep floor fit + low-pass lagged during turns
+    # and mis-rotated the nav cloud, corrupting /scan (slam localization) and the
+    # local costmap. Falls back to the original static-mount righting below.
+    floor_plane_leveling: false
+    floor_z_min: -1.6      # cloud-frame floor band (sensor ~1.24 m above floor)
+    floor_z_max: -0.7
+    floor_r_min: 0.5
+    floor_r_max: 6.0
+    floor_min_points: 250
+    floor_inlier_thresh: 0.05
+    floor_normal_lowpass: 0.2   # per-sweep blend of the fitted normal (jitter reject)
+    floor_max_tilt_deg: 12.0    # reject implausible fits (obstacle mistaken for floor)
+
+    # Head-IMU leveling (fallback, OFF): rides on the head so it can track tilt
+    # where the floor is not visible, but live it fought Mid-360 gyro-bias DRIFT
+    # (~0.08 rad/s over minutes) even with online bias adaptation, landing no
+    # better than raw. Kept for no-floor scenes; enable only after refining the
+    # extrinsic (multi-pose) and bias handling. See the head_imu_* params below.
+    head_imu_leveling: false
+    leveling_imu_topic: /lidar/imu          # head-mounted Mid-360 IMU (m/s^2 + rad/s)
+    # Still-pose calibration: head-IMU gravity-up and matching cloud floor-normal-up
+    # (fit from the still segment); their shortest-arc rotation is 2 of 3 extrinsic DOF.
+    head_imu_ref_up: [-0.0517, 0.0095, -0.9986]
+    cloud_ref_up: [-0.0233, 0.0211, 0.9995]
+    # Remaining yaw-about-gravity DOF, fit by minimizing run-wide floor tilt.
+    # Recalibrate with a multi-pose (varied head tilt) capture for best accuracy.
+    head_imu_extrinsic_yaw_deg: -154.0
+    head_imu_comp_gain: 0.01                 # accel correction weight (rejects gait accel)
+    # Gyro bias is large on the Mid-360 (~0.24 rad/s) and unit/temperature specific;
+    # left at zero it is auto-estimated over the first head_imu_bias_init_sec while
+    # the robot is held still during the nav-delay. Set explicitly to skip auto-est.
+    head_imu_gyro_bias: [0.0, 0.0, 0.0]
+    head_imu_bias_init_sec: 2.0
 
     # Self-filter: remove the robot's own body returns. The real Mid-360 sees the
     # torso/shoulders/arms/legs (it never returns its own head housing), exactly like
@@ -58,7 +129,17 @@ distortion_corrector:
     robot_max_y: 0.26
     robot_min_z: -0.90
     robot_max_z: 0.55
-    min_radius: 0.20
+    # Near-field self-return guard. The head-mounted Mid-360 returns off the
+    # robot's own head/shoulder band (z ~1.0-1.4 m in the sensor frame) at
+    # 0.19-0.51 m range that the body box (in pelvis frame) does not cover;
+    # those produced 356 near-field lethal marks and both footprint-lethal
+    # costmap grids. A 0.55 m spherical guard removes them (self-band events
+    # 356 -> 8, footprint-lethal grids 2/560 -> 0). BLIND RADIUS: real
+    # obstacles within 0.55 m of the sensor are dropped; the trailing operator
+    # (0.5-2.8 m) still marks (rear-sector lethal instances within ~1% of the
+    # 0.20 m baseline). collision_monitor/STVL consume the same undistorted
+    # cloud, so this 0.55 m sphere is the documented near-field blind zone.
+    min_radius: 0.55
 
     # Mid-360 position in base_link(pelvis) frame (real mount, from the official URDF).
     sensor_x_in_base: -0.00368

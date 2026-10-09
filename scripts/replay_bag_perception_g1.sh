@@ -104,6 +104,9 @@ if grep -q "name: /livox/lidar$" "$BAG_DIR/metadata.yaml" \
   PLAY_TOPICS=(/livox/lidar /livox/imu /imu/data)
   PROFILE_LAUNCH_ARGS=(
     lidar_input_topic:=/livox/lidar
+    # Mid-360 cloud stamps drift vs the host clock (~20 ms/s); restamp at the
+    # canonical relay exactly as the live G1 bringup does.
+    restamp_lidar_points:=true
     use_body_imu:=true
     distortion_imu_topic:=/imu/data
     distortion_params:="${WS_ROOT}/install/robot_nav/share/robot_nav/config/distortion_corrector_g1.yaml"

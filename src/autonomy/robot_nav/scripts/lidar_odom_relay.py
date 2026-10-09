@@ -11,10 +11,12 @@ DLIO outputs all-zero covariances; this relay:
        - Stale updates (slow scan matching)
        - Velocity twist jumps (proxy for scan glitch)
        - Fast rotation (scan matching degrades)
-       - Position jumps (physically impossible displacement in one frame)
-     Position jumps bypass EMA so a single bad frame is immediately seen as
-     max-uncertainty; last_x/last_y are NOT updated on a jump so sustained
-     wrong-position settling keeps triggering the detector.
+       - Position jumps (physically impossible displacement over a
+         nominal_dt window; windowed so 100 Hz IMU-propagated streams are
+         judged at scan cadence, not per message)
+     Position jumps bypass EMA so a bad window is immediately seen as
+     max-uncertainty; the anchor position is NOT advanced on a jump so
+     sustained wrong-position settling keeps triggering the detector.
 """
 
 import math
@@ -71,8 +73,15 @@ class LidarOdomRelay(Node):
         self._alpha = float(self.get_parameter("scale_alpha").value)
 
         self._last_stamp: float | None = None
-        self._last_x: float = 0.0
-        self._last_y: float = 0.0
+        # Position-jump anchor: displacement is evaluated over windows of at
+        # least nominal_dt, not per message. DLIO publishes at IMU rate when
+        # IMU integration is on (100 Hz on the G1), and a normal cm-scale
+        # scan-match correction between 10 ms stamps reads as several m/s --
+        # per-frame evaluation flags ~1% of healthy frames as teleports and
+        # pins the covariance at max_scale through every turn.
+        self._anchor_stamp: float | None = None
+        self._anchor_x: float = 0.0
+        self._anchor_y: float = 0.0
         self._last_vx: float = 0.0
         self._last_vy: float = 0.0
         self._scale_smooth: float = 1.0
@@ -110,20 +119,37 @@ class LidarOdomRelay(Node):
                 # missing one frame (2x nominal_dt) gives 4x covariance.
                 scale = max(scale, (dt / self._nominal_dt) ** 2)
 
-                # Position jump: if the displacement implies a speed beyond the
-                # robot's physical ceiling it is a scan-matching artifact.
-                # Do NOT update tracked position on a jump -- sustained wrong-
-                # position settling continues to appear as a jump next frame.
-                delta_pos = math.hypot(x - self._last_x, y - self._last_y)
-                if delta_pos / dt > self._max_pos_speed:
+                # Velocity twist jump: proxy for scan glitch. Compares reported
+                # twist values, so it is publish-rate independent.
+                dv = math.hypot(vx - self._last_vx, vy - self._last_vy)
+                if dv > self._v_jump_thr:
+                    scale = max(scale, dv / self._v_jump_thr)
+
+        # Position jump: displacement speed beyond the robot's physical ceiling
+        # is a scan-matching artifact. Evaluated over windows of >= nominal_dt
+        # so high-rate IMU-propagated streams are judged at scan cadence, same
+        # as a 10 Hz stream. Do NOT advance the anchor on a jump -- sustained
+        # wrong-position settling keeps appearing as a jump on later windows.
+        if self._anchor_stamp is None:
+            self._anchor_stamp = stamp
+            self._anchor_x = x
+            self._anchor_y = y
+        else:
+            window_dt = stamp - self._anchor_stamp
+            if window_dt >= self._nominal_dt:
+                delta_pos = math.hypot(x - self._anchor_x, y - self._anchor_y)
+                if delta_pos / window_dt > self._max_pos_speed:
                     pos_jump = True
                     scale = self._max_scale
                 else:
-                    # Velocity twist jump: secondary proxy for scan glitch.
-                    # Only checked when no position jump to avoid double-counting.
-                    dv = math.hypot(vx - self._last_vx, vy - self._last_vy)
-                    if dv > self._v_jump_thr:
-                        scale = max(scale, dv / self._v_jump_thr)
+                    self._anchor_stamp = stamp
+                    self._anchor_x = x
+                    self._anchor_y = y
+            elif window_dt < 0.0:
+                # Time went backwards (bag loop / clock reset): re-anchor.
+                self._anchor_stamp = stamp
+                self._anchor_x = x
+                self._anchor_y = y
 
         # Fast rotation: scan matching degrades, position estimates less reliable.
         if omega > self._omega_thr:
@@ -132,13 +158,19 @@ class LidarOdomRelay(Node):
         self._last_stamp = stamp
         self._last_vx = vx
         self._last_vy = vy
-        if not pos_jump:
-            self._last_x = x
-            self._last_y = y
 
         return min(scale, self._max_scale), pos_jump
 
     def _cb(self, msg: Odometry) -> None:
+        # DLIO republishes scan-match-corrected poses under an already-used
+        # header stamp (~17% of messages) plus rare zero stamps. This relay
+        # forwards them all: robot_localization on the EKF path resolves
+        # same-stamp measurements on its own, and the C8 offline gate shows
+        # that de-duplicating HERE (holding a message until a newer stamp
+        # arrives) adds a measurement period of latency and thins samples
+        # during turns, degrading the EKF (turn yaw p90 2.8 -> 4.2 deg). The
+        # non-increasing-stamp TF problem is fixed at odom_to_tf, which is the
+        # node that rebroadcasts this stream directly as TF.
         raw, pos_jump = self._compute_scale(msg)
 
         if pos_jump:

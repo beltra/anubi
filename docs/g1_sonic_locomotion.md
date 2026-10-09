@@ -55,6 +55,26 @@ Key contracts:
   same time.** Two writers on `rt/lowcmd` is dangerous. Switching controller
   means stopping one process, verifying it is dead, then starting the other.
 
+**Deployment topology -- on-board Jetson vs tethered nav PC.** anubi ships the
+nav-PC/Jetson SPLIT above by design: with SONIC, keep the Nav2 stack on an
+ethernet-tethered laptop and run only `g1_deploy_onnx_ref` on the Jetson. The
+confirmed-working reference (`/home/beltra/unitree`) instead runs everything on-board
+the Orin Nano, but only because it replaced Nav2 with a much lighter planner (CUDA
+voxel map + Python VFH/Pure-Pursuit). anubi's Nav2 stack (MPPI controller + STVL voxel
+layer + EKF + slam_toolbox) is several times heavier and would oversubscribe the 6-core
+Orin Nano while SONIC needs 3 clean cores -- exactly the CPU-contention that starves
+LowState and drops the robot (section 4.5). So do NOT co-locate anubi's Nav2 stack with
+SONIC on the Jetson without first swapping the planner; that is a separate effort. The
+AMO variant is lighter on the ROS side (the policy runs in its own GPU-bound container)
+and is more plausible on-board, but validate core headroom first.
+
+Because the nav stack (and therefore the Livox driver) runs on the nav PC in the split,
+`MID360_config.json` `host_net_info` must be the **nav PC's** IP on the robot LAN
+(anubi default `192.168.123.224`). The reference file uses `192.168.123.99` because it
+runs the driver on-board the Jetson. The LiDAR's own IP (`192.168.123.120`) and the
+`roll:180` mount are identical in both and are robot-side facts -- do not change them.
+Set `host_net_info` to whatever machine actually runs `livox_ros_driver2`.
+
 Velocity envelopes (Nav2 + bridge caps are matched per profile, and are the
 ONLY yaw limits in the sonic chain -- SONIC itself does not clamp yaw or the
 ZMQ speed input):
@@ -430,9 +450,22 @@ anubi runs a **split topology** (the nav stack is on the nav PC, not the Jetson)
 the Jetson runs only `g1_deploy_onnx_ref` and there is no co-resident perception load
 to fight -- but JetPack housekeeping and the DDS pool still share the general cores,
 so the same rule holds: keep the controller on cores 2-5 and leave 0,1 for the OS.
-(On a single-host deployment where nav and SONIC share one Jetson, split the 6 cores
-instead -- perception on 0,1,2 and SONIC on 3,4,5 -- and pin every nav process with
-`taskset -c 0,1,2`; that case does not apply to the anubi nav-PC/Jetson split.)
+
+`start_sonic_pinned.sh` also applies best-effort `jetson_clocks` (max clocks), which
+keeps the RT cores off the 729 MHz idle step so the 500 Hz writer/control loops never
+wait on a frequency ramp. It is a no-op if `jetson_clocks` is absent or sudo is denied.
+
+**Fully on-board alternative (reference topology).** The confirmed-working reference
+deploy (`/home/beltra/unitree`) runs nav AND SONIC on one Jetson Orin Nano with a
+measured **3/3 core split**: perception+nav on cores 0,1,2 (`taskset -c 0,1,2`,
+`OMP_NUM_THREADS=2` to cap DLIO's OpenMP) and SONIC on cores 3,4,5 (`SONIC_CORES=3-5`,
+`SONIC_CPU_MAIN/INPUT/PLANNER=3 WRITER=4 CONTROL=5`). That split was measured strictly
+better than 2/4 -- identical LowState health (~5 ms p50, 0 losses) while the nav side
+dropped from ~94% to ~80% per core -- but it ONLY fits because the reference planner is
+featherweight (CUDA voxel map + a pure-Python VFH/Pure-Pursuit follower). anubi's Nav2
+stack (MPPI + STVL + EKF + slam_toolbox) is several times heavier and will not co-reside
+with SONIC on 3 cores without swapping the planner; that is why anubi keeps the
+nav-PC/Jetson split. See "Deployment topology" note below.
 
 Verify on a running controller (every thread PSR should be within 2-5):
 
@@ -461,11 +494,30 @@ gave 0 LowState losses in the source deployment, so this is a "last 5%" layer.
   snapping back to a reset integral). Turning is injected as
   `face = dth + wz * facing_lookahead_sec`, so `facing_lookahead_sec` MUST be > 0
   or the robot never turns; it converges back to the measured heading as Nav2
-  shrinks `wz`. While idle (no translation, no turn) the heading is LATCHED and the
-  anchor re-set each tick, so measured-yaw drift is absorbed instead of slowly
-  rotating the torso to chase it (most visible on a hoist). If `/odom` is
-  unavailable at startup the bridge holds SONIC's start pose (IDLE) until the first
-  odometry message arrives.
+  shrinks `wz`. If `/odom` is unavailable at startup the bridge holds SONIC's start
+  pose (IDLE) until the first odometry message arrives.
+- **Idle heading hold (drift vs real rotation):** while idle (no translation, no
+  turn) the held facing is LATCHED, but the anchor is advanced by
+  `_update_hold_anchor`: SLOW measured-yaw change (odom/DLIO drift, capped at
+  `hold_drift_absorb_rad_s: 0.01` rad/s) is absorbed into the frame anchor so the
+  torso does not rotate to chase it (most visible on a hoist), while anything FASTER
+  (real rotation -- a hoist swing, balance steps) flows into the held facing so the
+  bridge frame stays aligned with SONIC's internal world frame. The naive "re-anchor
+  every tick" absorbs real rotation too, which skews the two frames and makes the NEXT
+  facing command start its heading correction in the WRONG direction -- this is the
+  wrong-way-turn fix from the confirmed-working reference.
+- **Replan-storm guard (LowState safety):** SONIC replans its ~28 ms planner model on
+  ANY change of movement/facing/speed, and the bridge recomputes those from measured
+  yaw every tick, so yaw noise alone would drive a 30 Hz replan storm that saturates
+  the planner core and starves the DDS LowState threads (past the 500 ms LowState-absent
+  safety the robot collapses -- the same failure as unpinned threads, section 4.5). The
+  SENT vectors are deadbanded against the last sent value (`movement_deadband_rad`,
+  `facing_deadband_rad`, `speed_deadband`) so a steady walk emits a byte-identical
+  vector (0 replans) while the 30 Hz message still flows as SONIC's input heartbeat.
+- **Start-settle gate:** after the `start={1,planner=1}` handshake the bridge waits
+  `start_settle_sec: 1.0` BEFORE subscribing to cmd_vel/odom, so no velocity can reach
+  the controller until its soft-hold -> planner-driven control switch has settled. This
+  is separate from the `--nav-delay` DLIO settle in the launch.
 - **speed_gain:** 1.18 compensates the planner's ~0.85x speed realization and
   is applied AFTER the caps (caps are realized m/s). Set it to 1.0 to fall
   back to uncorrected upstream behavior; Nav2 still navigates, just slower

@@ -56,6 +56,13 @@ cd "$SONIC_DIR"
 # Per-boot prep: free the unified memory TensorRT needs; ensure exactly one controller.
 sudo -n bash -c "sync; echo 3 > /proc/sys/vm/drop_caches" 2>/dev/null || \
   echo ">> note: could not drop_caches (needs sudo) -- continuing" >&2
+# Best-effort max clocks -- keeps the RT cores off the 729 MHz idle step so the 500 Hz
+# writer/control loops never wait on a frequency ramp. Passwordless first, interactive
+# sudo fallback (add a sudoers one-liner for jetson_clocks to drop the prompt).
+if command -v jetson_clocks >/dev/null; then
+  sudo -n jetson_clocks >/dev/null 2>&1 || sudo jetson_clocks || \
+    echo ">> note: jetson_clocks not applied -- clocks may idle at 729 MHz" >&2
+fi
 pkill -9 -f "[g]1_deploy_onnx_ref" 2>/dev/null || true
 
 # GR00T_DIR and SONIC_ZMQ_HOST MUST be passed INTO the launched command: a detached

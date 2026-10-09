@@ -64,7 +64,9 @@
 
     # base_footprint(floor) -> Mid-360 IMU, still INVERTED (driver never rights
     # the IMU): nominal Ry(0.04014) * Rx(pi), as dlio_params_g1_real.yaml.
-    extrinsics/baselink2imu/t: [-0.00368, 0.00003, 1.24018]
+    # t includes the Mid-360 internal lidar->IMU lever arm, as
+    # dlio_params_g1_real.yaml (same x/y, z on the footprint datum).
+    extrinsics/baselink2imu/t: [0.00908, -0.02326, 1.28382]
     extrinsics/baselink2imu/R: [ 0.99919457, 0.0, -0.04012671,
                                  0.0,       -1.0,  0.0,
                                 -0.04012671, 0.0, -0.99919457]

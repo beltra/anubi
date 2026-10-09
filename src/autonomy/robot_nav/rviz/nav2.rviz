@@ -512,7 +512,10 @@ Visualization Manager:
       Name: Current View
       Near Clip Distance: 0.009999999776482582
       Scale: 96.57772827148438
-      Target Frame: base_footprint
+      # map keeps the camera world-fixed: with a robot-attached target frame
+      # the camera yaws with the robot and the whole scene (map, clouds,
+      # costmaps) appears to rotate around a stationary robot.
+      Target Frame: map
       Value: TopDownOrtho (rviz_default_plugins)
       X: 0.8728576898574829
       Y: 1.2644249200820923

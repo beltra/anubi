@@ -36,3 +36,12 @@ cmd_vel_to_sonic:
     cmd_timeout:     0.3
     # Idempotent start/planner-mode command re-send period.
     start_resend_sec: 1.0
+    # Settle after the start handshake before subscribing (soft-hold -> planner switch).
+    start_settle_sec: 1.0
+    # Idle heading hold: absorb slow yaw drift, follow real rotation (wrong-way-turn fix).
+    hold_drift_absorb_rad_s: 0.01
+    # Replan-storm guard: deadband the sent movement/facing/speed so a steady walk emits
+    # a byte-identical vector (SONIC skips its ~28 ms replan; protects LowState/RT loop).
+    movement_deadband_rad: 0.05
+    facing_deadband_rad:   0.05
+    speed_deadband:        0.03

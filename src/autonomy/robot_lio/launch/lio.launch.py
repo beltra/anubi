@@ -17,6 +17,7 @@ from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -38,9 +39,35 @@ def generate_launch_description():
             description="Start DLIO map node to expose /save_pcd map export service",
         ),
         DeclareLaunchArgument("start_lidar_points_relay", default_value="false"),
+        # Rewrite cloud header stamps onto the local clock in the points relay.
+        # The Mid-360 stamps clouds from its unsynchronized internal timebase
+        # (measured drifting ~20 ms/s vs the host, -2.9 s over one run);
+        # stamp-based consumers (STVL, collision_monitor, distortion-corrector
+        # IMU matching, RViz) then act on poses seconds old. Per-robot opt-in:
+        # the Go2's utlidar clouds are host-stamped and must NOT be restamped.
+        # DLIO reconciles the timebases internally and is fine either way.
+        DeclareLaunchArgument("restamp_lidar_points", default_value="false"),
+        # Sweep-start age model for the restamp relay: "fixed" subtracts
+        # restamp_offset_sec; "interval" tracks the measured inter-arrival
+        # interval (the delivered sweep is about one delivery interval old
+        # when the device drops sweeps); "span" uses the cloud's per-point
+        # timestamp span.
+        DeclareLaunchArgument("restamp_offset_mode", default_value="fixed"),
+        DeclareLaunchArgument("restamp_offset_sec", default_value="0.10"),
+        DeclareLaunchArgument("restamp_transport_offset_sec", default_value="0.0"),
         DeclareLaunchArgument("start_lidar_imu_relay", default_value="false"),
         DeclareLaunchArgument("lidar_points_input_topic", default_value="/lidar/points"),
         DeclareLaunchArgument("lidar_points_topic", default_value="/lidar/points"),
+        # DLIO's cloud input. Defaults to the canonical topic: the restamp
+        # relay shifts per-point timestamps together with the header, so the
+        # cloud stays internally consistent and DLIO's deskew is unaffected.
+        # Escape hatch for feeding DLIO a different (e.g. raw driver) topic.
+        # Declared after lidar_points_topic: the default substitution is
+        # evaluated at declaration time.
+        DeclareLaunchArgument(
+            "dlio_pointcloud_topic",
+            default_value=LaunchConfiguration("lidar_points_topic"),
+        ),
         DeclareLaunchArgument("lidar_points_frame", default_value="lidar_link"),
         DeclareLaunchArgument(
             "publish_lidar_points_frame_tf",
@@ -84,7 +111,32 @@ def generate_launch_description():
         name="lidar_points_relay",
         output="screen",
         arguments=[lidar_points_input_topic, lidar_points_topic],
-        condition=IfCondition(LaunchConfiguration("start_lidar_points_relay")),
+        condition=IfCondition(PythonExpression([
+            "'", LaunchConfiguration("start_lidar_points_relay"), "' == 'true'",
+            " and '", LaunchConfiguration("restamp_lidar_points"), "' != 'true'",
+        ])),
+    )
+
+    pointcloud_restamp_relay = Node(
+        package="robot_nav",
+        executable="cloud_restamp_relay.py",
+        name="lidar_points_relay",
+        output="screen",
+        parameters=[{
+            "use_sim_time": use_sim_time,
+            "input_topic": lidar_points_input_topic,
+            "output_topic": lidar_points_topic,
+            "offset_mode": LaunchConfiguration("restamp_offset_mode"),
+            "restamp_offset_sec": ParameterValue(
+                LaunchConfiguration("restamp_offset_sec"), value_type=float),
+            "transport_offset_sec": ParameterValue(
+                LaunchConfiguration("restamp_transport_offset_sec"),
+                value_type=float),
+        }],
+        condition=IfCondition(PythonExpression([
+            "'", LaunchConfiguration("start_lidar_points_relay"), "' == 'true'",
+            " and '", LaunchConfiguration("restamp_lidar_points"), "' == 'true'",
+        ])),
     )
 
     lidar_points_frame_tf = Node(
@@ -155,7 +207,7 @@ def generate_launch_description():
             {"publish_tf": LaunchConfiguration("dlio_publish_tf")},
         ],
         remappings=[
-            ("pointcloud", lidar_points_topic),
+            ("pointcloud", LaunchConfiguration("dlio_pointcloud_topic")),
             ("imu", lidar_imu_topic),
             ("odom", lidar_odom_topic),
             # GICP-registered per-scan cloud in the odom frame: each scan is
@@ -196,6 +248,7 @@ def generate_launch_description():
 
     return LaunchDescription(args + [
         pointcloud_relay,
+        pointcloud_restamp_relay,
         lidar_points_frame_tf,
         imu_relay,
         lidar_imu_tf,

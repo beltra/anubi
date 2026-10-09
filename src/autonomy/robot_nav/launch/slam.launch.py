@@ -102,12 +102,23 @@ def generate_launch_description():
         # disables the gate. Only meaningful for the accumulated (mapping)
         # path; safety consumers must keep using the ungated cloud.
         DeclareLaunchArgument("scan_accumulation_max_yaw_rate", default_value="0.0"),
+        # Gate behavior when the yaw gate trips: "drop" publishes nothing
+        # that cycle; "single" publishes the newest frame alone so /scan
+        # keeps the input rate during sustained spins.
+        DeclareLaunchArgument("scan_accumulation_yaw_gate_mode", default_value="drop"),
         # scan_cloud_topic already expressed in odom (e.g. DLIO's registered
         # /lidar/points_registered): accumulate by concatenation and apply the
         # near-body radius filter (that cloud bypasses the distortion
         # corrector's body-box self-filter).
         DeclareLaunchArgument("scan_cloud_in_fixed_frame", default_value="false"),
         DeclareLaunchArgument("scan_self_filter_radius", default_value="0.0"),
+        # Rear-sector exclusion for the MAPPING scan only (keeps a trailing
+        # operator out of the painted map). Safety consumers stay on the
+        # unfiltered cloud. 0.0 disables.
+        DeclareLaunchArgument("scan_exclude_rear_sector_half_width_deg",
+                              default_value="0.0"),
+        DeclareLaunchArgument("scan_exclude_rear_sector_max_range",
+                              default_value="1.5"),
         # Skip slam_toolbox itself (mapping AND localization nodes) while
         # still running the perception pipeline that produces /scan. Used by
         # bag-replay flows where the bag already carries /map and the
@@ -170,8 +181,13 @@ def generate_launch_description():
             "accumulation_window_sec": scan_accumulation_window_sec,
             "max_frames": scan_accumulation_max_frames,
             "max_yaw_rate_rad_s": LaunchConfiguration("scan_accumulation_max_yaw_rate"),
+            "yaw_gate_mode": LaunchConfiguration("scan_accumulation_yaw_gate_mode"),
             "input_cloud_in_fixed_frame": LaunchConfiguration("scan_cloud_in_fixed_frame"),
             "self_filter_radius": LaunchConfiguration("scan_self_filter_radius"),
+            "exclude_rear_sector_half_width_deg": LaunchConfiguration(
+                "scan_exclude_rear_sector_half_width_deg"),
+            "exclude_rear_sector_max_range": LaunchConfiguration(
+                "scan_exclude_rear_sector_max_range"),
         }],
         condition=IfCondition(accumulate_scan_cloud),
     )

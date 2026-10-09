@@ -308,7 +308,9 @@ def generate_launch_description():
             "use_sim_time": use_sim_time,
             "input_topic": "/lidar_odom",
             "output_topic": "/lidar_odom_reliable",
-            "pose_cov": [0.03, 0.03, 0.05, 0.03, 0.03, 0.02],
+            # Keep in lockstep with g1_bringup.launch.py: tight x/y/yaw trust
+            # so the EKF tracks the 100 Hz DLIO stream without turn lag.
+            "pose_cov": [0.01, 0.01, 0.05, 0.03, 0.03, 0.004],
             "twist_cov": [0.02, 0.02, 0.05, 0.02, 0.02, 0.02],
             "max_pos_speed": 1.5,
             "max_scale": 100.0,
