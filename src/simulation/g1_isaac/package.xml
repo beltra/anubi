@@ -13,7 +13,7 @@
     odometry (/odom_raw) is pre-wired behind launch args that default off.
   </description>
   <maintainer email="gabriel.voss01@gmail.com">Maintainer</maintainer>
-  <license>Apache-2.0</license>
+  <license>AGPL-3.0-only</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 

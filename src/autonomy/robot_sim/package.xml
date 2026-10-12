@@ -20,7 +20,7 @@
       (requires d1_sim/urdf/d1_sim.urdf.xacro to be implemented)
   </description>
   <maintainer email="gabriele.beltrami@talosrobotics.ai">Gabriele Beltrami</maintainer>
-  <license>Apache-2.0</license>
+  <license>AGPL-3.0-only</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 

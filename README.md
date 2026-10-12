@@ -336,3 +336,18 @@ Ordered by current value to the project. Difficulty is a rough implementation es
 | 35 | M | SW Engineering | Create hardware-in-the-loop validation checklists | Document and automate the safest possible real-robot validation sequence: static checks, wheels/legs unloaded where applicable, low-speed first command, safety stop, mapping, localization, then autonomous goal. This reduces risk when changes leave simulation. |
 | 36 | M | SW Engineering | Add release and configuration versioning | Version maps, Nav2 profiles, robot parameters, route graphs, and known-good launch combinations. This makes it possible to know what was tested on a given robot and environment. |
 | 37 | S | SW Engineering | Remove or isolate placeholders | Either implement, hide, or clearly quarantine placeholder executables such as `dynamic_obstacle_tracker.py` so they cannot be launched accidentally. This keeps the installed surface area honest. |
+
+## License
+
+Copyright (C) 2026 beltra <gbeve2002@gmail.com>
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License, version 3, as published by
+the Free Software Foundation. It is distributed WITHOUT ANY WARRANTY; see
+[LICENSE](LICENSE) for the full text.
+
+Third-party code keeps its own license and is not covered by the above:
+
+- `src/vendors/` — CHAMP (BSD), DLIO (MIT), livox_ros_driver2 (MIT, bundles RapidJSON); see the license file in each directory.
+- `src/core_interfaces/unitree_api`, `src/core_interfaces/unitree_go` — Unitree ROS 2 message definitions.
+- `src/platform/g1_description/meshes`, `src/platform/go2_description/meshes` — Unitree robot meshes.

@@ -19,7 +19,7 @@
     Scenario YAML files: share/sim_scenarios/scenarios/
   </description>
   <maintainer email="gabriele.beltrami@talosrobotics.ai">Gabriele Beltrami</maintainer>
-  <license>Apache-2.0</license>
+  <license>AGPL-3.0-only</license>
 
   <buildtool_depend>ament_python</buildtool_depend>
 

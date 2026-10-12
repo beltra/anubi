@@ -20,7 +20,7 @@ setup(
     maintainer='Maintainer',
     maintainer_email='todo@example.com',
     description='Runtime obstacle management for Gazebo simulation',
-    license='Apache-2.0',
+    license='AGPL-3.0-only',
     entry_points={
         'console_scripts': [
             'scenario_manager = sim_scenarios.scenario_manager_node:main',
