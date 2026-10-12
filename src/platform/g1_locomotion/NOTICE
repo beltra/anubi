@@ -1,0 +1,17 @@
+g1_locomotion is licensed under the Apache License, Version 2.0 (see LICENSE).
+It is derived from the following Apache-2.0 works:
+
+- AMO: Adaptive Motion Optimization (https://github.com/OpenTeleVision/AMO)
+  Copyright 2025 Jialong Li, Xuxin Cheng, Tianshu Huang, Xiaolong Wang
+  g1_locomotion/assets/amo_jit.pt, adapter_jit.pt and adapter_norm_stats.pt
+  are unmodified copies (also redistributed by Psi0 under real/teleop/).
+
+- Psi0 (https://github.com/physical-superintelligence-lab/Psi0)
+  Copyright 2026 PSI-lab, USC
+  amo_policy_runtime.py re-implements Psi0's AMO inference path.
+
+- Psi0 real/teleop, based on Unitree's avp_teleoperate
+  Copyright 2024 HangZhou YuShu TECHNOLOGY CO.,LTD. ("Unitree Robotics")
+  robot_dds_io.py is extracted and modified from real/teleop/robot_control/robot_body.py.
+
+Modifications Copyright (C) 2026 beltra <gbeve2002@gmail.com>, also under Apache-2.0.

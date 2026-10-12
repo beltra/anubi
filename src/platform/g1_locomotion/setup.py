@@ -24,7 +24,7 @@ setup(
     maintainer='Gabriel Voss',
     maintainer_email='gabriel.voss01@gmail.com',
     description='Self-contained Unitree G1 AMO legs-only locomotion driver.',
-    license='Proprietary',
+    license='Apache-2.0',
     tests_require=['pytest'],
     # Ensure the .pt assets are packaged when building a wheel/sdist.
     include_package_data=True,
