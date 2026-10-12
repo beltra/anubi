@@ -1,5 +1,5 @@
 g1_locomotion is licensed under the Apache License, Version 2.0 (see LICENSE).
-It is derived from the following Apache-2.0 works:
+It is derived from the following works (Apache-2.0 unless noted):
 
 - AMO: Adaptive Motion Optimization (https://github.com/OpenTeleVision/AMO)
   Copyright 2025 Jialong Li, Xuxin Cheng, Tianshu Huang, Xiaolong Wang
@@ -13,5 +13,13 @@ It is derived from the following Apache-2.0 works:
 - Psi0 real/teleop, based on Unitree's avp_teleoperate
   Copyright 2024 HangZhou YuShu TECHNOLOGY CO.,LTD. ("Unitree Robotics")
   robot_dds_io.py is extracted and modified from real/teleop/robot_control/robot_body.py.
+
+- G1 Navigation AMO inference scaffold (https://github.com/talos-robotics-ai/Navigation, amo/)
+  Copyright 2026 Lorenzo Ortolani (Relo02)
+  amo_driver.py adapts CommandSource, the WebSocket command server,
+  JointSmoother, Pacer and the control-loop signal handling from
+  amo/amo_inference.py and amo/joint_filters.py.
+  EXCEPTION: that repository has no license, so these portions are NOT
+  covered by Apache-2.0 and are used pending the author's permission.
 
 Modifications Copyright (C) 2026 beltra <gbeve2002@gmail.com>, also under Apache-2.0.

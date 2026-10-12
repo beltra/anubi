@@ -350,5 +350,5 @@ Third-party code keeps its own license and is not covered by the above:
 
 - `src/vendors/` — CHAMP (BSD), DLIO (MIT), livox_ros_driver2 (MIT, bundles RapidJSON); see the license file in each directory.
 - `src/core_interfaces/unitree_api`, `src/core_interfaces/unitree_go` — Unitree ROS 2 message definitions.
-- `src/platform/g1_locomotion` — Apache-2.0, derived from AMO (UCSD) and Psi0 (PSI-lab, USC); see its NOTICE.
+- `src/platform/g1_locomotion` — Apache-2.0, derived from AMO (UCSD) and Psi0 (PSI-lab, USC). `amo_driver.py` also contains unlicensed portions by Lorenzo Ortolani, pending permission; see its NOTICE.
 - `src/platform/g1_description/meshes`, `src/platform/go2_description/meshes` — Unitree robot meshes.

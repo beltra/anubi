@@ -7,6 +7,12 @@ JointSmoother / Pacer / safety guards) to drive the *Psi0* AMO policy
 (amo_jit.pt) via this package's AmoPolicy + G1DDSInterface. The arms are held
 at their default pose; only the 15-DoF lower body (legs + waist) is driven.
 
+LICENSE STATUS: the scaffold parts of this file are adapted from Lorenzo
+Ortolani's amo/amo_inference.py and amo/joint_filters.py in
+https://github.com/talos-robotics-ai/Navigation, which carries no license.
+Those portions are NOT covered by this package's Apache-2.0 license until
+their author grants one. See ../NOTICE.
+
 Control loop (250 Hz)::
 
     measured_state ─► AmoPolicy.step(vx,vy,yaw) ─► JointSmoother ─► DDS rt/lowcmd
