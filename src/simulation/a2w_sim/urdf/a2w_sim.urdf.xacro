@@ -1,0 +1,80 @@
+<?xml version="1.0"?>
+<!--
+  a2w_sim.urdf.xacro - Unitree A2-W (Pro) for Gazebo Fortress (Ignition Gazebo 6).
+
+  Wheeled-base sim: no gait or wheel dynamics. The legs are fixed in the standing
+  pose (a2w_description fixed_legs:=true), so the URDF->SDF conversion lumps the
+  robot into one base_link, and Fortress VelocityControl slides it from a body
+  twist. This is the same contract as the real robot, where the onboard sport
+  controller turns SportClient::Move(vx, vy, vyaw) into wheel/leg motion.
+
+  Canonical topic / frame parity (docs/topic_map.md, A2-W section):
+     front JT128 -> ign /a2w/front_lidar/points -> ROS /lidar/front/points (front_lidar_link)
+     rear JT128  -> ign /a2w/rear_lidar/points  -> ROS /lidar/rear/points  (rear_lidar_link)
+     cloud_merger: front + rear -> /lidar/points (lidar_link)
+     body IMU    -> /imu/data (imu_link)
+     odometry    -> /model/<robot>/odometry -> ROS /odom_raw -> EKF
+     command     -> ROS /cmd_vel_safe -> ign /model/<robot>/cmd_vel (VelocityControl)
+
+  Fortress only: ignition:: plugin names, no libgazebo_ros_* or gz::.
+-->
+<robot name="a2w" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:arg name="robot_name" default="a2w"/>
+  <xacro:arg name="fixed_legs" default="true"/>
+  <xacro:arg name="lidar_channels" default="64"/>
+  <xacro:arg name="lidar_h_samples" default="180"/>
+
+  <xacro:include filename="$(find a2w_description)/urdf/a2w.urdf.xacro"/>
+  <xacro:include filename="$(find sensor_models)/urdf/jt128_lidar.urdf.xacro"/>
+
+  <gazebo>
+    <plugin filename="ignition-gazebo-velocity-control-system"
+            name="ignition::gazebo::systems::VelocityControl">
+      <topic>/model/$(arg robot_name)/cmd_vel</topic>
+    </plugin>
+  </gazebo>
+
+  <gazebo>
+    <plugin filename="ignition-gazebo-odometry-publisher-system"
+            name="ignition::gazebo::systems::OdometryPublisher">
+      <odom_frame>odom</odom_frame>
+      <robot_base_frame>base_link</robot_base_frame>
+      <odom_publish_frequency>50</odom_publish_frequency>
+      <odom_topic>/model/$(arg robot_name)/odometry</odom_topic>
+    </plugin>
+  </gazebo>
+
+  <gazebo reference="imu_link">
+    <sensor name="imu_sensor" type="imu">
+      <always_on>1</always_on>
+      <update_rate>200</update_rate>
+      <topic>/imu/data</topic>
+      <ignition_frame_id>imu_link</ignition_frame_id>
+      <imu>
+        <angular_velocity>
+          <x><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x><noise type="gaussian"><mean>0</mean><stddev>0.021</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0</mean><stddev>0.021</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0</mean><stddev>0.021</stddev></noise></z>
+        </linear_acceleration>
+      </imu>
+    </sensor>
+  </gazebo>
+
+  <!-- visibility_mask clears bit 1: the spawn step tags the body shell visual
+       (base_link.STL, which encloses both sensor origins) with visibility_flags=2
+       so each gpu_lidar does not return the inside of its own housing. Legs and
+       wheels stay visible and produce self-returns, as on the real robot. -->
+  <xacro:jt128_lidar link_name="front_lidar_link" topic="/a2w/front_lidar"
+                     channels="$(arg lidar_channels)" h_samples="$(arg lidar_h_samples)"
+                     visibility_mask="4294967293"/>
+  <xacro:jt128_lidar link_name="rear_lidar_link" topic="/a2w/rear_lidar"
+                     channels="$(arg lidar_channels)" h_samples="$(arg lidar_h_samples)"
+                     visibility_mask="4294967293"/>
+
+</robot>

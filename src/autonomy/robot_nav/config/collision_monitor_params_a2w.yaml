@@ -1,0 +1,60 @@
+collision_monitor:
+  ros__parameters:
+    # Shared by the A2-W sim and real bringups; nav2.launch.py overrides use_sim_time.
+    use_sim_time: false
+    enabled: True
+    base_frame_id: "base_footprint"
+    odom_frame_id: "odom"
+    cmd_vel_in_topic: "/cmd_vel"
+    cmd_vel_out_topic: "/cmd_vel_collision_free"
+    transform_tolerance: 0.2
+    source_timeout: 0.5
+    base_shift_correction: True
+    stop_pub_timeout: 2.0
+
+    # Unitree A2-W standing envelope: x -0.52..0.42 m (rear knees to front body), y +/-0.29 m (wheels).
+    # The most restrictive triggered action wins (stop > slowdown > approach).
+    # Humble uses max_points semantics: action triggers when points_inside > max_points.
+    polygons: ["ApproachZone", "SlowZone", "StopZone"]
+
+    # APPROACH: projects the footprint (padded ~0.05 m) along the current command and
+    # scales velocity by time-to-collision, so it reacts earlier at higher speed.
+    ApproachZone:
+      type: "polygon"
+      points: [0.47, 0.34, 0.47, -0.34, -0.57, -0.34, -0.57, 0.34]
+      action_type: "approach"
+      time_before_collision: 1.5
+      simulation_time_step: 0.1
+      max_points: 5
+      visualize: True
+      polygon_pub_topic: "/collision_monitor/approach_zone"
+      enabled: True
+
+    SlowZone:
+      type: "polygon"
+      points: [0.80, 0.45, 0.80, -0.45, -0.77, -0.45, -0.77, 0.45]
+      action_type: "slowdown"
+      slowdown_ratio: 0.5
+      max_points: 3
+      visualize: True
+      polygon_pub_topic: "/collision_monitor/slow_zone"
+      enabled: True
+
+    StopZone:
+      type: "polygon"
+      points: [0.52, 0.36, 0.52, -0.36, -0.62, -0.36, -0.62, 0.36]
+      action_type: "stop"
+      max_points: 2
+      visualize: True
+      polygon_pub_topic: "/collision_monitor/stop_zone"
+      enabled: True
+
+    # Self-returns (legs, wheels) are removed upstream by the distortion_corrector
+    # self-filter box, so the cloud can be used down to just above the floor.
+    observation_sources: ["pointcloud"]
+    pointcloud:
+      type: "pointcloud"
+      topic: "/lidar/points_undistorted"
+      min_height: 0.08
+      max_height: 1.2
+      enabled: True

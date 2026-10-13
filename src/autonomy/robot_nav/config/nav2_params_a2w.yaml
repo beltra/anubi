@@ -1,0 +1,571 @@
+# Nav2 profile for the Unitree A2-W (Pro) wheeled quadruped: SmacPlanner2D +
+# MPPI(DiffDrive) + STVL on the merged front+rear Hesai JT128 cloud.
+# Derived from nav2_params_g1.yaml; A2-W-specific values: rectangular footprint
+# spanning body and wheels, and a v1 envelope of vx 1.0 fwd / 0.3 rev m/s and
+# wz +/-1.0 rad/s (the robot is rated far higher; raise after validation).
+# DiffDrive (vy = 0): the wheels sit on fixed axles, and whether sport mode
+# executes vy on wheels is unverified. The sim base accepts vy, so switching to
+# Omni is a config change.
+# use_sim_time is rewritten at launch.
+
+amcl:
+  ros__parameters:
+    use_sim_time: true
+    alpha1: 0.2
+    alpha2: 0.2
+    alpha3: 0.2
+    alpha4: 0.2
+    alpha5: 0.2
+    base_frame_id: "base_footprint"
+    beam_skip_distance: 0.5
+    beam_skip_error_threshold: 0.9
+    beam_skip_threshold: 0.3
+    do_beamskip: false
+    global_frame_id: "map"
+    lambda_short: 0.1
+    laser_likelihood_max_dist: 2.0
+    laser_max_range: 100.0
+    laser_min_range: -1.0
+    laser_model_type: "likelihood_field"
+    max_beams: 60
+    max_particles: 2000
+    min_particles: 500
+    odom_frame_id: "odom"
+    pf_err: 0.05
+    pf_z: 0.99
+    recovery_alpha_fast: 0.0
+    recovery_alpha_slow: 0.0
+    resample_interval: 1
+    robot_model_type: "nav2_amcl::DifferentialMotionModel"
+    save_pose_rate: 0.5
+    sigma_hit: 0.2
+    tf_broadcast: true
+    transform_tolerance: 1.0
+    update_min_a: 0.2
+    update_min_d: 0.25
+    z_hit: 0.5
+    z_max: 0.05
+    z_rand: 0.5
+    z_short: 0.05
+    scan_topic: scan
+    # set_initial_pose: true
+    # initial_pose:
+    #   x: 0.0
+    #   y: 0.0
+    #   z: 0.0
+    #   yaw: 0.0
+
+map_server:
+  ros__parameters:
+    use_sim_time: true
+    yaml_filename: ""  # overridden via --map launch argument
+
+map_saver:
+  ros__parameters:
+    use_sim_time: true
+    save_map_timeout: 5.0
+    free_thresh_default: 0.25
+    occupied_thresh_default: 0.65
+    map_subscribe_transient_local: true
+
+planner_server:
+  ros__parameters:
+    use_sim_time: true
+    expected_planner_frequency: 5.0
+    planner_plugins: ["GridBased"]
+
+    GridBased:
+      # SmacPlanner2D: pure 2D grid A* search.  Produces straight-line
+      # segments that deviate only around obstacles — no lattice-primitive
+      # wiggle.  Heading is left to the controller (MPPI) and the
+      # RotationShimController rotate-in-place behaviors.
+      plugin: "nav2_smac_planner/SmacPlanner2D"
+      tolerance: 0.125                     # tight goal cell tolerance (meters)
+      allow_unknown: true
+      max_iterations: 1000000
+      max_planning_time: 5.0
+      use_astar: true                      # A* is faster than Dijkstra for single-goal
+      motion_model_for_search: "MOORE"     # 8-connected: allows 45° diagonals for cleaner paths
+      downsample_costmap: false            # keep full resolution for tight gaps
+      cost_travel_multiplier: 2.0          # how much to respect inflation; 2.0 keeps paths clear without excessive detours
+
+controller_server:
+  ros__parameters:
+    use_sim_time: true
+    controller_frequency: 20.0   # match model_dt and the downstream 20 Hz command shaping in sim
+    costmap_update_timeout: 0.30
+    speed_limit_topic: "speed_limit"
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.05
+    min_theta_velocity_threshold: 0.05
+    failure_tolerance: 0.5
+    progress_checker_plugin: "progress_checker"
+    goal_checker_plugins: ["general_goal_checker"]
+    controller_plugins: ["FollowPath"]
+
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.15
+      movement_time_allowance: 30.0
+
+    general_goal_checker:
+      stateful: true   # hold XY once reached, then let heading alignment finish in place
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance:  0.25
+      yaw_goal_tolerance: 0.30
+
+    FollowPath:
+      # Bare MPPI with DiffDrive.  RotationShimController was removed because
+      # it stamps TF lookups at clock_->now() with a hardcoded 0.1 s tolerance
+      # that cannot be configured — in sim the TF buffer always lags behind
+      # the sim clock, so the transform permanently fails and the shim never
+      # actually commands rotation (path_updated_ set to false on every cycle).
+      #
+      # Instead, PathAngleCritic suppresses forward motion when the robot's
+      # heading is misaligned with the path (engaging once the error exceeds
+      # max_angle_to_furthest), and PreferForwardCritic is kept low so MPPI is
+      # free to slow to a pivot. With DiffDrive (vx, wz only) this produces
+      # rotate-in-place at start and tight corners without TF fragility, while
+      # still allowing short reverse maneuvers.
+      plugin: "nav2_mppi_controller::MPPIController"
+      motion_model: "DiffDrive"
+      transform_tolerance: 0.3
+      prune_distance: 1.7
+      time_steps: 50                       # longer horizon (2.5 s) lets MPPI "see" the rotation
+      model_dt: 0.05
+      batch_size: 2000                     # more samples to explore rotation trajectories
+      iteration_count: 3                     # extra iteration helps converge on rotation
+      retry_attempt_limit: 1
+      temperature: 0.3                    # sharper selection toward best trajectory
+      gamma: 0.015
+      reset_period: 1.0
+      regenerate_noises: true
+      visualize: true
+
+      vx_max: 1.0                          # v1 forward cap (rated ~3 m/s)
+      vx_min: -0.3
+      vy_max: 0.4                          # unused by DiffDrive; kept for Omni
+      vy_min: -0.4
+      wz_max: 1.0
+      wz_min: -1.0
+      ax_max: 1.0
+      ax_min: -1.0
+      ay_max: 0.5
+      ay_min: -0.5
+      az_max: 1.2
+      az_min: -1.2
+      vx_std: 0.3
+      vy_std: 0.3
+      wz_std: 0.6
+
+      critics: ["ConstraintCritic", "ObstaclesCritic", "GoalCritic", "GoalAngleCritic",
+                "PathAlignCritic", "PathFollowCritic", "PathAngleCritic",
+                "PreferForwardCritic", "VelocityDeadbandCritic"]
+
+      ConstraintCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 4.0
+
+      ObstaclesCritic:
+        enabled: true
+        cost_power: 1
+        repulsion_weight: 3.0
+        critical_weight: 20.0
+        collision_cost: 1000000.0
+        collision_margin_distance: 0.12
+        near_goal_distance: 0.35
+        consider_footprint: true
+        inflation_radius: 0.80
+        cost_scaling_factor: 2.0
+
+      GoalCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        threshold_to_consider: 1.4
+
+      GoalAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 3.0
+        threshold_to_consider: 0.50
+
+      PathAlignCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 14.0
+        max_path_occupancy_ratio: 0.05
+        trajectory_point_step: 4
+        threshold_to_consider: 0.4
+        offset_from_furthest: 20
+        use_path_orientations: false
+
+      PathFollowCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 15.0
+        offset_from_furthest: 5
+        threshold_to_consider: 1.4
+
+      PathAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 40.0                  # strong rotate-before-translate, not so high it fights path tracking
+        offset_from_furthest: 4
+        threshold_to_consider: 0.5         # disengage near goal so GoalAngleCritic owns final heading
+        max_angle_to_furthest: 0.6         # engage pivot for heading errors > ~34 deg -> tighter turns
+        mode: 0                            # penalize heading error to path direction
+
+      PreferForwardCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0                    # mild forward bias only; high values cause wide arcs and block reverse
+        threshold_to_consider: 0.5
+
+      VelocityDeadbandCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 35.0
+        deadband_velocities: [0.03, 0.50, 0.02]
+
+      TrajectoryVisualizer:
+        trajectory_step: 5
+        time_step: 3
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      use_sim_time: true
+      global_frame: odom
+      robot_base_frame: "base_footprint"
+      rolling_window: true
+      width:  20
+      height: 20
+      resolution: 0.05
+      update_frequency:  10.0
+      publish_frequency: 5.0
+      # Rolling-window costmap_updates patches carry no origin, so RViz (and
+      # any offline consumer) places them against a stale origin between full
+      # publications and marks appear displaced. Full grids at 5 Hz
+      # (400x400 int8 ~= 800 KB/s) keep every published state self-contained.
+      always_send_full_costmap: true
+      transform_tolerance: 0.3
+      qos_overrides:
+        /lidar/points_undistorted:
+          subscription:
+            reliability: best_effort
+            durability: volatile
+
+      footprint: "[ [0.42, 0.29], [0.42, -0.29], [-0.52, -0.29], [-0.52, 0.29] ]"   # A2-W standing envelope: front body 0.42, rear knees -0.52, wheels y +/-0.29
+      footprint_padding: 0.03
+
+      plugins: ["stvl_layer", "inflation_layer"]
+
+      stvl_layer:
+        plugin: "spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer"
+        enabled: true
+        # Decay MUST be linear (decay_model 0): the
+        # exponential model computes time-until-decay as voxel_decay*exp(-dt),
+        # which never reaches zero, and without a per-source decay_acceleration
+        # (unset here) voxels then NEVER expire -- measured on
+        # bags/g1_planner_tune_20260710_175531 as a monotonically growing
+        # lethal disk (0 -> 21k cells) from floor smear and a walking person.
+        # Linear 3.0 s holds obstacles across sweeps
+        # (~8-10 Hz re-confirmation) while letting transient marks self-heal.
+        voxel_decay: 3.0
+        decay_model: 0
+        voxel_size: 0.05
+        track_unknown_space: false
+        unknown_threshold: 15
+        mark_threshold: 0
+        update_footprint_enabled: true
+        combination_method: 1
+        origin_z: 0.0
+        publish_voxel_map: true
+        transform_tolerance: 0.1
+        mapping_mode: false
+        map_save_duration: 60.0
+        # lidar_mark is the observed cloud; dynamic_prediction is predicted
+        # occupancy from dynamic_obstacle_costmap_bridge for proactive avoidance.
+        observation_sources: lidar_mark dynamic_prediction
+        lidar_mark:
+          data_type: PointCloud2
+          topic: /lidar/points_undistorted
+          marking: true
+          clearing: true
+          # Marking range 4 m: far structure comes from the static layer, and
+          # collision_monitor reads the cloud directly.
+          obstacle_range: 4.0
+          raytrace_range: 10.0
+          # The wheeled base keeps the sensors near level, so 0.10 m clears floor
+          # noise while still marking low obstacles.
+          min_obstacle_height: 0.10
+          max_obstacle_height: 2.3
+          expected_update_rate: 0.0
+          observation_persistence: 0.0
+          inf_is_valid: false
+          # 3D-lidar hourglass frustum. Front + rear JT128 hemispheres cover
+          # nearly the full sphere, so the vertical FOV is ~172 deg; with
+          # decay_acceleration, voxels seen as empty clear immediately.
+          model_type: 1
+          vertical_fov_angle: 3.0
+          vertical_fov_padding: 0.05
+          horizontal_fov_angle: 6.29
+          decay_acceleration: 5.0
+          filter: "voxel"
+          voxel_min_points: 2       # reject single-point ghost returns
+          clear_after_reading: true
+          sensor_origin_frame: lidar_stabilized
+          max_z: 2.5
+          min_z: -0.10
+        dynamic_prediction:
+          data_type: PointCloud2
+          topic: /dynamic_obstacles/predicted_occupancy
+          marking: true
+          clearing: false
+          obstacle_range: 8.0
+          raytrace_range: 0.0
+          min_obstacle_height: 0.05
+          max_obstacle_height: 1.5
+          expected_update_rate: 0.0
+          observation_persistence: 0.0
+          inf_is_valid: false
+          filter: "voxel"
+          voxel_min_points: 1
+          clear_after_reading: true
+          sensor_origin_frame: map
+          max_z: 1.5
+          min_z: 0.0
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        # Inscribed radius is 0.29 m (half the wheel track); 0.50 m keeps ~0.2 m
+        # clearance past the wheels.
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.50
+        inflate_unknown: false
+        inflate_around_unknown: false
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      use_sim_time: true
+      global_frame: map
+      robot_base_frame: base_footprint
+      rolling_window: false
+      width: 30
+      height: 30
+      resolution: 0.05
+      update_frequency: 2.0
+      publish_frequency: 2.0
+      transform_tolerance: 0.5
+      track_unknown_space: false
+
+      footprint: "[ [0.42, 0.29], [0.42, -0.29], [-0.52, -0.29], [-0.52, 0.29] ]"   # A2-W standing envelope: front body 0.42, rear knees -0.52, wheels y +/-0.29
+      footprint_padding: 0.03
+
+      # Keep live LiDAR/dynamic obstacle marks out of the non-rolling global
+      # costmap. The local STVL layer handles moving obstacles with decay.
+      plugins: ["static_layer", "inflation_layer"]
+
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        # Match the local costmap so the static-map global planner and the
+        # rolling local planner agree on viable corridors (see local_costmap).
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.50
+        inflate_unknown: false
+        inflate_around_unknown: false
+
+bt_navigator:
+  ros__parameters:
+    use_sim_time: true
+    global_frame: map
+    robot_base_frame: base_footprint
+    odom_topic: /odom
+    bt_loop_duration: 20
+    default_server_timeout: 20
+    wait_for_service_timeout: 1000
+    action_server_result_timeout: 900.0
+    navigators: ["navigate_to_pose", "navigate_through_poses"]
+    navigate_to_pose:
+      plugin: "nav2_bt_navigator/NavigateToPoseNavigator"
+    navigate_through_poses:
+      plugin: "nav2_bt_navigator/NavigateThroughPosesNavigator"
+    default_nav_to_pose_bt_xml: "/opt/ros/humble/share/nav2_bt_navigator/behavior_trees/navigate_to_pose_w_replanning_and_recovery.xml"
+    default_nav_through_poses_bt_xml: "/opt/ros/humble/share/nav2_bt_navigator/behavior_trees/navigate_through_poses_w_replanning_and_recovery.xml"
+    recovery:
+      costmap_topic: "local_costmap/costmap_raw"  # nav2_msgs/Costmap, local 2D obstacle source
+      diagnostics_topic: "recovery/diagnostics"  # diagnostic_msgs/DiagnosticArray
+      cmd_vel_topic: "cmd_vel"  # geometry_msgs/Twist before collision_monitor
+      sector_count: 8  # bins around robot, valid range 4 to 36
+      inner_radius_m: 0.15  # ignore cells inside robot body, valid range 0.0 to outer_radius_m
+      outer_radius_m: 1.25  # sampled recovery radius, valid range 0.5 to local costmap radius
+      occupied_cost_threshold: 253  # nav2 cost value treated as blocked, valid range 1 to 255
+      unknown_is_occupied: false  # true is safer in unmapped local space
+      blocked_fraction_threshold: 0.20  # occupied fraction that blocks a sector, valid range 0.0 to 1.0
+      stuck_cmd_speed_threshold_mps: 0.04  # command magnitude that starts stuck timing
+      stuck_odom_speed_threshold_mps: 0.015  # observed odom speed considered moving
+      stuck_duration_s: 2.0  # seconds before proactive recovery triggers
+    plugin_lib_names:
+      - nav2_compute_path_to_pose_action_bt_node
+      - nav2_compute_path_through_poses_action_bt_node
+      - nav2_smooth_path_action_bt_node
+      - nav2_follow_path_action_bt_node
+      - nav2_spin_action_bt_node
+      - nav2_spin_cancel_bt_node
+      - nav2_wait_action_bt_node
+      - nav2_wait_cancel_bt_node
+      - nav2_assisted_teleop_action_bt_node
+      - nav2_assisted_teleop_cancel_bt_node
+      - nav2_back_up_action_bt_node
+      - nav2_back_up_cancel_bt_node
+      - nav2_drive_on_heading_bt_node
+      - nav2_drive_on_heading_cancel_bt_node
+      - nav2_clear_costmap_service_bt_node
+      - nav2_reinitialize_global_localization_service_bt_node
+      - nav2_truncate_path_action_bt_node
+      - nav2_truncate_path_local_action_bt_node
+      - nav2_remove_passed_goals_action_bt_node
+      - nav2_navigate_to_pose_action_bt_node
+      - nav2_navigate_through_poses_action_bt_node
+      - nav2_is_stuck_condition_bt_node
+      - nav2_goal_reached_condition_bt_node
+      - nav2_goal_updated_condition_bt_node
+      - nav2_globally_updated_goal_condition_bt_node
+      - nav2_is_path_valid_condition_bt_node
+      - nav2_initial_pose_received_condition_bt_node
+      - nav2_transform_available_condition_bt_node
+      - nav2_time_expired_condition_bt_node
+      - nav2_distance_traveled_condition_bt_node
+      - nav2_rate_controller_bt_node
+      - nav2_distance_controller_bt_node
+      - nav2_speed_controller_bt_node
+      - nav2_goal_updater_node_bt_node
+      - nav2_recovery_node_bt_node
+      - nav2_pipeline_sequence_bt_node
+      - nav2_round_robin_node_bt_node
+      - nav2_single_trigger_bt_node
+      - nav2_goal_checker_selector_bt_node
+      - nav2_controller_selector_bt_node
+      - nav2_planner_selector_bt_node
+      - nav2_smoother_selector_bt_node
+      - nav2_progress_checker_selector_bt_node
+      - robot_nav_recovery_bt_nodes
+
+behavior_server:
+  ros__parameters:
+    use_sim_time: true
+    local_costmap_topic:  local_costmap/costmap_raw
+    global_costmap_topic: global_costmap/costmap_raw
+    local_footprint_topic:  local_costmap/published_footprint
+    global_footprint_topic: global_costmap/published_footprint
+    robot_base_frame: base_footprint
+    transform_tolerance: 0.1
+    simulate_ahead_time: 2.0
+    max_rotational_vel: 1.0
+    min_rotational_vel: 0.02
+    rotational_acc_lim: 1.0
+    costmap_topic: local_costmap/costmap_raw
+    footprint_topic: local_costmap/published_footprint
+    cycle_frequency: 10.0
+    behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait", "guarded_spin", "guarded_backup", "guarded_lateral_step"]
+    spin:
+      plugin: "nav2_behaviors/Spin"
+    backup:
+      plugin: "nav2_behaviors/BackUp"
+    drive_on_heading:
+      plugin: "nav2_behaviors/DriveOnHeading"
+    wait:
+      plugin: "nav2_behaviors/Wait"
+    assisted_teleop:
+      plugin: "nav2_behaviors/AssistedTeleop"
+    guarded_spin:
+      plugin: "robot_nav_recovery/GuardedSpin"
+    guarded_backup:
+      plugin: "robot_nav_recovery/GuardedBackUp"
+      acceleration_limit: 0.10      # m/s^2, valid range 0.0 to gait limit
+      deceleration_limit: -0.10     # m/s^2, valid range -gait limit to 0.0
+      minimum_speed: 0.02           # m/s, valid range 0.0 to backup speed
+    guarded_lateral_step:
+      plugin: "robot_nav_recovery/GuardedLateralStep"
+      acceleration_limit: 0.08      # m/s^2, valid range 0.0 to gait limit
+      deceleration_limit: -0.08     # m/s^2, valid range -gait limit to 0.0
+      minimum_speed: 0.02           # m/s, valid range 0.0 to lateral speed
+
+waypoint_follower:
+  ros__parameters:
+    use_sim_time: true
+    loop_rate: 20
+    stop_on_failure: false
+    action_server_result_timeout: 900.0
+    waypoint_task_executor_plugin: "wait_at_waypoint"
+    wait_at_waypoint:
+      plugin: "nav2_waypoint_follower::WaitAtWaypoint"
+      enabled: true
+      waypoint_pause_duration: 200
+
+velocity_smoother:
+  ros__parameters:
+    use_sim_time: true
+    smoothing_frequency: 20.0
+    scale_velocities: false
+    feedback: "OPEN_LOOP"
+    # [vx, vy, wz] A2-W v1 envelope; vy 0 because the controller is DiffDrive.
+    # Reverse must match MPPI vx_min so backing up is not silently clipped here.
+    max_velocity: [1.0, 0.0, 1.0]
+    min_velocity: [-0.3, 0.0, -1.0]
+    max_accel: [1.0, 0.0, 1.2]
+    max_decel: [-1.0, 0.0, -1.2]
+    odom_topic: "odom"
+    odom_duration: 0.1
+    deadband_velocity: [0.03, 0.03, 0.08]
+    velocity_timeout: 1.0
+
+smoother_server:
+  ros__parameters:
+    use_sim_time: true
+    smoother_plugins: ["simple_smoother"]
+    simple_smoother:
+      plugin: "nav2_smoother::SimpleSmoother"
+      tolerance: 1.0e-10
+      max_its: 1000
+      do_refinement: true
+
+route_server:
+  ros__parameters:
+    use_sim_time: true
+    route_frame: "map"
+    graph_filepath: ""
+    graph_file_loader: "GeoJsonGraphFileLoader"
+    GeoJsonGraphFileLoader:
+      plugin: "nav2_route::GeoJsonGraphFileLoader"
+    edge_cost_functions: ["DistanceScorer", "CostmapScorer"]
+    DistanceScorer:
+      plugin: "nav2_route::DistanceScorer"
+    CostmapScorer:
+      plugin: "nav2_route::CostmapScorer"
+    operations: ["ReroutingService"]
+    ReroutingService:
+      plugin: "nav2_route::ReroutingService"
+    path_density: 0.5
+
+lifecycle_manager:
+  ros__parameters:
+    use_sim_time: true
+    autostart: true
+    # slam_toolbox manages its own lifecycle and is not listed here.
+    # Add map_server + amcl when switching to AMCL + pre-built map mode.
+    node_names:
+      - controller_server
+      - smoother_server
+      - planner_server
+      - behavior_server
+      - bt_navigator
+      - waypoint_follower
+      - velocity_smoother

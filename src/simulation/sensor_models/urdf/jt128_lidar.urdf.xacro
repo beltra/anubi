@@ -1,0 +1,89 @@
+<?xml version="1.0"?>
+<!--
+  jt128_lidar.urdf.xacro
+  Gazebo Fortress (Ignition Gazebo 6) macro for the Hesai JT128 hemispherical LiDAR
+  (front and rear units on the Unitree A2-W Pro).
+
+  Frame convention: the sensor z axis is the dome (optical) axis, matching the
+  upstream A2 URDF front_lidar_link / rear_lidar_link frames, whose z axis points
+  out of the body (front: +x, rear: -x). The gpu_lidar sweeps azimuth about z and
+  elevation from the sensor x-y plane, so vertical_min/max_angle measured from
+  that plane describe the hemisphere around the dome axis.
+
+  Datasheet / driver values (HesaiLidar_SDK_2.0 JT128 config): 128 channels,
+  360 deg azimuth, elevation -4.4 ... +90.5 deg (clamped to +90 here), 0.4 deg
+  azimuth step, 60 m max range, 10 Hz. The minimum range is not published; 0.10 m
+  is assumed.
+
+  Point budget: the real JT128 is 128 channels x 900 azimuth steps. Two such
+  software-rendered gpu_lidars miss frames on a CPU-only host, so the sample counts
+  are parameters (sim default 64 x 180); FOV, range and rate stay at datasheet
+  values. Keep the channel count high: with the dome axis horizontal, the vertical
+  channel spacing sets the angular resolution of the horizontal /scan slice.
+
+  The macro only attaches the sensor to an existing link (the frames live in the
+  robot description so the real robot shares them).
+
+  Parameters:
+    link_name                   - existing sensor frame
+    topic                       - Ignition topic (PointCloudPacked on <topic>/points)
+    channels, h_samples         - vertical / horizontal sample counts
+    vertical_min_angle/max      - elevation band about the sensor x-y plane [rad]
+    range_min, range_max        - [m]
+    update_rate                 - [Hz]
+    visibility_mask             - Ignition visibility mask (see mid360_lidar.urdf.xacro)
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="jt128_lidar" params="
+      link_name
+      topic
+      channels:=64
+      h_samples:=180
+      vertical_min_angle:=-0.0768
+      vertical_max_angle:=1.5708
+      range_min:=0.10
+      range_max:=60.0
+      update_rate:=10
+      visibility_mask:=4294967295">
+
+
+    <gazebo reference="${link_name}">
+      <sensor name="${link_name}_jt128" type="gpu_lidar">
+        <topic>${topic}</topic>
+        <update_rate>${update_rate}</update_rate>
+        <always_on>true</always_on>
+        <visualize>false</visualize>
+        <ignition_frame_id>${link_name}</ignition_frame_id>
+        <visibility_mask>${visibility_mask}</visibility_mask>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>${h_samples}</samples>
+              <resolution>1</resolution>
+              <min_angle>-3.14159265358979</min_angle>
+              <max_angle>3.14159265358979</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>${channels}</samples>
+              <resolution>1</resolution>
+              <min_angle>${vertical_min_angle}</min_angle>
+              <max_angle>${vertical_max_angle}</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>${range_min}</min>
+            <max>${range_max}</max>
+            <resolution>0.01</resolution>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.01</stddev>
+          </noise>
+        </lidar>
+      </sensor>
+    </gazebo>
+
+  </xacro:macro>
+</robot>

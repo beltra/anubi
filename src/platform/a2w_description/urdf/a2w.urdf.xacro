@@ -1,0 +1,112 @@
+<?xml version="1.0"?>
+<!--
+  a2w.urdf.xacro - Unitree A2-W (Pro): A2 body + 4 wheels + front/rear Hesai JT128.
+
+  The A2-W has no public model. Body, legs and the two LiDAR mounts come from the
+  official A2 URDF (a2w_body.urdf.xacro, generated). Wheel size and position are
+  estimates (190 mm tyre at the calf tip, Go2-W / B2-W layout); correct
+  wheel_radius / wheel_offset_y once measured.
+
+  fixed_legs:=false (real): leg joints are revolute and follow /joint_states.
+  fixed_legs:=true  (sim):  leg joints are fixed in the standing pose below, so the
+                            URDF->SDF conversion lumps the robot into one base_link.
+
+  Frames added for the autonomy stack (docs/topic_map.md, A2-W section):
+    imu_link          body IMU at the base origin
+    front_lidar_link  front JT128, z = dome axis pointing +x (upstream pose)
+    rear_lidar_link   rear JT128,  z = dome axis pointing -x (upstream pose)
+    lidar_link        virtual merged-cloud frame: identity rotation, at the mean
+                      height of the two sensors, so distortion_corrector needs
+                      only a translation (sensor_mount_rpy = 0)
+-->
+<robot name="a2w" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:arg name="fixed_legs" default="false"/>
+
+  <xacro:property name="fixed_legs" value="$(arg fixed_legs)"/>
+  <xacro:property name="leg_joint_type" value="${'fixed' if fixed_legs else 'revolute'}"/>
+
+  <!-- Standing pose (rad). Base height = calf-tip depth + wheel_radius
+       = 0.275*(cos(0.8) + cos(0.7)) + 0.095 ~= 0.497 m. -->
+  <xacro:property name="stand_hip"   value="0.0"/>
+  <xacro:property name="stand_thigh" value="0.8"/>
+  <xacro:property name="stand_calf"  value="-1.5"/>
+
+  <xacro:property name="wheel_radius"   value="0.095"/>
+  <xacro:property name="wheel_width"    value="0.051"/>
+  <xacro:property name="wheel_offset_y" value="0.06"/>
+  <xacro:property name="wheel_mass"     value="1.0"/>
+
+  <xacro:macro name="leg_angles" params="leg">
+    <xacro:property name="${leg}_q_hip"   value="${stand_hip if fixed_legs else 0.0}" scope="parent"/>
+    <xacro:property name="${leg}_q_thigh" value="${stand_thigh if fixed_legs else 0.0}" scope="parent"/>
+    <xacro:property name="${leg}_q_calf"  value="${stand_calf if fixed_legs else 0.0}" scope="parent"/>
+  </xacro:macro>
+  <xacro:leg_angles leg="FL"/>
+  <xacro:leg_angles leg="FR"/>
+  <xacro:leg_angles leg="RL"/>
+  <xacro:leg_angles leg="RR"/>
+
+  <xacro:include filename="$(find a2w_description)/urdf/a2w_body.urdf.xacro"/>
+
+  <!-- Wheels: continuous about +y at the calf tip, offset outward like the Go2-W.
+       In sim the wheel joints are fixed (the base slides; wheels are visual). -->
+  <xacro:macro name="wheel" params="leg side">
+    <link name="${leg}_foot">
+      <inertial>
+        <mass value="${wheel_mass}"/>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <inertia ixx="0.0025" ixy="0" ixz="0" iyy="0.0045" iyz="0" izz="0.0025"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+        <material name="a2w_tyre"><color rgba="0.12 0.12 0.12 1"/></material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+      </collision>
+    </link>
+    <joint name="${leg}_foot_joint" type="${'fixed' if fixed_legs else 'continuous'}">
+      <parent link="${leg}_calf"/>
+      <child link="${leg}_foot"/>
+      <origin xyz="0 ${side * wheel_offset_y} -0.275" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+    </joint>
+  </xacro:macro>
+  <xacro:wheel leg="FL" side="1"/>
+  <xacro:wheel leg="FR" side="-1"/>
+  <xacro:wheel leg="RL" side="1"/>
+  <xacro:wheel leg="RR" side="-1"/>
+
+  <!-- Sensor frames. Tiny inertials keep them through URDF->SDF fixed-joint lumping. -->
+  <xacro:macro name="sensor_frame" params="name parent xyz rpy">
+    <link name="${name}">
+      <inertial>
+        <mass value="0.001"/>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6"/>
+      </inertial>
+    </link>
+    <joint name="${name}_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child link="${name}"/>
+      <origin xyz="${xyz}" rpy="${rpy}"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:sensor_frame name="imu_link" parent="base_link" xyz="0 0 0" rpy="0 0 0"/>
+  <!-- Upstream: front at (0.33767, 0, 0.08134) rpy (pi/2, 0, pi/2); rear is defined
+       upstream relative to front and resolves to (-0.28003, 0, 0.08734) with the dome
+       axis along -x (rpy pi/2, 0, -pi/2). -->
+  <xacro:sensor_frame name="front_lidar_link" parent="base_link"
+                      xyz="0.33767 0.0 0.08134" rpy="${pi/2} 0 ${pi/2}"/>
+  <xacro:sensor_frame name="rear_lidar_link" parent="base_link"
+                      xyz="-0.28003 0.0 0.08734" rpy="${pi/2} 0 ${-pi/2}"/>
+  <xacro:sensor_frame name="lidar_link" parent="base_link"
+                      xyz="0.0 0.0 0.0843" rpy="0 0 0"/>
+  <xacro:sensor_frame name="camera_link" parent="base_link"
+                      xyz="0.3381 0.0336 0.0525" rpy="0 0 0"/>
+
+</robot>

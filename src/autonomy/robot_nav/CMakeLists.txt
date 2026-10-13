@@ -9,6 +9,7 @@ find_package(nav_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(tf2_sensor_msgs REQUIRED)
 
 ament_python_install_package(robot_nav)
 
@@ -30,7 +31,17 @@ ament_target_dependencies(
   tf2_ros
 )
 
+add_executable(cloud_merger src/cloud_merger.cpp)
+ament_target_dependencies(
+  cloud_merger
+  rclcpp
+  sensor_msgs
+  tf2_ros
+  tf2_sensor_msgs
+)
+
 install(TARGETS
+  cloud_merger
   distortion_corrector
   lidar_level_frame_publisher
   DESTINATION lib/${PROJECT_NAME}

@@ -1,0 +1,52 @@
+# DLIO parameters for the Unitree A2-W REAL robot (merged front + rear JT128).
+#
+# DLIO consumes the cloud_merger output on the driver clouds (/lidar/points, frame lidar_link) and the
+# body IMU (/imu/data, frame imu_link). lidar_link is a virtual frame with identity
+# rotation 0.0843 m above base_link, and imu_link is the base_link origin, so both
+# extrinsics are pure translations. They must match a2w_description/urdf/a2w.urdf.xacro.
+
+/**:
+  ros__parameters:
+    use_sim_time: false
+    publish_tf: false
+    map/waitUntilMove: true
+
+    frames/odom: odom
+    frames/baselink: base_link
+    frames/lidar: dlio_lidar_link
+    frames/imu: dlio_imu_link
+
+    adaptive: false
+    # Deskew off until verified: the merged cloud mixes two sweeps whose point
+    # times must be absolute for DLIO's per-point deskew to be valid.
+    pointcloud/deskew: false
+    pointcloud/voxelize: true
+    odom/preprocessing/voxelFilter/res: 0.18
+
+    odom/gicp/minNumPoints: 64
+    odom/gicp/kCorrespondences: 16
+    odom/gicp/maxCorrespondenceDistance: 0.5
+
+    odom/keyframe/threshD: 0.20
+    odom/keyframe/threshR: 20.0
+
+    odom/computeTimeOffset: false
+    odom/imu/approximateGravity: true
+    odom/imu/calibration/gyro: true
+    odom/imu/calibration/accel: true
+    odom/imu/calibration/time: 3.0   # keep the robot still for this long after start
+    odom/imu/bufferSize: 5000
+
+    odom/geo/Kab: 0.85
+
+    # base_link -> lidar_link (virtual merged-cloud frame).
+    extrinsics/baselink2lidar/t: [0.0, 0.0, 0.0843]
+    extrinsics/baselink2lidar/R: [1.0, 0.0, 0.0,
+                                  0.0, 1.0, 0.0,
+                                  0.0, 0.0, 1.0]
+
+    # base_link -> body IMU (imu_link at the base origin).
+    extrinsics/baselink2imu/t: [0.0, 0.0, 0.0]
+    extrinsics/baselink2imu/R: [1.0, 0.0, 0.0,
+                                0.0, 1.0, 0.0,
+                                0.0, 0.0, 1.0]

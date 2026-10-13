@@ -1,0 +1,26 @@
+# pointcloud_to_laserscan parameters for the Unitree A2-W (merged front + rear JT128).
+# Converts /lidar/points_undistorted -> /scan for slam_toolbox.
+#
+# Heights are in lidar_stabilized, which sits at the virtual merged-cloud origin
+# ~0.58 m above the floor (base_link 0.497 m + lidar_link 0.084 m). The band spans
+# from 0.15 m above the floor to ~0.6 m above the body, so low furniture and the
+# full body height are captured while floor returns stay out of the scan.
+pointcloud_to_laserscan:
+  ros__parameters:
+    target_frame: lidar_stabilized
+    transform_tolerance: 0.3
+
+    min_height: -0.43
+    max_height:  0.60
+
+    angle_min: -3.14159265
+    angle_max:  3.14159265
+    angle_increment: 0.00872665  # 0.5 deg
+
+    scan_time: 0.1
+    # Self-returns are removed upstream by the distortion_corrector self-filter.
+    range_min: 0.30
+    range_max: 30.0
+
+    use_inf: true
+    inf_epsilon: 1.0

@@ -1,0 +1,85 @@
+# slam_toolbox async SLAM parameters for the Unitree A2-W (mapping and localization).
+# SLAM mode is selected by the launch executable, not by this file.
+#
+# Copy of slam_toolbox_params_g1.yaml with scan matching ON. The G1 disables
+# matching because the Mid-360's non-repetitive sampling misleads the 2D
+# correlative matcher; the A2-W's JT128s are repetitive spinning sensors, so the
+# matcher sees a stable /scan and can correct odometry drift (sport-mode wheel
+# odometry slips; DLIO drifts at building scale). The strict G1 gates are kept so
+# a poor match loses to the odometry prior instead of snapping the map.
+
+slam_toolbox:
+  ros__parameters:
+    solver_plugin: solver_plugins::CeresSolver
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner: SCHUR_JACOBI
+    ceres_trust_strategy: LEVENBERG_MARQUARDT
+    ceres_dogleg_type: TRADITIONAL_DOGLEG
+    ceres_loss_function: None
+
+    odom_frame:  odom
+    map_frame:   map
+    base_frame:  base_footprint
+    scan_topic:  /scan
+
+    use_map_saver: true
+    mode: mapping
+
+    # With the matcher off, graph nodes only paint the map (no matching risk),
+    # so a denser cadence buys wall coverage and paint latency. Measured on
+    # bags/g1_planner_tune_20260710_175531: 0.15 gates double the visible map
+    # update rate vs 0.25 (median gap 1.5 s -> 1.0 s, max 13 s -> 7.8 s) and
+    # raise DLIO-wall coverage 55 -> 70% for a 2.5-point wall-halo cost
+    # (matched 92.7 -> 90.2%, median error steady at 0.05 m). 0.10 gates
+    # trade too much halo (88.4%).
+    minimum_travel_distance: 0.15  # [m]
+    minimum_travel_heading: 0.15   # [rad]
+    minimum_time_interval:  0.15   # [s]
+
+    use_scan_matching:   true
+    use_scan_barycenter: true
+
+    resolution: 0.05
+    max_laser_range: 25.0
+    min_laser_range: 0.15
+
+    do_loop_closing: true
+    loop_match_minimum_chain_size: 20
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_coarse: 0.5
+    loop_match_minimum_response_fine:   0.6
+
+    scan_buffer_size: 20
+    scan_buffer_maximum_scan_distance: 25.0
+    scan_queue_size: 50
+    throttle_scans: 1
+
+    link_match_minimum_response_fine:   0.35
+    link_scan_maximum_distance:         1.5
+    loop_search_maximum_distance:       3.0
+
+    correlation_search_space_dimension: 0.3
+    correlation_search_space_resolution: 0.01
+    correlation_search_space_smear_deviation: 0.1
+
+    loop_search_space_dimension: 8.0
+    loop_search_space_resolution: 0.05
+    loop_search_space_smear_deviation: 0.08
+
+    distance_variance_penalty: 0.3
+    angle_variance_penalty:    0.349
+
+    fine_search_angle_offset:     0.00349
+    coarse_search_angle_offset:   0.175
+    coarse_angle_resolution:      0.0349
+    minimum_angle_penalty:        0.9
+    minimum_distance_penalty:     0.5
+    use_response_expansion:       false
+
+    transform_publish_period:     0.02
+    transform_timeout:            0.5
+    tf_buffer_duration:          30.0
+    # 4 Hz re-render so inserted scans appear promptly in RViz; the insertion
+    # gates above are the real throttle, this only bounds render latency.
+    map_update_interval:          0.25
+    map_start_at_dock:           false

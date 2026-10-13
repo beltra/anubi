@@ -1,0 +1,50 @@
+# distortion_corrector parameters for the Unitree A2-W (merged front + rear JT128).
+# Produces /lidar/points_undistorted for STVL, collision_monitor and /scan.
+#
+# Input is the cloud_merger output in lidar_link: a virtual frame with identity
+# rotation in base_link, so the mount rotation is zero and only the translation
+# below is needed. Shared by sim and real; the sim overrides the leveling flags.
+
+distortion_corrector:
+  ros__parameters:
+    input_topic: /lidar/points
+    output_topic: /lidar/points_undistorted
+    odom_topic: /odom
+    imu_topic: /imu/data
+
+    use_twist: false
+    use_imu: true
+    use_3d_distortion_correction: true
+    # Deskew is OFF: the merged cloud holds two sensors whose per-point times are
+    # relative to different sweep starts. Re-enable only with a per-point
+    # absolute time field (the Hesai driver publishes float64 "timestamp").
+    deskew_enabled: false
+    scan_period: 0.1
+
+    sensor_mount_rpy: [0.0, 0.0, 0.0]
+    mount_rotation_mode: direct
+    output_stamp_mode: input
+
+    gravity_align: true
+    gravity_align_attenuation: 1.0
+    gravity_align_frame: lidar_stabilized
+
+    # Self-filter: A2-W standing envelope in base_link (body + legs + wheels).
+    filter_self: true
+    robot_min_x: -0.52
+    robot_max_x: 0.46
+    robot_min_y: -0.32
+    robot_max_y: 0.32
+    robot_min_z: -0.60
+    robot_max_z: 0.16
+    min_radius: 0.15
+
+    # lidar_link (virtual merged-cloud origin) in base_link.
+    sensor_x_in_base: 0.0
+    sensor_y_in_base: 0.0
+    sensor_z_in_base: 0.0843
+
+    imu_timeout_sec: 0.25
+    odom_timeout_sec: 0.25
+    publish_diagnostics: false
+    diagnostics_topic: /diagnostics/lidar_correction
