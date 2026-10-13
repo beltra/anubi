@@ -97,3 +97,30 @@ Downstream stays canonical: `/lidar/points -> /lidar/points_undistorted -> /scan
 ## 7. Open decisions
 
 Tracked in the project thread; defaults are marked there and applied until answered.
+
+## Status (2026-10-13)
+
+Done and validated in sim (CPU-only container, ground-truth odometry):
+- Model and sensors: lumped sliding base tracks `/cmd_vel_safe` exactly, z stable at 0.497 m.
+- `cloud_merger` fuses both JT128 clouds into `/lidar/points` (~0.1 s latency end to end).
+- slam_toolbox builds a clean map of `indoor_office` from the merged cloud.
+- Real-robot scaffold `a2w_bringup` + `run_a2w_real.sh`: launch wiring checked without
+  hardware (nodes start, frame aliases and merger inputs resolve). Not run on the robot.
+
+Open issues, in order:
+1. MPPI goal following: the controller itself (`/cmd_vel_nav`) commands reverse at
+   ~-0.25 m/s while the transformed plan runs straight ahead of the robot (heading 0,
+   map->odom identity). Disabling critics at runtime did not change it, but no
+   "Dynamic parameter changed" log was seen, so the runtime toggles may not have applied.
+   Next: restart controller_server with a minimal critic set from YAML (PathFollow only,
+   then add critics back) on the GPU PC, where the 20 Hz loop is not CPU-starved.
+2. Goal suite `6,0,0  6,-3,-1.57  0,3,1.57  -7,0,3.14  0,0,0` with ground truth, then
+   with `use_lio:=true` (DLIO not yet exercised in sim).
+3. Visual check of the sim on the PC (`./scripts/run_a2w_sim.sh --gui --no-lio`).
+4. On the robot: JT128 driver topics/frame_id and their alignment with the URDF lidar
+   frames, `/lf/sportmodestate` presence, Move acceptance in wheeled mode, remote key masks.
+5. Draft PR once nav goals pass.
+
+PC setup (Gabriele's laptop): worktree `/home/beltra/TalOS/anubi-a2w`, micromamba env
+`anubi_humble` (`export MAMBA_ROOT_PREFIX=$HOME/micromamba; eval "$(~/micromamba-bin/bin/micromamba shell hook -s bash)"; micromamba activate anubi_humble`),
+build with `CXXFLAGS="-include cstdint"` (conda GCC vs Humble generated headers).
