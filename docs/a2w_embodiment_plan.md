@@ -32,6 +32,11 @@ in this repo:
 - `OdometryPublisher` ground truth -> `/odom_raw` -> EKF -> `/odom` + `odom->base_footprint`
   (EKF stays the TF owner, as for Go2/G1). On hardware `/odom_raw` comes from `lf/sportmodestate`.
 - Two `gpu_lidar` sensors at the official URDF frames, hemispherical 360 x 90 deg, 10 Hz.
+  Sampling is reduced on CPU-only hosts (launch default 64 channels x 180 azimuth per
+  sensor; real JT128 is 128 x 900). Keep the channel count high: with the dome axes
+  horizontal, the vertical channel spacing sets the angular resolution of `/scan`.
+- Physics step 0.004 s (`physics_step_sec`): the 1 ms default ran /clock at ~1 kHz and
+  starved Nav2 on a 4-core host.
   Ign topics `/a2w/front_lidar/points`, `/a2w/rear_lidar/points` -> ROS
   `/lidar/front/points`, `/lidar/rear/points` (frames `front_lidar_link`, `rear_lidar_link`).
 - Body IMU `/imu/data` (frame `imu_link`).
@@ -57,8 +62,10 @@ Downstream stays canonical: `/lidar/points -> /lidar/points_undistorted -> /scan
 ## 4. Navigation
 
 - SLAM / localization: 2D `slam_toolbox` on `/scan` built from the merged cloud
-  (mapping and localization modes), same as Go2/G1. DLIO is out of scope for v1.
-- Nav2: new `nav2_params_a2w.yaml` (Smac2D + MPPI), footprint ~0.85 x 0.46 m,
+  (mapping and localization modes), same as Go2/G1; slam_toolbox owns `map->odom`.
+- Odometry: DLIO on the merged cloud + body IMU feeds the EKF (`use_lio:=true`, default on
+  sim and real); `use_lio:=false` falls back to ground truth (sim) or Sport Mode odom (real).
+- Nav2: new `nav2_params_a2w.yaml` (Smac2D + MPPI), footprint x -0.52..0.42, y +/-0.29 m (rear knees reach x -0.457),
   `collision_monitor_params_a2w.yaml`, `scan_from_cloud_a2w.yaml`,
   `distortion_corrector_a2w.yaml`, `slam_toolbox_params_a2w.yaml`.
 - Command chain unchanged: Nav2 `/cmd_vel` -> collision_monitor -> `/cmd_vel_collision_free`

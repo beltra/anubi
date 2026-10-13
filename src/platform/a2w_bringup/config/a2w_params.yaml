@@ -1,0 +1,40 @@
+# A2-W parameters for the reused go2_hw_bridge Sport API adapter.
+# The A2 SportClient uses the same request/response contract as the Go2
+# (unitree_api Request on /api/sport/request, Move = api_id 1008); state comes
+# from the low-frequency SportModeState stream /lf/sportmodestate.
+
+go2_hw_bridge:
+  ros__parameters:
+    state_topic:     "/lf/sportmodestate"
+    lowstate_topic:  "/lowstate"
+    cmd_vel_topic:   "/cmd_vel_safe"
+    sport_req_topic: "/api/sport/request"
+    odom_topic:      "/odom_raw"
+    imu_topic:       "/imu/data"
+    # Joint names in the bridge are Go2/CHAMP; the A2-W description runs with
+    # fixed legs, so these are published off the /joint_states contract.
+    joint_states_topic: "/a2w/bridge_joint_states"
+
+    odom_frame:      "odom"
+    base_frame:      "base_footprint"
+    base_link_frame: "base_link"
+    imu_frame:       "imu_link"
+    publish_tf:      false
+    publish_body_tf: true
+    # Must match a2w_description stand pose (a2w.urdf.xacro) and the sim spawn.
+    standing_height: 0.497
+
+    cmd_timeout: 0.5
+    # RecoveryStand/StandUp/ClassicWalk are Go2 gait modes. The A2-W is put into
+    # its wheeled stand mode by the operator (remote) before Nav2 is started.
+    enable_startup_motion_sequence: false
+    enable_goal_motion_sequence: false
+
+    # Diff-drive contract: Nav2 never commands vy on the A2-W.
+    max_linear_vel:  1.0
+    max_lateral_vel: 0.0
+    max_angular_vel: 1.0
+
+robot_state_publisher:
+  ros__parameters:
+    publish_frequency: 50.0

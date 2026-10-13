@@ -53,6 +53,16 @@ G1-only shared options (both G1 wrappers): `--locomotion amo|sonic` (default `am
 
 `run_g1_sim.sh --world <path>` also derives `world_name:=` from the SDF's `<world name="...">` and forwards it, because the robot spawn (`create -world <name>`) must target that name; previously any non-default world timed out the spawn. (`run_go2_sim.sh` does not forward a world name; the Go2 sim launch has no such argument.)
 
+## Unitree A2-W Wrappers
+
+`scripts/run_a2w_sim.sh` and `scripts/run_a2w_real.sh` wrap `a2w_sim sim_bringup_a2w.launch.py` and `a2w_bringup a2w_bringup.launch.py`. Both resolve the workspace from the script location and keep an already sourced ROS environment (e.g. an activated RoboStack env), sourcing `/opt/ros/humble` only when `ROS_DISTRO` is unset.
+
+Shared with the Go2 wrappers: `mapping`/`localization` positional mode, `--map`, `--no-rviz`, `--no-stvl`, `--use-lio`, `--nav-delay`, `--distortion-imu-topic`, `--no-clean`. A2-W adds `--no-lio` to both: `use_lio` defaults to true on sim and real (DLIO on the merged cloud + body IMU drives the EKF).
+
+`run_a2w_sim.sh` (sim-only): `--world` (forwards `world_name:=` like `run_g1_sim.sh`), `--gui`/`--no-gui` (headless default), `--lidar-channels`, `--lidar-h-samples` (launch defaults 64 x 180 per JT128; real is 128 x 900), `--physics-step` (launch default 0.004 s). `--nav-delay` defaults to `10.0`; Nav2 starts 10 s after SLAM.
+
+`run_a2w_real.sh` (real-only): `--use-safety`/`--no-safety`, `--robot-name`, `--front-lidar-topic`, `--rear-lidar-topic`, `--front-lidar-frame`, `--rear-lidar-frame`, `--lidar-frame-alias-yaw`, and the three controller key masks (Go2 defaults; the A2 remote layout is unverified). `--nav-delay` defaults to `5.0` (SLAM and Nav2 together) so DLIO finishes its stationary calibration. No rosbag recording options yet.
+
 ## Offline Replay Wrappers
 
 `scripts/replay_bag_perception.sh` (Go2) and `scripts/replay_bag_perception_g1.sh` (G1) replay recorded LiDAR bags through minimal tuning stacks (`bag_perception.launch.py` / `bag_perception_g1.launch.py`). Shared options: `--rate`, `--loop`, `--start-offset`, `--no-rviz`, `--save-map <dir>`. Go2-only: `--odom-topic`, `--nav-profile`. G1-only: `--launch-arg <k:=v>` (repeatable passthrough); the G1 bag path defaults to `bags/g1/lidar_record`. Playback whitelists differ by design: the Go2 wrapper plays raw sensors + `/tf_static` + body odometry; the G1 wrapper plays ONLY `/livox/lidar_filtered` + `/livox/imu` and drops even `/tf_static` (see ADR 0012, G1 section). With `--save-map`, the G1 wrapper also records the replay outputs (`/tf`, `/map`, `/scan`, `/lidar_odom`, nav cloud, costmaps) to `<dir>/replay_outputs` for `scripts/perception_metrics.py`.

@@ -47,6 +47,12 @@ add_pids < <(pgrep -f 'g1_isaac_bringup.launch.py' || true)
 add_pids < <(pgrep -f 'g1_isaac_nav.launch.py' || true)
 add_pids < <(pgrep -f 'g1_isaac/frame_relay_node' || true)
 add_pids < <(pgrep -f 'go2_bringup.launch.py' || true)
+# A2-W sim + real-robot stacks
+add_pids < <(pgrep -f 'sim_bringup_a2w.launch.py' || true)
+add_pids < <(pgrep -f 'sim_a2w.launch.py' || true)
+add_pids < <(pgrep -f 'a2w_bringup.launch.py' || true)
+add_pids < <(pgrep -f 'go2_hw_bridge' || true)
+add_pids < <(pgrep -f 'robot_nav/lib/robot_nav/cloud_merger' || true)
 add_pids < <(pgrep -f 'g1_bringup.launch.py' || true)
 # G1 real-robot adapters / sensors / odometry
 add_pids < <(pgrep -f 'g1_state_bridge' || true)

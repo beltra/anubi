@@ -176,6 +176,34 @@ sim time from the Isaac host `/clock`):
 | `map -> odom` | `slam_toolbox` (sim params copy `slam_toolbox_params_g1_isaac.yaml`, transform_timeout 2 s -- see file header) |
 | `/cmd_vel_safe` consumer | none in sim (no robot_safety): `cmd_vel_to_sonic` reads `/cmd_vel_collision_free` directly (`g1_sonic_sim_params.yaml`) |
 
+## Unitree A2-W Wheeled Variant
+
+The A2-W (Pro) reuses every canonical topic/TF in this document (plan and geometry:
+`docs/a2w_embodiment_plan.md`). Differences are its two Hesai JT128 LiDARs, merged into the
+single canonical cloud by `robot_nav cloud_merger`, and a diff-drive Nav2 profile (no vy).
+The sim base is kinematic (Fortress VelocityControl, legs fixed in the stand pose); the
+real adapter is `go2_hw_bridge` on the A2 Sport API topics. The real path is not yet
+validated on hardware.
+
+| Canonical topic / TF | A2-W sim publisher (`a2w_sim`) | A2-W real publisher (`a2w_bringup`) |
+|----------------------|--------------------------------|-------------------------------------|
+| per-sensor clouds | `ros_ign_bridge`: `/lidar/front/points` (frame `front_lidar_link`), `/lidar/rear/points` (frame `rear_lidar_link`) | two JT128 drivers (`front/rear_lidar_points_input_topic`, defaults `/lidar_points_front`, `/lidar_points_rear`; verify on the robot) |
+| `/lidar/points` | `cloud_merger` (frame `lidar_link`, stamp of the front sweep) | `cloud_merger` (same node and params) |
+| `/odom_raw` | `ros_ign_bridge` of Fortress OdometryPublisher (ground truth) | `go2_hw_bridge` from `/lf/sportmodestate` |
+| `/imu/data` | `ros_ign_bridge` of the Gazebo IMU (frame `imu_link`) | `go2_hw_bridge` (SportModeState imu_state) |
+| `/odom` + `odom -> base_footprint` TF | `footprint_to_odom_ekf` (odom0 `/lidar_odom_reliable` with use_lio, else `/odom_raw`; imu0 yaw rate) | `ekf_filter_node` (`ekf_fusion_params_lio.yaml` / `ekf_fusion_params.yaml`) |
+| `base_footprint -> base_link` TF | static, z 0.497 | `go2_hw_bridge` (body roll/pitch, standing_height 0.497) |
+| `base_link -> {front,rear}_lidar_link, lidar_link, imu_link` TF | `robot_state_publisher` (`a2w.urdf.xacro`, fixed legs) | same; plus an optional `<side>_lidar_link -> <driver frame>` alias when the driver frame_id differs |
+| `base_footprint -> lidar_stabilized` TF | `lidar_level_frame_publisher` (lidar_link at z 0.0843 in base_link) | same |
+| `/lidar/points_undistorted` | `distortion_corrector` (`distortion_corrector_a2w.yaml`; sim overrides: no IMU, no gravity align) | `distortion_corrector` (`distortion_corrector_a2w.yaml`) |
+| `/scan` | `pointcloud_to_laserscan` (`scan_from_cloud_a2w.yaml`, target `lidar_stabilized`) | same |
+| `/lidar_odom` | DLIO (use_lio, default true; `dlio_params_a2w_sim.yaml`, IMU `/imu/data`) | DLIO (use_lio, default true; `dlio_params_a2w_real.yaml`, IMU `/imu/data`) |
+| `/cmd_vel_safe` consumer | `ros_ign_bridge` -> `/model/<robot>/cmd_vel` (VelocityControl) | `go2_hw_bridge` -> SportClient Move on `/api/sport/request` |
+
+`/lidar/imu` is not used on the A2-W: the body IMU is the single inertial reference for
+DLIO and the EKF. The Go2 startup gait sequence (ClassicWalk) is disabled in
+`a2w_params.yaml`; the operator puts the robot in its wheeled stand mode first.
+
 ## Optional Topics (route_server, disabled by default)
 
 Active only when `use_route_server:=true` is passed to `nav2.launch.py`.
