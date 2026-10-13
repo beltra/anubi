@@ -130,7 +130,7 @@ controller_server:
       plugin: "nav2_mppi_controller::MPPIController"
       motion_model: "DiffDrive"
       transform_tolerance: 0.3
-      prune_distance: 1.7
+      prune_distance: 3.0                  # must exceed vx_max * time_steps * model_dt (2.5 m) or MPPI sees the path end inside its horizon
       time_steps: 50                       # longer horizon (2.5 s) lets MPPI "see" the rotation
       model_dt: 0.05
       batch_size: 2000                     # more samples to explore rotation trajectories
