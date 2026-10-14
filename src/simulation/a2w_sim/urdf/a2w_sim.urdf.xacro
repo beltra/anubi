@@ -16,24 +16,87 @@
      odometry    -> /model/<robot>/odometry -> ROS /odom_raw -> EKF
      command     -> ROS /cmd_vel_safe -> ign /model/<robot>/cmd_vel (VelocityControl)
 
+  locomotion:=policy (with fixed_legs:=false) instead articulates the model: 12 leg
+  joints under force PD (JointPositionController) and 4 wheel joints under force-mode
+  velocity control (JointController), the same actuator model the Isaac Lab policy is
+  trained with. a2w_policy_controller turns /cmd_vel_safe into those joint commands.
+
   Fortress only: ignition:: plugin names, no libgazebo_ros_* or gz::.
 -->
 <robot name="a2w" xmlns:xacro="http://www.ros.org/wiki/xacro">
 
   <xacro:arg name="robot_name" default="a2w"/>
   <xacro:arg name="fixed_legs" default="true"/>
+  <xacro:arg name="locomotion" default="kinematic"/>
   <xacro:arg name="lidar_channels" default="64"/>
   <xacro:arg name="lidar_h_samples" default="180"/>
 
   <xacro:include filename="$(find a2w_description)/urdf/a2w.urdf.xacro"/>
   <xacro:include filename="$(find sensor_models)/urdf/jt128_lidar.urdf.xacro"/>
 
-  <gazebo>
-    <plugin filename="ignition-gazebo-velocity-control-system"
-            name="ignition::gazebo::systems::VelocityControl">
-      <topic>/model/$(arg robot_name)/cmd_vel</topic>
-    </plugin>
-  </gazebo>
+  <xacro:if value="${'$(arg locomotion)' == 'kinematic'}">
+    <gazebo>
+      <plugin filename="ignition-gazebo-velocity-control-system"
+              name="ignition::gazebo::systems::VelocityControl">
+        <topic>/model/$(arg robot_name)/cmd_vel</topic>
+      </plugin>
+    </gazebo>
+  </xacro:if>
+
+  <xacro:if value="${'$(arg locomotion)' == 'policy'}">
+    <!-- Gains/limits mirror training/a2w_robot_lab/unitree_a2w/a2w_asset.py:
+         legs kp 100, kd 3 (hip/thigh 120 Nm, calf 180 Nm); wheels kd 1.5, 50 Nm. -->
+    <xacro:macro name="leg_joint_pd" params="joint effort">
+      <gazebo>
+        <plugin filename="ignition-gazebo-joint-position-controller-system"
+                name="ignition::gazebo::systems::JointPositionController">
+          <joint_name>${joint}</joint_name>
+          <topic>/model/$(arg robot_name)/joint/${joint}/cmd_pos</topic>
+          <p_gain>100.0</p_gain>
+          <i_gain>0.0</i_gain>
+          <d_gain>3.0</d_gain>
+          <cmd_max>${effort}</cmd_max>
+          <cmd_min>${-effort}</cmd_min>
+        </plugin>
+      </gazebo>
+    </xacro:macro>
+    <xacro:macro name="wheel_joint_vel" params="joint">
+      <gazebo>
+        <plugin filename="ignition-gazebo-joint-controller-system"
+                name="ignition::gazebo::systems::JointController">
+          <joint_name>${joint}</joint_name>
+          <topic>/model/$(arg robot_name)/joint/${joint}/cmd_vel</topic>
+          <use_force_commands>true</use_force_commands>
+          <p_gain>1.5</p_gain>
+          <i_gain>0.0</i_gain>
+          <d_gain>0.0</d_gain>
+          <cmd_max>50.0</cmd_max>
+          <cmd_min>-50.0</cmd_min>
+        </plugin>
+      </gazebo>
+      <gazebo reference="${joint.replace('_joint', '')}">
+        <mu1>1.0</mu1>
+        <mu2>1.0</mu2>
+      </gazebo>
+    </xacro:macro>
+    <xacro:macro name="a2w_leg_actuators" params="leg">
+      <xacro:leg_joint_pd joint="${leg}_hip_joint" effort="120.0"/>
+      <xacro:leg_joint_pd joint="${leg}_thigh_joint" effort="120.0"/>
+      <xacro:leg_joint_pd joint="${leg}_calf_joint" effort="180.0"/>
+      <xacro:wheel_joint_vel joint="${leg}_foot_joint"/>
+    </xacro:macro>
+    <xacro:a2w_leg_actuators leg="FR"/>
+    <xacro:a2w_leg_actuators leg="FL"/>
+    <xacro:a2w_leg_actuators leg="RR"/>
+    <xacro:a2w_leg_actuators leg="RL"/>
+
+    <gazebo>
+      <plugin filename="ignition-gazebo-joint-state-publisher-system"
+              name="ignition::gazebo::systems::JointStatePublisher">
+        <topic>/model/$(arg robot_name)/joint_state</topic>
+      </plugin>
+    </gazebo>
+  </xacro:if>
 
   <gazebo>
     <plugin filename="ignition-gazebo-odometry-publisher-system"

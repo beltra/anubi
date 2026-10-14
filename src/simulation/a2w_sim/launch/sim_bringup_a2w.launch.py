@@ -57,6 +57,12 @@ def generate_launch_description():
         DeclareLaunchArgument("lidar_h_samples", default_value="180"),
         DeclareLaunchArgument("physics_step_sec", default_value="0.004"),
         DeclareLaunchArgument(
+            "locomotion", default_value="kinematic",
+            description="kinematic: sliding base. policy: articulated legs + wheels "
+                        "(a2w_policy_controller; stance fallback without policy_path).",
+        ),
+        DeclareLaunchArgument("policy_path", default_value=""),
+        DeclareLaunchArgument(
             "use_lio", default_value="true",
             description="DLIO on the merged cloud + body IMU drives the EKF (as on the "
                         "real robot). false = Gazebo ground-truth odometry + EKF.",
@@ -96,6 +102,8 @@ def generate_launch_description():
             "lidar_channels": LaunchConfiguration("lidar_channels"),
             "lidar_h_samples": LaunchConfiguration("lidar_h_samples"),
             "physics_step_sec": LaunchConfiguration("physics_step_sec"),
+            "locomotion": LaunchConfiguration("locomotion"),
+            "policy_path": LaunchConfiguration("policy_path"),
             "publish_map_to_odom_tf": LaunchConfiguration("publish_map_to_odom_tf"),
         }.items(),
     )

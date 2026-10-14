@@ -199,6 +199,8 @@ validated on hardware.
 | `/scan` | `pointcloud_to_laserscan` (`scan_from_cloud_a2w.yaml`, target `lidar_stabilized`) | same |
 | `/lidar_odom` | DLIO (use_lio, default true; `dlio_params_a2w_sim.yaml`, IMU `/imu/data`) | DLIO (use_lio, default true; `dlio_params_a2w_real.yaml`, IMU `/imu/data`) |
 | `/cmd_vel_safe` consumer | `ros_ign_bridge` -> `/model/<robot>/cmd_vel` (VelocityControl) | `go2_hw_bridge` -> SportClient Move on `/api/sport/request` |
+| `/cmd_vel_safe` consumer, `locomotion:=policy` | `a2w_policy_controller` -> `/model/<robot>/joint/<joint>/cmd_pos` (12 legs, JointPositionController) and `.../cmd_vel` (4 wheels, JointController), bridged ROS -> Ignition | n/a (the onboard sport controller) |
+| `/joint_states` | `locomotion:=policy` only: `ros_ign_bridge` of `/model/<robot>/joint_state` (feeds `robot_state_publisher`); kinematic mode has no movable joints | `go2_hw_bridge` |
 
 `/lidar/imu` is not used on the A2-W: the body IMU is the single inertial reference for
 DLIO and the EKF. The Go2 startup gait sequence (ClassicWalk) is disabled in

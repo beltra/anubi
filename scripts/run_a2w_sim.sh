@@ -22,6 +22,8 @@ CLEAN_EXISTING="true"
 LIDAR_CHANNELS=""
 LIDAR_H_SAMPLES=""
 PHYSICS_STEP_SEC=""
+LOCOMOTION="kinematic"
+POLICY_PATH=""
 
 usage() {
   cat <<'USAGE'
@@ -45,13 +47,20 @@ Options:
   --lidar-channels <n> Simulated JT128 channels per sensor (launch default: 64; real: 128)
   --lidar-h-samples <n>
                        Simulated azimuth samples per sensor (launch default: 180; real: 900)
-  --physics-step <sec> Gazebo max_step_size (launch default: 0.004)
+  --physics-step <sec> Gazebo max_step_size (launch default: 0.004; 0.002 with --locomotion policy)
+  --locomotion <kinematic|policy>
+                       kinematic: rigid sliding base (default). policy: articulated legs
+                       and wheels driven by a2w_policy_controller
+  --policy <file.npz>  Actor weights for --locomotion policy (implies it). Without it the
+                       controller holds the stance and skid-steers the wheels
   -h, --help           Show this help
 
 Examples:
   run_a2w_sim.sh
   run_a2w_sim.sh --gui --no-lio
   run_a2w_sim.sh --lidar-channels 128 --lidar-h-samples 900   # GPU host
+  run_a2w_sim.sh --gui --no-lio --locomotion policy             # stance + skid-steer
+  run_a2w_sim.sh --gui --no-lio --policy a2w_flat.npz           # trained Isaac Lab policy
   run_a2w_sim.sh localization --map src/autonomy/robot_nav/maps/my_map
 USAGE
 }
@@ -79,10 +88,26 @@ while [[ $# -gt 0 ]]; do
     --lidar-channels) need_value "$@"; LIDAR_CHANNELS="$2"; shift 2;;
     --lidar-h-samples) need_value "$@"; LIDAR_H_SAMPLES="$2"; shift 2;;
     --physics-step) need_value "$@"; PHYSICS_STEP_SEC="$2"; shift 2;;
+    --locomotion) need_value "$@"; LOCOMOTION="$2"; shift 2;;
+    --policy) need_value "$@"; POLICY_PATH="$2"; LOCOMOTION="policy"; shift 2;;
     -h|--help) usage; exit 0;;
     *) echo "Unknown argument: $1" >&2; usage; exit 1;;
   esac
 done
+
+if [[ "$LOCOMOTION" != "kinematic" && "$LOCOMOTION" != "policy" ]]; then
+  echo "--locomotion must be kinematic or policy (got: $LOCOMOTION)." >&2; exit 1
+fi
+if [[ -n "$POLICY_PATH" ]]; then
+  if [[ ! -f "$POLICY_PATH" ]]; then
+    echo "Policy file not found: $POLICY_PATH" >&2; exit 1
+  fi
+  POLICY_PATH="$(cd "$(dirname "$POLICY_PATH")" && pwd)/$(basename "$POLICY_PATH")"
+fi
+# Leg PD runs at the physics rate; 4 ms is too coarse for stiff stance contacts.
+if [[ "$LOCOMOTION" == "policy" && -z "$PHYSICS_STEP_SEC" ]]; then
+  PHYSICS_STEP_SEC="0.002"
+fi
 
 if [[ "$MODE" == "localization" ]]; then
   if [[ -z "$MAP_PATH" ]]; then
@@ -116,7 +141,9 @@ CMD=(
   use_lio:="$USE_LIO"
   nav_delay_sec:="$NAV_DELAY_SEC"
   distortion_imu_topic:="$DISTORTION_IMU_TOPIC"
+  locomotion:="$LOCOMOTION"
 )
+[[ -n "$POLICY_PATH" ]] && CMD+=(policy_path:="$POLICY_PATH")
 [[ -n "$MAP_PATH" ]] && CMD+=(map:="$MAP_PATH")
 [[ -n "$LIDAR_CHANNELS" ]] && CMD+=(lidar_channels:="$LIDAR_CHANNELS")
 [[ -n "$LIDAR_H_SAMPLES" ]] && CMD+=(lidar_h_samples:="$LIDAR_H_SAMPLES")

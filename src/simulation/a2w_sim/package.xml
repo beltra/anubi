@@ -24,6 +24,11 @@
   <exec_depend>robot_nav</exec_depend>
   <exec_depend>robot_lio</exec_depend>
   <exec_depend>robot_safety</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

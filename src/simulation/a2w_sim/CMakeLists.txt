@@ -7,4 +7,8 @@ install(DIRECTORY urdf launch
   DESTINATION share/${PROJECT_NAME}
 )
 
+install(PROGRAMS scripts/a2w_policy_controller.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 ament_package()

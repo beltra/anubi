@@ -15,6 +15,11 @@ Topic bridges (Ignition -> ROS):
 ROS -> Ignition:
   /cmd_vel_safe -> /model/<robot>/cmd_vel   (VelocityControl)
 
+locomotion:=policy replaces the sliding base with the articulated model (see
+a2w_sim.urdf.xacro): /model/<robot>/joint_state -> /joint_states, and
+a2w_policy_controller publishes /model/<robot>/joint/<joint>/cmd_pos (legs) and
+.../cmd_vel (wheels) from /cmd_vel_safe instead of the VelocityControl twist.
+
 cloud_merger fuses the two clouds into /lidar/points (frame lidar_link), the single
 cloud the shared perception chain consumes; the real bringup runs the same node.
 
@@ -41,7 +46,7 @@ from launch.actions import (
 )
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import Command, LaunchConfiguration
+from launch.substitutions import Command, LaunchConfiguration, PythonExpression
 
 # Standing geometry, kept in lockstep with a2w_description/urdf/a2w.urdf.xacro:
 # base_link height above the floor = calf-tip depth + wheel radius.
@@ -51,11 +56,23 @@ LIDAR_X_M = 0.0
 LIDAR_Y_M = 0.0
 LIDAR_Z_IN_BASE_M = 0.0843
 
+# Articulated spawn: joints start at zero (straight legs), so the base starts this much
+# above the standing height and a2w_policy_controller folds the legs into the stance.
+POLICY_SPAWN_LIFT_M = 0.17
+
+# Joint order of the Isaac Lab task (training/a2w_robot_lab/unitree_a2w/rough_env_cfg.py).
+A2W_LEG_JOINTS = [
+    leg + "_" + part + "_joint"
+    for leg in ("FR", "FL", "RR", "RL") for part in ("hip", "thigh", "calf")
+]
+A2W_WHEEL_JOINTS = [leg + "_foot_joint" for leg in ("FR", "FL", "RR", "RL")]
+
 
 def generate_launch_description():
     use_sim_time = LaunchConfiguration("use_sim_time")
     use_lio = LaunchConfiguration("use_lio")
     robot_name = LaunchConfiguration("robot_name")
+    locomotion = LaunchConfiguration("locomotion")
 
     a2w_sim_dir = get_package_share_directory("a2w_sim")
     a2w_desc_dir = get_package_share_directory("a2w_description")
@@ -77,6 +94,17 @@ def generate_launch_description():
                         "Gazebo ground-truth odometry",
         ),
         DeclareLaunchArgument("robot_name", default_value="a2w"),
+        DeclareLaunchArgument(
+            "locomotion", default_value="kinematic",
+            choices=["kinematic", "policy"],
+            description="kinematic: rigid sliding base (VelocityControl). policy: articulated "
+                        "legs and wheels driven by a2w_policy_controller.",
+        ),
+        DeclareLaunchArgument(
+            "policy_path", default_value="",
+            description="Actor weights (.npz from export_policy_npz.py) for locomotion:=policy. "
+                        "Empty: stance + skid-steer fallback controller.",
+        ),
         DeclareLaunchArgument("world", default_value=default_world),
         DeclareLaunchArgument(
             "world_name", default_value="indoor_office",
@@ -122,6 +150,8 @@ def generate_launch_description():
     xacro_cmd = [
         "xacro ", urdf_path,
         " robot_name:=", robot_name,
+        " locomotion:=", locomotion,
+        " fixed_legs:=", PythonExpression(["'false' if '", locomotion, "' == 'policy' else 'true'"]),
         " lidar_channels:=", LaunchConfiguration("lidar_channels"),
         " lidar_h_samples:=", LaunchConfiguration("lidar_h_samples"),
     ]
@@ -179,8 +209,11 @@ def generate_launch_description():
     # keep the full URDF through robot_state_publisher.
     def make_spawn_sdf(context):
         name = robot_name.perform(context)
+        articulated = locomotion.perform(context) == "policy"
         urdf_xml = subprocess.check_output(
             ["xacro", urdf_path, "robot_name:=" + name,
+             "locomotion:=" + locomotion.perform(context),
+             "fixed_legs:=" + ("false" if articulated else "true"),
              "lidar_channels:=" + LaunchConfiguration("lidar_channels").perform(context),
              "lidar_h_samples:=" + LaunchConfiguration("lidar_h_samples").perform(context)],
             text=True,
@@ -202,6 +235,9 @@ def generate_launch_description():
         )
         if n_vis != 1:
             raise RuntimeError("a2w_sim spawn: expected one base_link.STL visual, got " + str(n_vis))
+
+        if articulated:
+            return spawn_node(context, name, sdf_xml, lift=POLICY_SPAWN_LIFT_M)
 
         # VelocityControl drives x/y/yaw only and relies on ground contact for z.
         # Replace the lumped leg/wheel collisions with ONE box matching the Nav2
@@ -234,9 +270,13 @@ def generate_launch_description():
         if n_link != 1:
             raise RuntimeError("a2w_sim spawn: could not add base_link support collision")
 
+        return spawn_node(context, name, sdf_xml, lift=0.0)
+
+    def spawn_node(context, name, sdf_xml, lift):
         sdf_tmp = os.path.join(tempfile.gettempdir(), "a2w_sim_" + name + ".sdf")
         with open(sdf_tmp, "w") as fh:
             fh.write(sdf_xml)
+        init_z = float(LaunchConfiguration("world_init_z").perform(context)) + lift
         return [Node(
             package="ros_ign_gazebo",
             executable="create",
@@ -247,33 +287,68 @@ def generate_launch_description():
                 "-file", sdf_tmp,
                 "-x", LaunchConfiguration("world_init_x").perform(context),
                 "-y", LaunchConfiguration("world_init_y").perform(context),
-                "-z", LaunchConfiguration("world_init_z").perform(context),
+                "-z", str(init_z),
                 "-Y", LaunchConfiguration("world_init_heading").perform(context),
             ],
         )]
 
     gazebo_spawn_robot = OpaqueFunction(function=make_spawn_sdf)
 
-    gazebo_bridge = Node(
-        package="ros_ign_bridge",
-        executable="parameter_bridge",
-        name="gazebo_bridge",
-        output="screen",
-        parameters=[{"use_sim_time": use_sim_time}],
-        arguments=[
+    def make_bridge(context):
+        name = robot_name.perform(context)
+        arguments = [
             "/clock@rosgraph_msgs/msg/Clock[ignition.msgs.Clock",
             "/imu/data@sensor_msgs/msg/Imu[ignition.msgs.IMU",
             "/a2w/front_lidar/points@sensor_msgs/msg/PointCloud2[ignition.msgs.PointCloudPacked",
             "/a2w/rear_lidar/points@sensor_msgs/msg/PointCloud2[ignition.msgs.PointCloudPacked",
-            ["/model/", robot_name, "/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry"],
-            ["/model/", robot_name, "/cmd_vel@geometry_msgs/msg/Twist]ignition.msgs.Twist"],
-        ],
-        remappings=[
+            "/model/" + name + "/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry",
+        ]
+        remappings = [
             ("/a2w/front_lidar/points", "/lidar/front/points"),
             ("/a2w/rear_lidar/points", "/lidar/rear/points"),
-            (["/model/", robot_name, "/odometry"], "/odom_raw"),
-            (["/model/", robot_name, "/cmd_vel"], "/cmd_vel_safe"),
-        ],
+            ("/model/" + name + "/odometry", "/odom_raw"),
+        ]
+        if locomotion.perform(context) == "policy":
+            # Joint commands stay on the ign-side names; a2w_policy_controller publishes
+            # them directly, and /joint_states feeds robot_state_publisher.
+            arguments.append(
+                "/model/" + name + "/joint_state@sensor_msgs/msg/JointState[ignition.msgs.Model")
+            remappings.append(("/model/" + name + "/joint_state", "/joint_states"))
+            for joint in A2W_LEG_JOINTS:
+                arguments.append(
+                    "/model/" + name + "/joint/" + joint + "/cmd_pos@std_msgs/msg/Float64]ignition.msgs.Double")
+            for joint in A2W_WHEEL_JOINTS:
+                arguments.append(
+                    "/model/" + name + "/joint/" + joint + "/cmd_vel@std_msgs/msg/Float64]ignition.msgs.Double")
+        else:
+            arguments.append("/model/" + name + "/cmd_vel@geometry_msgs/msg/Twist]ignition.msgs.Twist")
+            remappings.append(("/model/" + name + "/cmd_vel", "/cmd_vel_safe"))
+        return [Node(
+            package="ros_ign_bridge",
+            executable="parameter_bridge",
+            name="gazebo_bridge",
+            output="screen",
+            parameters=[{"use_sim_time": use_sim_time}],
+            arguments=arguments,
+            remappings=remappings,
+        )]
+
+    gazebo_bridge = OpaqueFunction(function=make_bridge)
+
+    policy_controller = Node(
+        package="a2w_sim",
+        executable="a2w_policy_controller.py",
+        name="a2w_policy_controller",
+        output="screen",
+        condition=IfCondition(PythonExpression(["'", locomotion, "' == 'policy'"])),
+        parameters=[{
+            "use_sim_time": use_sim_time,
+            "robot_name": robot_name,
+            "policy_path": LaunchConfiguration("policy_path"),
+            "cmd_vel_topic": "/cmd_vel_safe",
+            "leg_joints": A2W_LEG_JOINTS,
+            "wheel_joints": A2W_WHEEL_JOINTS,
+        }],
     )
 
     cloud_merger = Node(
@@ -412,6 +487,7 @@ def generate_launch_description():
         gazebo_bridge,
         cloud_merger,
         velocity_limiter,
+        policy_controller,
         footprint_to_odom_ekf,
         lidar_odom_relay,
         base_footprint_to_base_link_tf,

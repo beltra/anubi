@@ -59,6 +59,7 @@ add_pids < <(pgrep -f 'sim_a2w.launch.py' || true)
 add_pids < <(pgrep -f 'a2w_bringup.launch.py' || true)
 add_pids < <(pgrep -f 'go2_hw_bridge' || true)
 add_pids < <(pgrep -f 'robot_nav/lib/robot_nav/cloud_merger' || true)
+add_pids < <(pgrep -f 'a2w_sim/lib/a2w_sim/a2w_policy_controller' || true)
 add_pids < <(pgrep -f 'g1_bringup.launch.py' || true)
 # G1 real-robot adapters / sensors / odometry
 add_pids < <(pgrep -f 'g1_state_bridge' || true)
