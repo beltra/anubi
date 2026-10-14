@@ -188,7 +188,7 @@ validated on hardware.
 | Canonical topic / TF | A2-W sim publisher (`a2w_sim`) | A2-W real publisher (`a2w_bringup`) |
 |----------------------|--------------------------------|-------------------------------------|
 | per-sensor clouds | `ros_ign_bridge`: `/lidar/front/points` (frame `front_lidar_link`), `/lidar/rear/points` (frame `rear_lidar_link`) | two JT128 drivers (`front/rear_lidar_points_input_topic`, defaults `/lidar_points_front`, `/lidar_points_rear`; verify on the robot) |
-| `/lidar/points` | `cloud_merger` (frame `lidar_link`, stamp of the front sweep) | `cloud_merger` (same node and params) |
+| `/lidar/points` | `cloud_merger` (frame `lidar_link`, stamp of the front sweep, RELIABLE QoS so DLIO's reliable subscription matches) | `cloud_merger` (same node and params) |
 | `/odom_raw` | `ros_ign_bridge` of Fortress OdometryPublisher (ground truth) | `go2_hw_bridge` from `/lf/sportmodestate` |
 | `/imu/data` | `ros_ign_bridge` of the Gazebo IMU (frame `imu_link`) | `go2_hw_bridge` (SportModeState imu_state) |
 | `/odom` + `odom -> base_footprint` TF | `footprint_to_odom_ekf` (odom0 `/lidar_odom_reliable` with use_lio, else `/odom_raw`; imu0 yaw rate) | `ekf_filter_node` (`ekf_fusion_params_lio.yaml` / `ekf_fusion_params.yaml`) |

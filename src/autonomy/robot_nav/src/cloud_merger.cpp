@@ -48,8 +48,10 @@ public:
     tf_buffer_ = std::make_shared<tf2_ros::Buffer>(get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
+    // RELIABLE output: DLIO subscribes /lidar/points as reliable and would otherwise
+    // receive nothing; best-effort consumers still match a reliable publisher.
     pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
-      output_topic_, rclcpp::SensorDataQoS());
+      output_topic_, rclcpp::QoS(rclcpp::KeepLast(2)).reliable());
 
     history_.resize(input_topics_.size());
     for (size_t i = 0; i < input_topics_.size(); ++i) {
