@@ -29,6 +29,12 @@ for name in \
 done
 
 add_pids < <(pgrep -f '/opt/ros/' || true)
+# RoboStack (conda) installs ROS executables under $CONDA_PREFIX/lib/<pkg>/, not /opt/ros,
+# and pgrep -x misses names longer than 15 chars (robot_state_publisher, parameter_bridge).
+if [ -n "${CONDA_PREFIX:-}" ]; then
+  add_pids < <(pgrep -f "^${CONDA_PREFIX}/lib/[A-Za-z0-9_]+/[A-Za-z0-9_]+" || true)
+  add_pids < <(pgrep -f "${CONDA_PREFIX}/bin/ros2 launch" || true)
+fi
 add_pids < <(pgrep -f "${workspace_root}/install/" || true)
 add_pids < <(pgrep -f "${workspace_root}/build/" || true)
 
