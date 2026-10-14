@@ -11,7 +11,7 @@ Two modes after a stand-up phase that folds the legs from the zero-angle spawn p
                   (wheel entries zeroed), joint_vel*0.05, last_action]
            act = [12 leg position offsets (hip*0.125, thigh/calf*0.25),
                   4 wheel velocity targets (*5.0 rad/s)]
-  stance : no policy file. Legs hold the standing pose and the wheels skid-steer
+  stance : policy_path empty or 'none'. Legs hold the standing pose and the wheels skid-steer
            (vx, wz); vy is ignored because the wheel axles cannot steer.
 """
 
@@ -102,7 +102,7 @@ class A2WPolicyController(Node):
             [self.hip_action_scale if "_hip_" in j else self.leg_action_scale for j in self.leg_joints])
 
         self.actor = None
-        if self.policy_path:
+        if self.policy_path and self.policy_path != "none":
             self.actor = MlpActor(self.policy_path)
             self._check_policy_metadata()
             expected_obs = 9 + 3 * len(self.joint_names)

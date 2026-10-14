@@ -3,7 +3,7 @@ project(a2w_sim)
 
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY urdf launch
+install(DIRECTORY urdf launch policies
   DESTINATION share/${PROJECT_NAME}
 )
 

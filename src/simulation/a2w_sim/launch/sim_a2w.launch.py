@@ -1,10 +1,11 @@
 """
 sim_a2w.launch.py - Gazebo Fortress wheeled-base simulation for the Unitree A2-W (Pro).
 
-Wheeled analogue of g1_sim/sim_g1.launch.py. No gait and no wheel dynamics: the
-legs are frozen in the standing pose and a Fortress VelocityControl plugin slides
-the lumped body from /cmd_vel_safe, the same body-twist contract as the real
-robot's SportClient::Move. Everything downstream publishes the canonical topics
+Wheeled analogue of g1_sim/sim_g1.launch.py. Default locomotion:=policy: the
+articulated model is driven by a trained wheel-legged policy (policies/a2w_flat_v1.npz,
+training/a2w_robot_lab) from /cmd_vel_safe, the same body-twist contract as the real
+robot's SportClient::Move. locomotion:=kinematic freezes the legs and a Fortress
+VelocityControl plugin slides the lumped body instead. Everything downstream publishes the canonical topics
 and frames (docs/topic_map.md, A2-W section).
 
 Topic bridges (Ignition -> ROS):
@@ -13,11 +14,10 @@ Topic bridges (Ignition -> ROS):
   /a2w/rear_lidar/points  -> /lidar/rear/points    (frame: rear_lidar_link)
   /model/<robot>/odometry -> /odom_raw
 ROS -> Ignition:
-  /cmd_vel_safe -> /model/<robot>/cmd_vel   (VelocityControl)
+  /cmd_vel_safe -> /model/<robot>/cmd_vel   (VelocityControl, kinematic only)
 
-locomotion:=policy replaces the sliding base with the articulated model (see
-a2w_sim.urdf.xacro): /model/<robot>/joint_state -> /joint_states, and
-a2w_policy_controller publishes /model/<robot>/joint/<joint>/cmd_pos (legs) and
+locomotion:=policy uses the articulated model (see a2w_sim.urdf.xacro):
+/model/<robot>/joint_state -> /joint_states, and a2w_policy_controller publishes /model/<robot>/joint/<joint>/cmd_pos (legs) and
 .../cmd_vel (wheels) from /cmd_vel_safe instead of the VelocityControl twist.
 
 cloud_merger fuses the two clouds into /lidar/points (frame lidar_link), the single
@@ -95,15 +95,15 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument("robot_name", default_value="a2w"),
         DeclareLaunchArgument(
-            "locomotion", default_value="kinematic",
+            "locomotion", default_value="policy",
             choices=["kinematic", "policy"],
             description="kinematic: rigid sliding base (VelocityControl). policy: articulated "
                         "legs and wheels driven by a2w_policy_controller.",
         ),
         DeclareLaunchArgument(
-            "policy_path", default_value="",
+            "policy_path", default_value=os.path.join(a2w_sim_dir, "policies", "a2w_flat_v1.npz"),
             description="Actor weights (.npz from export_policy_npz.py) for locomotion:=policy. "
-                        "Empty: stance + skid-steer fallback controller.",
+                        "'none': stance + skid-steer fallback controller.",
         ),
         DeclareLaunchArgument("world", default_value=default_world),
         DeclareLaunchArgument(
@@ -125,9 +125,10 @@ def generate_launch_description():
             description="Simulated JT128 azimuth samples per sweep (real: 900).",
         ),
         DeclareLaunchArgument(
-            "physics_step_sec", default_value="0.004",
+            "physics_step_sec", default_value="",
             description="Gazebo physics step for the world copy this launch runs; sets "
-                        "the /clock rate (1/step).",
+                        "the /clock rate (1/step). Empty: 0.002 for locomotion:=policy "
+                        "(leg PD runs at the physics rate), 0.004 for kinematic.",
         ),
         DeclareLaunchArgument(
             "publish_map_to_odom_tf", default_value="true",
@@ -166,7 +167,7 @@ def generate_launch_description():
         ],
     )
 
-    # The sliding base needs no 1 kHz physics. Every ROS node with use_sim_time
+    # Neither locomotion mode needs 1 kHz physics. Every ROS node with use_sim_time
     # wakes on each /clock tick, so the world's 1 ms step (1000 Hz /clock) costs
     # more CPU than the whole nav stack; run a copy of the world at
     # physics_step_sec instead. Real-time factor is unchanged.
@@ -175,7 +176,11 @@ def generate_launch_description():
 
     def make_gazebo(context):
         world_src = LaunchConfiguration("world").perform(context)
-        step = float(LaunchConfiguration("physics_step_sec").perform(context))
+        step_arg = LaunchConfiguration("physics_step_sec").perform(context)
+        if step_arg:
+            step = float(step_arg)
+        else:
+            step = 0.002 if locomotion.perform(context) == "policy" else 0.004
         with open(world_src) as fh:
             world_xml = fh.read()
         world_xml, n_step = re.subn(

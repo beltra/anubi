@@ -3,7 +3,7 @@ sim_bringup_a2w.launch.py - Full Gazebo Fortress + Nav2 simulation bringup for t
 Unitree A2-W (Pro) wheeled quadruped.
 
 Wheeled analogue of g1_sim/sim_bringup_g1.launch.py. Starts:
-  1. a2w_sim/sim_a2w.launch.py   (Gazebo, sliding base, bridges, cloud_merger, EKF, TF)
+  1. a2w_sim/sim_a2w.launch.py   (Gazebo, policy or sliding base, bridges, cloud_merger, EKF, TF)
   2. distortion_corrector        (/lidar/points -> /lidar/points_undistorted)
   3. robot_lio (DLIO)            (use_lio:=true, default: /lidar_odom -> EKF)
   4. robot_nav/slam.launch.py    (slam_toolbox owns map->odom)
@@ -55,13 +55,17 @@ def generate_launch_description():
         DeclareLaunchArgument("publish_map_to_odom_tf", default_value="false"),
         DeclareLaunchArgument("lidar_channels", default_value="64"),
         DeclareLaunchArgument("lidar_h_samples", default_value="180"),
-        DeclareLaunchArgument("physics_step_sec", default_value="0.004"),
+        DeclareLaunchArgument("physics_step_sec", default_value=""),
         DeclareLaunchArgument(
-            "locomotion", default_value="kinematic",
-            description="kinematic: sliding base. policy: articulated legs + wheels "
-                        "(a2w_policy_controller; stance fallback without policy_path).",
+            "locomotion", default_value="policy",
+            description="policy: articulated legs + wheels under a2w_policy_controller. "
+                        "kinematic: rigid sliding base.",
         ),
-        DeclareLaunchArgument("policy_path", default_value=""),
+        DeclareLaunchArgument(
+            "policy_path",
+            default_value=os.path.join(a2w_sim_share, "policies", "a2w_flat_v1.npz"),
+            description="Actor weights; 'none' = stance + skid-steer fallback.",
+        ),
         DeclareLaunchArgument(
             "use_lio", default_value="true",
             description="DLIO on the merged cloud + body IMU drives the EKF (as on the "
