@@ -54,7 +54,7 @@ class UnitreeA2WRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
     rewards: UnitreeA2WRewardsCfg = UnitreeA2WRewardsCfg()
 
     base_link_name = "base_link"
-    foot_link_name = ".*_foot"
+    foot_link_name = ".*_wheel"
 
     # fmt: off
     leg_joint_names = [
@@ -64,7 +64,7 @@ class UnitreeA2WRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         "RL_hip_joint", "RL_thigh_joint", "RL_calf_joint",
     ]
     wheel_joint_names = [
-        "FR_foot_joint", "FL_foot_joint", "RR_foot_joint", "RL_foot_joint",
+        "FR_wheel_joint", "FL_wheel_joint", "RR_wheel_joint", "RL_wheel_joint",
     ]
     joint_names = leg_joint_names + wheel_joint_names
     # fmt: on
@@ -213,7 +213,7 @@ class UnitreeA2WRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.rewards.feet_height_body.params["target_height"] = -0.45
         self.rewards.feet_height_body.params["asset_cfg"].body_names = [self.foot_link_name]
         self.rewards.feet_gait.weight = 0
-        self.rewards.feet_gait.params["synced_feet_pair_names"] = (("FL_foot", "RR_foot"), ("FR_foot", "RL_foot"))
+        self.rewards.feet_gait.params["synced_feet_pair_names"] = (("FL_wheel", "RR_wheel"), ("FR_wheel", "RL_wheel"))
         self.rewards.upward.weight = 3.0
 
         # If the weight of rewards is 0, set rewards to None

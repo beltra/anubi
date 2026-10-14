@@ -45,7 +45,7 @@
 
   <xacro:if value="${'$(arg locomotion)' == 'policy'}">
     <!-- Gains/limits mirror training/a2w_robot_lab/unitree_a2w/a2w_asset.py:
-         legs kp 100, kd 3 (hip/thigh 120 Nm, calf 180 Nm); wheels kd 1.5, 50 Nm. -->
+         legs kp 100, kd 3 (hip/thigh 120 Nm, calf 180 Nm); wheels kd 1.5, 24.5 Nm. -->
     <xacro:macro name="leg_joint_pd" params="joint effort">
       <gazebo>
         <plugin filename="ignition-gazebo-joint-position-controller-system"
@@ -70,8 +70,8 @@
           <p_gain>1.5</p_gain>
           <i_gain>0.0</i_gain>
           <d_gain>0.0</d_gain>
-          <cmd_max>50.0</cmd_max>
-          <cmd_min>-50.0</cmd_min>
+          <cmd_max>24.5</cmd_max>
+          <cmd_min>-24.5</cmd_min>
         </plugin>
       </gazebo>
       <gazebo reference="${joint.replace('_joint', '')}">
@@ -83,7 +83,7 @@
       <xacro:leg_joint_pd joint="${leg}_hip_joint" effort="120.0"/>
       <xacro:leg_joint_pd joint="${leg}_thigh_joint" effort="120.0"/>
       <xacro:leg_joint_pd joint="${leg}_calf_joint" effort="180.0"/>
-      <xacro:wheel_joint_vel joint="${leg}_foot_joint"/>
+      <xacro:wheel_joint_vel joint="${leg}_wheel_joint"/>
     </xacro:macro>
     <xacro:a2w_leg_actuators leg="FR"/>
     <xacro:a2w_leg_actuators leg="FL"/>

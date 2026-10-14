@@ -14,6 +14,12 @@ class UnitreeA2WFlatEnvCfg(UnitreeA2WRoughEnvCfg):
 
         # override rewards
         self.rewards.base_height_l2.params["sensor_cfg"] = None
+        # play/video camera follows robot 0 (training is headless and ignores it)
+        self.viewer.origin_type = "asset_root"
+        self.viewer.asset_name = "robot"
+        self.viewer.env_index = 0
+        self.viewer.eye = (2.5, 2.5, 1.6)
+        self.viewer.lookat = (0.0, 0.0, 0.3)
         # change terrain to flat
         self.scene.terrain.terrain_type = "plane"
         self.scene.terrain.terrain_generator = None

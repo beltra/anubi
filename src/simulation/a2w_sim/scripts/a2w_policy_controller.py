@@ -86,9 +86,10 @@ class A2WPolicyController(Node):
         self.ang_vel_scale = self.declare_parameter("ang_vel_scale", 0.25).value
         self.joint_vel_scale = self.declare_parameter("joint_vel_scale", 0.05).value
         self.cmd_limits = list(self.declare_parameter("cmd_limits", [1.0, 1.0, 1.0]).value)
-        # Stance mode: wheel contact y = hip 0.075 + thigh 0.128 + wheel 0.06 (a2w.urdf.xacro).
-        self.wheel_radius = self.declare_parameter("wheel_radius", 0.095).value
-        self.wheel_track = self.declare_parameter("wheel_track", 0.526).value
+        # Stance mode: wheel contact y = hip 0.0751 + thigh 0.1278 + tyre centre 0.0494
+        # (official A2-W URDF, a2w_body.urdf.xacro).
+        self.wheel_radius = self.declare_parameter("wheel_radius", 0.0948).value
+        self.wheel_track = self.declare_parameter("wheel_track", 0.5046).value
         self.skid_track_scale = self.declare_parameter("skid_track_scale", 1.0).value
         self.max_wheel_speed = self.declare_parameter("max_wheel_speed", 30.0).value
         self.fallen_gravity_z = self.declare_parameter("fallen_gravity_z", -0.5).value

@@ -2,8 +2,8 @@
 """Isaac Lab articulation config for the Unitree A2-W (Pro), derived from robot_lab's Go2W/B2W.
 
 The URDF is exported from a2w_description (a2w.urdf.xacro fixed_legs:=false) by
-export_urdf.sh. Leg limits/efforts come from the official A2 URDF; wheel radius, wheel
-torque and wheel speed limits are estimates (no public A2-W model exists).
+export_urdf.sh; geometry, masses and leg/wheel effort limits come from the official
+Unitree A2-W URDF. Wheel friction and damping are not published and are estimates.
 """
 
 import os
@@ -51,7 +51,7 @@ UNITREE_A2W_CFG = ArticulationCfg(
             ".*_hip_joint": A2W_STAND_HIP,
             ".*_thigh_joint": A2W_STAND_THIGH,
             ".*_calf_joint": A2W_STAND_CALF,
-            ".*_foot_joint": 0.0,
+            ".*_wheel_joint": 0.0,
         },
         joint_vel={".*": 0.0},
     ),
@@ -86,11 +86,12 @@ UNITREE_A2W_CFG = ArticulationCfg(
             damping=3.0,
             friction=0.0,
         ),
-        # Estimated: ~3.3 m/s top speed at r 0.095 m; torque scaled from Go2W by mass.
+        # Official A2-W URDF: 24.5 Nm. Its 114.4 rad/s looks hand-entered; 60 rad/s at
+        # r 0.0948 m covers the ~6 m/s spec top speed.
         "wheels": ImplicitActuatorCfg(
-            joint_names_expr=[".*_foot_joint"],
-            effort_limit_sim=50.0,
-            velocity_limit_sim=35.0,
+            joint_names_expr=[".*_wheel_joint"],
+            effort_limit_sim=24.5,
+            velocity_limit_sim=60.0,
             stiffness=0.0,
             damping=1.5,
             friction=0.0,

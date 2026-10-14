@@ -65,7 +65,7 @@ A2W_LEG_JOINTS = [
     leg + "_" + part + "_joint"
     for leg in ("FR", "FL", "RR", "RL") for part in ("hip", "thigh", "calf")
 ]
-A2W_WHEEL_JOINTS = [leg + "_foot_joint" for leg in ("FR", "FL", "RR", "RL")]
+A2W_WHEEL_JOINTS = [leg + "_wheel_joint" for leg in ("FR", "FL", "RR", "RL")]
 
 
 def generate_launch_description():

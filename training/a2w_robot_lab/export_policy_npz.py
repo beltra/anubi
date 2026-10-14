@@ -19,7 +19,7 @@ LEG_JOINTS = [
     leg + "_" + part + "_joint"
     for leg in ("FR", "FL", "RR", "RL") for part in ("hip", "thigh", "calf")
 ]
-WHEEL_JOINTS = [leg + "_foot_joint" for leg in ("FR", "FL", "RR", "RL")]
+WHEEL_JOINTS = [leg + "_wheel_joint" for leg in ("FR", "FL", "RR", "RL")]
 
 
 def main():
