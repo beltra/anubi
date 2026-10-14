@@ -98,29 +98,56 @@ Downstream stays canonical: `/lidar/points -> /lidar/points_undistorted -> /scan
 
 Tracked in the project thread; defaults are marked there and applied until answered.
 
-## Status (2026-10-13)
+## Status (2026-10-14)
 
-Done and validated in sim (CPU-only container, ground-truth odometry):
+Done and validated in sim (RTX laptop, RoboStack env, Gazebo GUI on, RTF ~1.0):
 - Model and sensors: lumped sliding base tracks `/cmd_vel_safe` exactly, z stable at 0.497 m.
 - `cloud_merger` fuses both JT128 clouds into `/lidar/points` (~0.1 s latency end to end).
 - slam_toolbox builds a clean map of `indoor_office` from the merged cloud.
+- Nav2 goal suite `6,0,0  6,-3,-1.57  0,3,1.57  -7,0,3.14  0,0,0` (mapping mode, ~33 m per
+  lap, two laps per odometry source, clean ROS graph):
+
+  | Odometry | Success | Final xy error vs goal (ground truth) | Odom drift vs ground truth |
+  | --- | --- | --- | --- |
+  | ground truth (`--no-lio`) | 10/10 | 0.04 - 0.24 m | < 0.01 m |
+  | DLIO (default) | 10/10 | 0.06 - 0.27 m | max 0.054 m, max 2.1 deg yaw after ~70 m |
+
+  Each lap takes ~55 s wall. xy error is measured on ground truth; the goal checker uses the
+  SLAM estimate, so a few results sit just above the 0.25 m tolerance.
 - Real-robot scaffold `a2w_bringup` + `run_a2w_real.sh`: launch wiring checked without
   hardware (nodes start, frame aliases and merger inputs resolve). Not run on the robot.
 
+Root causes fixed:
+1. MPPI reverse driving was not a tuning problem. The RoboStack
+   `ros-humble-nav2-mppi-controller` 1.1.17 binary (build `_7`) computes wrong controls: in an
+   isolated controller_server with a straight path ahead and only PathFollowCritic enabled it
+   commands vx ~-0.23 m/s; the same YAML on MPPI 1.1.17 built from source gives +0.86 m/s.
+   The env pairs xtensor 0.23.9 with xsimd 14, which cannot even compile the upstream SIMD
+   path. Fix: `scripts/build_mppi_conda_overlay.sh` builds MPPI without xsimd into an overlay
+   and sources it from a conda activate.d hook. Every robot profile uses MPPI DiffDrive, so
+   Go2/G1 sims on RoboStack were affected too. Docker/apt Humble is not affected.
+2. DLIO received no clouds: `cloud_merger` published BEST_EFFORT and DLIO subscribes RELIABLE.
+   The merger now publishes RELIABLE. This applied to the real path too.
+3. `kill_ros_nodes.sh` did not stop Nav2 servers, bridges or robot_state_publisher under
+   RoboStack (it matched `/opt/ros/`), so relaunches stacked zombie Nav2 graphs. It now also
+   matches `$CONDA_PREFIX/lib/<pkg>/<exe>` and `ros2 launch`.
+
+Behaviour notes:
+- With `vx_min: -0.3`, MPPI backs up instead of turning around when the goal is behind the
+  robot and has the same heading (e.g. 3 m straight back). Reverse samples are 10-20 % of
+  commands on goals that require a heading change. Raise PreferForwardCritic or set
+  `vx_min: 0.0` if the robot should never back up more than a few decimetres.
+- The 20 Hz MPPI loop missed its rate a few times per lap (batch 2000, scalar build).
+
 Open issues, in order:
-1. MPPI goal following: the controller itself (`/cmd_vel_nav`) commands reverse at
-   ~-0.25 m/s while the transformed plan runs straight ahead of the robot (heading 0,
-   map->odom identity). Disabling critics at runtime did not change it, but no
-   "Dynamic parameter changed" log was seen, so the runtime toggles may not have applied.
-   Next: restart controller_server with a minimal critic set from YAML (PathFollow only,
-   then add critics back) on the GPU PC, where the 20 Hz loop is not CPU-starved.
-2. Goal suite `6,0,0  6,-3,-1.57  0,3,1.57  -7,0,3.14  0,0,0` with ground truth, then
-   with `use_lio:=true` (DLIO not yet exercised in sim).
-3. Visual check of the sim on the PC (`./scripts/run_a2w_sim.sh --gui --no-lio`).
-4. On the robot: JT128 driver topics/frame_id and their alignment with the URDF lidar
+1. Visual check of the sim on the PC (`./scripts/run_a2w_sim.sh --gui --no-lio`).
+2. Localization mode (`localization --map ...`) goal suite; not run yet.
+3. On the robot: JT128 driver topics/frame_id and their alignment with the URDF lidar
    frames, `/lf/sportmodestate` presence, Move acceptance in wheeled mode, remote key masks.
-5. Draft PR once nav goals pass.
+   Check which MPPI binary the robot computer runs (apt is fine, RoboStack needs the overlay).
 
 PC setup (Gabriele's laptop): worktree `/home/beltra/TalOS/anubi-a2w`, micromamba env
 `anubi_humble` (`export MAMBA_ROOT_PREFIX=$HOME/micromamba; eval "$(~/micromamba-bin/bin/micromamba shell hook -s bash)"; micromamba activate anubi_humble`),
-build with `CXXFLAGS="-include cstdint"` (conda GCC vs Humble generated headers).
+build with `CXXFLAGS="-include cstdint"` (conda GCC vs Humble generated headers). Run
+`scripts/build_mppi_conda_overlay.sh` once per env, then re-activate; check with
+`ros2 pkg prefix nav2_mppi_controller` (must point to `mppi_overlay_ws`).
