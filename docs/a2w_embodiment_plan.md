@@ -22,8 +22,9 @@ motion. The stack never drives wheels directly, so the sim should also take a bo
 
 ## 2. Sim approach
 
-No CHAMP, no leg physics. Same pattern as the G1 sim (`g1_sim`), which is already proven
-in this repo:
+Default `locomotion:=kinematic`: no CHAMP, no leg physics. Same pattern as the G1 sim
+(`g1_sim`), which is already proven in this repo (`locomotion:=policy`, the articulated
+alternative, is described under Status):
 
 - One rigid body: A2 meshes with legs frozen in the standing pose, plus 4 wheel visuals at
   the calf tips. A box collision sized to the footprint rests on the floor.
@@ -116,6 +117,27 @@ Done and validated in sim (RTX laptop, RoboStack env, Gazebo GUI on, RTF ~1.0):
   SLAM estimate, so a few results sit just above the 0.25 m tolerance.
 - Real-robot scaffold `a2w_bringup` + `run_a2w_real.sh`: launch wiring checked without
   hardware (nodes start, frame aliases and merger inputs resolve). Not run on the robot.
+- After switching `a2w_description` to the official Unitree A2-W URDF (49.4 kg, official
+  wheel joints and tyre size), the kinematic suite was rerun on the GPU host (Docker, apt
+  Nav2, software-rendered lidar): `--no-lio` 10/10, xy error 0.04 - 0.22 m, odom drift
+  <= 0.007 m; DLIO 10/10, xy error 0.03 - 0.34 m, drift max 0.13 m / 5.5 deg right after
+  the long turn to `0,3` (worse than on the laptop; not yet separated from the rendering
+  difference).
+
+Articulated locomotion (`locomotion:=policy`, opt-in):
+- Legs under Fortress JointPositionController (kp 100, kd 3) and wheels under force-mode
+  JointController (kd 1.5, 24.5 Nm), driven by `a2w_policy_controller` running a numpy MLP
+  trained in Isaac Lab / robot_lab (`training/a2w_robot_lab`, flat task, 5000 iterations).
+  The bundled policy is `a2w_sim/policies/a2w_flat_v1.npz`; `--no-policy` holds the stance
+  and skid-steers.
+- Isaac Lab: error_vel_xy 0.39, error_vel_yaw 0.50, no terminations. MuJoCo replay: vx 1.0 ->
+  0.97, vy 0.5 -> 0.46, spin -1.0 -> -0.80 rad/s.
+- Gazebo (empty world): stands, no falls, vx 1.0 -> 0.97, vy 0.5 -> 0.46, reverse -0.5 ->
+  -0.47. Yaw under-tracks and is asymmetric (arc 0.6/+0.8 -> 0.41 rad/s, 0.6/-0.8 ->
+  -0.27 rad/s; spin -1.0 -> -0.50 rad/s with 0.45 m/s backward drift). The base rolls back
+  0.6 - 1.0 m during stand-up. A sphere tyre collision and a 1.8x yaw command gain did not
+  fix it. Nav2 goal suite: 1/10 (MPPI "Optimizer fail to compute path"), so kinematic stays
+  the default. A rough-terrain, domain-randomized policy is being trained to replace it.
 
 Root causes fixed:
 1. MPPI reverse driving was not a tuning problem. The RoboStack
