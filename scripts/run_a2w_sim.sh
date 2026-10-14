@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Launch the Unitree A2-W (Pro) Gazebo Fortress + Nav2 simulation.
 #
-# Wheeled analogue of run_g1_sim.sh. By default the articulated legs and wheels are
-# driven from /cmd_vel_safe by a trained wheel-legged policy (a2w_policy_controller);
-# --locomotion kinematic slides a rigid VelocityControl base instead. The two JT128 LiDARs are merged by cloud_merger into /lidar/points.
+# Wheeled analogue of run_g1_sim.sh. By default a rigid VelocityControl base slides on
+# the floor from /cmd_vel_safe; --locomotion policy drives the articulated legs and
+# wheels with a trained wheel-legged policy (a2w_policy_controller) instead. The two JT128 LiDARs are merged by cloud_merger into /lidar/points.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -22,7 +22,7 @@ CLEAN_EXISTING="true"
 LIDAR_CHANNELS=""
 LIDAR_H_SAMPLES=""
 PHYSICS_STEP_SEC=""
-LOCOMOTION="policy"
+LOCOMOTION="kinematic"
 POLICY_PATH=""
 
 usage() {
@@ -48,10 +48,10 @@ Options:
   --lidar-h-samples <n>
                        Simulated azimuth samples per sensor (launch default: 180; real: 900)
   --physics-step <sec> Gazebo max_step_size (launch default: 0.002 policy, 0.004 kinematic)
-  --locomotion <policy|kinematic>
-                       policy: articulated legs and wheels driven by a2w_policy_controller
-                       with the bundled a2w_flat_v1 policy (default). kinematic: rigid
-                       sliding base
+  --locomotion <kinematic|policy>
+                       kinematic: rigid sliding base (default). policy: articulated legs
+                       and wheels driven by a2w_policy_controller with the bundled
+                       a2w_flat_v1 policy (under-turns in Fortress; Nav2 not reliable yet)
   --policy <file.npz>  Other actor weights (implies --locomotion policy)
   --no-policy          Articulated model, but the controller only holds the stance and
                        skid-steers the wheels
@@ -61,7 +61,7 @@ Examples:
   run_a2w_sim.sh
   run_a2w_sim.sh --gui --no-lio
   run_a2w_sim.sh --lidar-channels 128 --lidar-h-samples 900   # GPU host
-  run_a2w_sim.sh --gui --no-lio --locomotion kinematic          # sliding base
+  run_a2w_sim.sh --gui --no-lio --locomotion policy             # bundled policy
   run_a2w_sim.sh --gui --no-lio --no-policy                     # stance + skid-steer
   run_a2w_sim.sh --gui --no-lio --policy a2w_flat.npz           # another trained policy
   run_a2w_sim.sh localization --map src/autonomy/robot_nav/maps/my_map

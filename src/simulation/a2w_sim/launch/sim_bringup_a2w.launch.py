@@ -57,9 +57,9 @@ def generate_launch_description():
         DeclareLaunchArgument("lidar_h_samples", default_value="180"),
         DeclareLaunchArgument("physics_step_sec", default_value=""),
         DeclareLaunchArgument(
-            "locomotion", default_value="policy",
-            description="policy: articulated legs + wheels under a2w_policy_controller. "
-                        "kinematic: rigid sliding base.",
+            "locomotion", default_value="kinematic",
+            description="kinematic: rigid sliding base. policy: articulated legs + wheels "
+                        "under a2w_policy_controller.",
         ),
         DeclareLaunchArgument(
             "policy_path",

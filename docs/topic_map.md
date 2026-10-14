@@ -181,9 +181,9 @@ sim time from the Isaac host `/clock`):
 The A2-W (Pro) reuses every canonical topic/TF in this document (plan and geometry:
 `docs/a2w_embodiment_plan.md`). Differences are its two Hesai JT128 LiDARs, merged into the
 single canonical cloud by `robot_nav cloud_merger`, and a diff-drive Nav2 profile (no vy).
-The sim default (`locomotion:=policy`) is the articulated model driven by a trained
-wheel-legged policy in `a2w_policy_controller`; `locomotion:=kinematic` is a rigid
-Fortress VelocityControl base with the legs fixed in the stand pose. The real adapter is `go2_hw_bridge` on the A2 Sport API topics. The real path is not yet
+The sim default (`locomotion:=kinematic`) is a rigid Fortress VelocityControl base with
+the legs fixed in the stand pose; `locomotion:=policy` is the articulated model driven by
+a trained wheel-legged policy in `a2w_policy_controller`. The real adapter is `go2_hw_bridge` on the A2 Sport API topics. The real path is not yet
 validated on hardware.
 
 | Canonical topic / TF | A2-W sim publisher (`a2w_sim`) | A2-W real publisher (`a2w_bringup`) |
@@ -199,8 +199,8 @@ validated on hardware.
 | `/lidar/points_undistorted` | `distortion_corrector` (`distortion_corrector_a2w.yaml`; sim overrides: no IMU, no gravity align) | `distortion_corrector` (`distortion_corrector_a2w.yaml`) |
 | `/scan` | `pointcloud_to_laserscan` (`scan_from_cloud_a2w.yaml`, target `lidar_stabilized`) | same |
 | `/lidar_odom` | DLIO (use_lio, default true; `dlio_params_a2w_sim.yaml`, IMU `/imu/data`) | DLIO (use_lio, default true; `dlio_params_a2w_real.yaml`, IMU `/imu/data`) |
-| `/cmd_vel_safe` consumer, `locomotion:=kinematic` | `ros_ign_bridge` -> `/model/<robot>/cmd_vel` (VelocityControl) | `go2_hw_bridge` -> SportClient Move on `/api/sport/request` |
-| `/cmd_vel_safe` consumer, `locomotion:=policy` (default) | `a2w_policy_controller` -> `/model/<robot>/joint/<joint>/cmd_pos` (12 legs, JointPositionController) and `.../cmd_vel` (4 wheels, JointController), bridged ROS -> Ignition | n/a (the onboard sport controller) |
+| `/cmd_vel_safe` consumer, `locomotion:=kinematic` (default) | `ros_ign_bridge` -> `/model/<robot>/cmd_vel` (VelocityControl) | `go2_hw_bridge` -> SportClient Move on `/api/sport/request` |
+| `/cmd_vel_safe` consumer, `locomotion:=policy` | `a2w_policy_controller` -> `/model/<robot>/joint/<joint>/cmd_pos` (12 legs, JointPositionController) and `.../cmd_vel` (4 wheels, JointController), bridged ROS -> Ignition | n/a (the onboard sport controller) |
 | `/joint_states` | `locomotion:=policy` only: `ros_ign_bridge` of `/model/<robot>/joint_state` (feeds `robot_state_publisher`); kinematic mode has no movable joints | `go2_hw_bridge` |
 
 `/lidar/imu` is not used on the A2-W: the body IMU is the single inertial reference for

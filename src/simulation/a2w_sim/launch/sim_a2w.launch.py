@@ -1,11 +1,11 @@
 """
 sim_a2w.launch.py - Gazebo Fortress wheeled-base simulation for the Unitree A2-W (Pro).
 
-Wheeled analogue of g1_sim/sim_g1.launch.py. Default locomotion:=policy: the
-articulated model is driven by a trained wheel-legged policy (policies/a2w_flat_v1.npz,
-training/a2w_robot_lab) from /cmd_vel_safe, the same body-twist contract as the real
-robot's SportClient::Move. locomotion:=kinematic freezes the legs and a Fortress
-VelocityControl plugin slides the lumped body instead. Everything downstream publishes the canonical topics
+Wheeled analogue of g1_sim/sim_g1.launch.py. Default locomotion:=kinematic: the legs
+are frozen in the standing pose and a Fortress VelocityControl plugin slides the lumped
+body from /cmd_vel_safe, the same body-twist contract as the real robot's
+SportClient::Move. locomotion:=policy drives the articulated model with a trained
+wheel-legged policy (policies/a2w_flat_v1.npz, training/a2w_robot_lab) instead. Everything downstream publishes the canonical topics
 and frames (docs/topic_map.md, A2-W section).
 
 Topic bridges (Ignition -> ROS):
@@ -95,7 +95,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument("robot_name", default_value="a2w"),
         DeclareLaunchArgument(
-            "locomotion", default_value="policy",
+            "locomotion", default_value="kinematic",
             choices=["kinematic", "policy"],
             description="kinematic: rigid sliding base (VelocityControl). policy: articulated "
                         "legs and wheels driven by a2w_policy_controller.",
