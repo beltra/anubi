@@ -3,7 +3,7 @@
 #
 # Copy of dlio_params_g1_real.yaml with the bag-required deltas:
 #
-# 1. publish_tf: true -- the documented Replay TF Owner Override (ADR 0012).
+# 1. publish_tf: true -- the documented Replay TF Owner Override (docs/architecture.md).
 #    The bag has no body odometry and no body IMU, so the EKF cannot run;
 #    DLIO owns odom -> base_footprint for the duration of the replay.
 #

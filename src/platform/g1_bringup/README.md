@@ -14,7 +14,7 @@ selected by the `locomotion` launch arg (never run both at once -- single writer
   package, commanded over a plain WebSocket (`ws://127.0.0.1:8766`).
 - `locomotion:=sonic`: the **SONIC** whole-body controller (GR00T
   `g1_deploy_onnx_ref` on a Jetson), commanded via `cmd_vel_to_sonic`'s ZMQ PUB
-  socket (:5556). See `docs/g1_sonic_locomotion.md` for setup + bringup.
+  socket (:5556). See `docs/g1.md` for setup + bringup.
 
 The robot-agnostic autonomy (`robot_nav`, `robot_safety`, `robot_lio`) is reused
 UNCHANGED; only the G1 adapters differ. Where the Go2 uses `go2_hw_bridge` for the

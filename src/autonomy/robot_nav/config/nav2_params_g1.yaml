@@ -296,8 +296,7 @@ local_costmap:
           topic: /lidar/points_undistorted
           marking: true
           clearing: true
-          # Marking range 3 m (ecosystem norm for Mid-360 STVL, see
-          # docs/mid360_nav2_reference_designs.md): gait leveling residual
+          # Marking range 3 m (ecosystem norm for Mid-360 STVL): gait leveling residual
           # (0.7 deg median, 2.6 deg p90 while walking) tilts marks by a z
           # and tangential error that grows with range, which smears the
           # costmap while walking. 3 m keeps the wobble under one cell for

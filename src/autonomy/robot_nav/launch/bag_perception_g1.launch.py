@@ -34,7 +34,7 @@ What runs
    not have. Accepts a few degrees of gait tilt (plan decision 4).
 6. DLIO (via robot_lio lio.launch.py) with dlio_params_g1_bag.yaml: fresh
    LiDAR-inertial odometry, publish_tf on -- owns odom -> base_footprint
-   (Replay TF Owner Override, ADR 0012; frames/baselink is base_footprint so
+   (Replay TF Owner Override, docs/architecture.md; frames/baselink is base_footprint so
    the floor lands at odom z=0, see the config header).
 7. slam.launch.py: distortion_corrector (distortion_corrector_g1_bag.yaml)
    -> pointcloud_to_laserscan (scan_from_cloud_g1.yaml) -> /scan
@@ -263,7 +263,7 @@ def generate_launch_description():
 
     # --- Sensor relays + DLIO (robot_lio) ----------------------------------
     # /livox/lidar_filtered -> /lidar/points relay + DLIO with publish_tf ON
-    # (owns odom -> base_footprint; Replay TF Owner Override, ADR 0012).
+    # (owns odom -> base_footprint; Replay TF Owner Override, docs/architecture.md).
     lio = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(robot_lio_share, "launch", "lio.launch.py")

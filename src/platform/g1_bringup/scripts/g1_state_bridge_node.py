@@ -29,7 +29,7 @@ The pelvis IMU (rt/lowstate) is always available while the robot is powered, so
 /imu/data and the body TF are always published. The body odometry (rt/odommodestate)
 may be stale or absent depending on the active control mode; /odom_raw is published
 only while it is fresh, and the EKF tolerates its absence by falling back to DLIO
-(use_lio:=true). See docs/g1_porting_status.md.
+(use_lio:=true). See docs/g1.md.
 
 Run standalone (params otherwise come from config/g1_params.yaml):
     ros2 run g1_bringup g1_state_bridge --ros-args -p net_if:=eth0

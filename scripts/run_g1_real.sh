@@ -11,7 +11,7 @@
 # already be up; this stack only produces velocity commands for it:
 #   --locomotion amo   (default) g1_locomotion amo_driver on this host (ws :8766)
 #   --locomotion sonic SONIC g1_deploy_onnx_ref on the Jetson, connecting to this
-#                      host's ZMQ :5556 (see docs/g1_sonic_locomotion.md)
+#                      host's ZMQ :5556 (see docs/g1.md)
 # NEVER run both controllers at once (two writers on rt/lowcmd is dangerous).
 # Keep the robot STILL for the first few seconds so DLIO completes its IMU/gravity
 # calibration (see --nav-delay).
@@ -57,7 +57,7 @@ Hardware bring-up for the Unitree G1. Start the low-level locomotion controller
 SEPARATELY first; this stack only commands it:
   amo (default): g1_locomotion amo_driver on this host (WebSocket :8766)
   sonic:         SONIC g1_deploy_onnx_ref on the Jetson (connects to this host's
-                 cmd_vel_to_sonic ZMQ PUB :5556); see docs/g1_sonic_locomotion.md
+                 cmd_vel_to_sonic ZMQ PUB :5556); see docs/g1.md
 NEVER run both controllers at once (rt/lowcmd single-writer rule).
 Keep the robot STILL during the initial --nav-delay so DLIO can calibrate.
 
@@ -191,7 +191,7 @@ echo "Starting G1 real-robot stack..."
 if [[ "$LOCOMOTION" == "sonic" ]]; then
   echo "NOTE: ensure the SONIC controller (g1_deploy_onnx_ref on the Jetson) is running and"
   echo "      pointed at this host's ZMQ :5556, and the AMO driver is NOT running."
-  echo "      SONIC profile: ${SONIC_PROFILE}, arm preset: ${SONIC_ARM_PRESET}. See docs/g1_sonic_locomotion.md."
+  echo "      SONIC profile: ${SONIC_PROFILE}, arm preset: ${SONIC_ARM_PRESET}. See docs/g1.md."
   [[ "$SONIC_ARM_PRESET" != "none" ]] && echo "      NOTE: arm preset '${SONIC_ARM_PRESET}' pins the upper body (loco-manipulation); validate hoisted, tune per payload."
 else
   echo "NOTE: ensure the AMO locomotion driver (g1_locomotion amo_driver, ws://127.0.0.1:8766) is already running."

@@ -14,7 +14,7 @@ only produces velocity commands for it:
   locomotion:=amo    AMO policy (g1_locomotion amo_driver, WebSocket :8766, this host)
   locomotion:=sonic  SONIC whole-body controller (g1_deploy_onnx_ref on the Jetson;
                      connects to THIS host's cmd_vel_to_sonic ZMQ PUB :5556).
-                     See docs/g1_sonic_locomotion.md.
+                     See docs/g1.md.
 NEVER run both controllers at once: two writers on rt/lowcmd is dangerous.
 
 Starts (mirrors go2_bringup order; each block gated by a boolean arg):
@@ -552,7 +552,7 @@ def generate_launch_description():
         condition=IfCondition(start_cmd_vel_to_amo),
     )
     # SONIC bridge binds ZMQ PUB :5556; g1_deploy_onnx_ref on the Jetson connects
-    # to this host (see docs/g1_sonic_locomotion.md for the Jetson-side flags).
+    # to this host (see docs/g1.md for the Jetson-side flags).
     cmd_vel_to_sonic = Node(
         package="g1_bringup",
         executable="cmd_vel_to_sonic",

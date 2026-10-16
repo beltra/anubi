@@ -22,7 +22,7 @@
       - the locomotion bridge, selected by the `locomotion` launch arg:
         cmd_vel_to_amo (/cmd_vel_safe -> AMO WebSocket :8766, default) or
         cmd_vel_to_sonic (/cmd_vel_safe -> SONIC planner ticks, ZMQ PUB :5556;
-        see docs/g1_sonic_locomotion.md)
+        see docs/g1.md)
 
     Python nodes (cmd_vel_to_amo, cmd_vel_to_sonic, imu_rescale, g1_state_bridge)
     are installed as executables under lib/g1_bringup, mirroring robot_safety's

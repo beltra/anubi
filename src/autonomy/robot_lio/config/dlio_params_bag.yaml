@@ -1,7 +1,7 @@
 # DLIO parameters for offline bag replay perception validation.
 #
 # Differs from dlio_params.yaml only in publish_tf: this is the documented
-# Replay TF Owner Override (ADR 0012). The bag has no body odom and no body
+# Replay TF Owner Override (docs/architecture.md). The bag has no body odom and no body
 # IMU, so the EKF cannot run; DLIO becomes the TF owner of odom -> base_link
 # for the duration of the replay.
 

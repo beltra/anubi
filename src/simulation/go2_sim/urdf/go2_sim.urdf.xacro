@@ -44,7 +44,7 @@
   <xacro:arg name="robot_controllers"
              default="$(find go2_sim)/config/ros_control.yaml"/>
 
-  <!-- Real lidar IMU calibration imported from imu_calib_data.yaml -->
+  <!-- Real lidar IMU calibration imported from config/imu_calib_data.yaml -->
   <xacro:property name="lidar_imu_acc_bias_x" value="-0.801651"/>
   <xacro:property name="lidar_imu_acc_bias_y" value="1.72345"/>
   <xacro:property name="lidar_imu_acc_bias_z" value="-0.22166"/>

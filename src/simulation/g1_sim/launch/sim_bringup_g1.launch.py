@@ -80,7 +80,7 @@ def generate_launch_description():
         # navigates reliably. Pass use_lio:=true to run DLIO (Mid-360 LiDAR-inertial
         # odometry) as on the real robot - it tracks well at rest but currently degrades
         # during the KINEMATIC base's motion (velocity steps -> IMU accel spikes); see
-        # docs/g1_porting_status.md. run_g1_sim.sh exposes this as --use-lio.
+        # docs/g1.md. run_g1_sim.sh exposes this as --use-lio.
         DeclareLaunchArgument("use_lio", default_value="false"),
         DeclareLaunchArgument("lio_start_before_nav_sec", default_value="4.0"),
         DeclareLaunchArgument("start_nav", default_value="true"),

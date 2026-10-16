@@ -1,3 +1,0 @@
-# Real LiDAR driver frame alias
-
-The real Go2 UniLidar pointcloud arrives on `/utlidar/cloud` with `frame_id=utlidar_lidar`. Live point matches between `/utlidar/cloud` and Unitree's `/utlidar/cloud_base` show the raw driver frame maps to base axes with `R = Ry(2.88000012056847)`. The hardware URDF sets `lidar_link` to that measured driver orientation, and `robot_lio` relays the cloud to `/lidar/points` without rewriting the header while publishing an identity `lidar_link -> utlidar_lidar` alias. This keeps the driver frame transformable and keeps downstream SLAM, Nav2, and LiDAR correction on the same measured frame.

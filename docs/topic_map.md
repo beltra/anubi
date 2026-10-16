@@ -1,8 +1,5 @@
 # Topic Map - Anubi Autonomy Stack
 
-Last updated: 2026-07-03
-Branch: `feat/g1` (G1 humanoid variant; off `feat/sim2real`)
-
 This document is the authoritative reference for all ROS 2 topics in the anubi stack.
 "Sim name" and "HW name" columns are filled only when the two differ. The main tables
 below describe the Go2; the **Unitree G1 Hardware Variant** section near the end gives
@@ -42,7 +39,7 @@ the G1-specific publishers/frames (only those differ -- the canonical contract i
 | Transform | Publisher | Sim | HW | Notes |
 |-----------|-----------|-----|----|-------|
 | `map -> odom` | `slam_toolbox` | same | same | Published by slam_toolbox during active SLAM. Static identity fallback available via `publish_map_to_odom_tf:=true` launch arg (for testing without SLAM). |
-| `odom -> base_footprint` | EKF (`footprint_to_odom_ekf` in sim / `ekf_filter_node` on HW) | same | same | EKF owns this TF in both environments. Offline bag replay is the documented exception: on the Go2 flow (`scripts/replay_bag_perception.sh`) DLIO owns `odom -> base_link` directly; on the G1 flow (`scripts/replay_bag_perception_g1.sh`) the DLIO estimate owns `odom -> base_footprint` so the odom floor datum matches the live contract; it is rebroadcast from the 100 Hz `/lidar_odom` topic by `odom_to_tf` (DLIO itself sends TF only per scan, ~8 Hz, which left TF consumers up to ~120 ms stale). `odom_to_tf` de-duplicates non-increasing header stamps (`dedup_stamps`, default on): DLIO republishes ~17% of poses under an already-used stamp (scan-match corrections) plus rare zero stamps, which would otherwise be rebroadcast as non-monotonic TF; the node holds each pose one step and emits the LAST of a duplicate-stamp group. The EKF path (`lidar_odom_relay` -> `/lidar_odom_reliable`) does NOT de-duplicate: robot_localization resolves same-stamp measurements itself and de-duplicating there added latency that degraded turn tracking. See ADR 0012. |
+| `odom -> base_footprint` | EKF (`footprint_to_odom_ekf` in sim / `ekf_filter_node` on HW) | same | same | EKF owns this TF in both environments. Offline bag replay is the documented exception: on the Go2 flow (`scripts/replay_bag_perception.sh`) DLIO owns `odom -> base_link` directly; on the G1 flow (`scripts/replay_bag_perception_g1.sh`) the DLIO estimate owns `odom -> base_footprint` so the odom floor datum matches the live contract; it is rebroadcast from the 100 Hz `/lidar_odom` topic by `odom_to_tf` (DLIO itself sends TF only per scan, ~8 Hz, which left TF consumers up to ~120 ms stale). `odom_to_tf` de-duplicates non-increasing header stamps (`dedup_stamps`, default on): DLIO republishes ~17% of poses under an already-used stamp (scan-match corrections) plus rare zero stamps, which would otherwise be rebroadcast as non-monotonic TF; the node holds each pose one step and emits the LAST of a duplicate-stamp group. The EKF path (`lidar_odom_relay` -> `/lidar_odom_reliable`) does NOT de-duplicate: robot_localization resolves same-stamp measurements itself and de-duplicating there added latency that degraded turn tracking. See `docs/architecture.md`. |
 | `base_footprint -> base_link` | `static_transform_publisher` (sim) / `go2_hw_bridge` (HW) | same | same | Sim uses fixed standing-height offset; HW includes body roll/pitch plus standing height. |
 | `base_link -> lidar_link` | URDF / `robot_state_publisher` | rpy=(0, -0.26180, 0) | rpy=(0, 2.88000, 0) | xyz=(0.28945, 0, -0.046825). Sim uses a right-side-up Fortress workaround; HW orientation is derived from matching `/utlidar/cloud` to `/utlidar/cloud_base`. |
 | `lidar_link -> utlidar_lidar` | `robot_lio` static TF (HW default) | absent | identity | Driver frame alias for real `/utlidar/cloud` pointclouds. Identity is valid because HW `lidar_link` matches the measured driver frame. `scripts/run_go2_real.sh --lidar-points-frame <frame>` changes the child frame when the driver reports a different name. |
@@ -118,7 +115,7 @@ These follow standard Nav2 Humble topic naming; listed here for completeness.
 ## Unitree G1 Hardware Variant
 
 The G1 humanoid reuses every canonical topic/TF in this document; only the robot-specific
-PUBLISHERS differ (full detail in `docs/g1_embodiment.md`). The autonomy stack and the
+PUBLISHERS differ (see `docs/g1.md`). The autonomy stack and the
 EKF frame ownership (`odom -> base_footprint`) are identical to the Go2.
 
 | Canonical topic / TF | Go2 publisher (HW) | G1 publisher (HW) |
@@ -140,7 +137,7 @@ and the Unitree DDS topics `rt/odommodestate` + `rt/lowstate` (read by `g1_state
 The G1 has no Sport API (`/api/sport/request`); commands go to the selected low-level
 controller: the AMO driver over WebSocket (`locomotion:=amo`, default) or the SONIC
 whole-body controller (`g1_deploy_onnx_ref` on the Jetson) over ZMQ (`locomotion:=sonic`,
-see `docs/g1_sonic_locomotion.md`). Exactly one controller may run at a time (single
+see `docs/g1.md`). Exactly one controller may run at a time (single
 writer on `rt/lowcmd`). The state side (`g1_state_bridge`, DLIO, EKF) is identical for both.
 G1-real derives the MAPPING scan from DLIO's registered cloud: `/scan` feeds
 slam_toolbox only (collision_monitor and STVL consume `/lidar/points_undistorted`

@@ -10,7 +10,7 @@
 #
 # Shares the replay decisions of dlio_params_g1_bag.yaml:
 # - publish_tf: true, frames/baselink: base_footprint (Replay TF Owner Override,
-#   ADR 0012 G1 section): DLIO owns odom -> base_footprint and anchors the odom
+#   docs/architecture.md G1 section): DLIO owns odom -> base_footprint and anchors the odom
 #   floor datum at z=0 to match the live STVL height contract.
 # - Extrinsic rotations are the NOMINAL mount (as dlio_params_g1_real.yaml):
 #   the at-rest Livox accel in these recordings sits within ~0.7 deg of it.

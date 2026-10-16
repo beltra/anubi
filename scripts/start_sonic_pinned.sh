@@ -7,7 +7,7 @@
 # stack (Nav2 + DLIO + EKF + safety + cmd_vel_to_sonic) runs on a separate nav PC.
 # The controller must therefore connect OUT to the nav PC's ZMQ bridge, so
 # SONIC_ZMQ_HOST=<nav-pc-ip> is REQUIRED (the sonic repo default `localhost` is wrong
-# for the split -- see docs/g1_sonic_locomotion.md section 2.1 step F).
+# for the split -- see docs/g1.md, "SONIC: Jetson setup").
 #
 # WHY PINNING MATTERS (measured on the real G1):
 #   The controller's four RT worker threads are pinned by SONIC_CPU_* -- but its
